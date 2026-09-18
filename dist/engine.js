@@ -72,7 +72,7 @@
     {id:'particles',section:'Visuals',label:'Particle effects',help:'Sparks, smoke, fire and spray.',type:'select',options:['Off','Low','High'],def:'High'},
     {id:'shake',section:'Visuals',label:'Screen shake intensity',help:'Camera shake from explosions and thunder.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
     {id:'grid',section:'Visuals',label:'Background grid',help:'The measurement grid on the chamber wall.',type:'toggle',def:true},
-    {id:'shadows',section:'Visuals',label:'Contact shadows',help:'Soft shadows where objects are near the floor.',type:'toggle',def:true},
+    {id:'shadows',section:'Visuals',label:'Contact shadows',help:'Soft shadows where objects are near the floor.',type:'toggle',def:false},
     {id:'vignette',section:'Visuals',label:'Vignette',help:'Darkened screen edges.',type:'toggle',def:true},
     {id:'tempUnit',section:'Interface',label:'Temperature unit',help:'Unit used in the detail view.',type:'select',options:['Celsius','Fahrenheit','Kelvin'],def:'Celsius'},
     {id:'showFps',section:'Interface',label:'Show framerate',help:'Frames per second, top right of the chamber.',type:'toggle',def:true},
@@ -106,25 +106,27 @@
   // Angles are for a right-facing body and are mirrored for a left-facing one. Anything a pose does not mention is [0, 1]: straight, full strength.
   // Arms are mirror images of each other (the left elbow bends negative, the right positive), so arm entries come in pairs.
   const POSES={
-    stand:{5:[.05,1],8:[-.05,1]},
+    stand:{},
     kneel:{11:[.15,1.3],14:[.15,1.3],12:[1.9,1.3],15:[1.9,1.3],13:[.4,.6],16:[.4,.6]},                                  // on the knees, shins folded back
-    crouch:{11:[-1.05,1.5],14:[-1.05,1.5],12:[2.0,1.5],15:[2.0,1.5],3:[.15,1],5:[-.5,1.5],8:[.5,1.5]},               // knees under the body, ready to rise
-    gather:{11:[-.7,1.2],14:[-.7,1.2],12:[1.4,1.2],15:[1.4,1.2],5:[-.9,2],8:[.9,2],6:[-1.3,2],9:[1.3,2]},            // lying: limbs drawn in, hands under the shoulders
-    pushup:{11:[-.5,1.2],14:[-.5,1.2],12:[1.2,1.2],15:[1.2,1.2],5:[-1.4,5],8:[1.4,5],6:[-.15,5],9:[.15,5]},          // arms straighten against the floor
+    crouch:{11:[-1.05,1.5],14:[-1.05,1.5],12:[2.0,1.5],15:[2.0,1.5],3:[-.15,1],5:[-.5,1.5],8:[-.5,1.5]},             // knees under the body, ready to rise
+    gather:{11:[-.7,1.2],14:[-.7,1.2],12:[1.4,1.2],15:[1.4,1.2],5:[-.9,2],8:[-.9,2],6:[-1.3,2],9:[-1.3,2]},          // lying: limbs drawn in, hands under the shoulders
+    pushup:{11:[-.5,1.2],14:[-.5,1.2],12:[1.2,1.2],15:[1.2,1.2],5:[-1.4,5],8:[-1.4,5],6:[-.15,5],9:[-.15,5]},        // arms straighten against the floor
     crawl:{11:[-.35,.8],14:[-.35,.8],12:[.9,.8],15:[.9,.8],0:[0,1.5]},                                               // belly down; the arm cycle is added on top
-    curl:{11:[-1.25,1],14:[-1.25,1],12:[2.2,1],15:[2.2,1],3:[.35,1],4:[.35,1],1:[.3,1],0:[.3,1],5:[-.7,1.5],8:[.7,1.5],6:[-2.1,1.5],9:[2.1,1.5]},
+    curl:{11:[-1.25,1],14:[-1.25,1],12:[2.2,1],15:[2.2,1],3:[-.35,1],4:[-.35,1],1:[.3,1],0:[.3,1],5:[-.7,1.5],8:[-.7,1.5],6:[-2.1,1.5],9:[-2.1,1.5]},
     limp:Object.fromEntries(Array.from({length:17},(_,slot)=>[slot,[0,0]]))        // every muscle off: unconscious or dead
   };
   // How strong each joint's muscles are next to each other, and how hard any of them can pull: the error a muscle "sees" is capped, which caps its torque.
-  const MUSCLE={atlas:.5,neck:.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.45,MUSCLE_MAX=2,POSE_BLEND=.25; // MUSCLE_MAX: the chest carries five joints, so their stiffnesses add up on it; much above 2 each and a rigid pose rings, then explodes
+  const MUSCLE={atlas:1.1,neck:1.3,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.45,MUSCLE_MAX=2,POSE_BLEND=.25; // MUSCLE_MAX: the chest carries five joints, so their stiffnesses add up on it; much above 2 each and a rigid pose rings, then explodes
   // Reactions. FLINCH: seconds a flinch lasts. STEP: seconds per recovery step, and how far a stagger shifts the balance point (px per point of damage, capped).
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
+  const THROW_MAX=38; // px per frame
   const PIN_TEAR=14; // px a lodged blade's pins may stretch before it is torn out
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
+  const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -133,21 +135,23 @@
   // Saved settings come from localStorage or an imported file, so every value is checked against the table before it is used.
   const sanitize=(input={})=>{const out={};for(const s of SETTINGS){const v=input?.[s.id];
     if(s.type==='toggle'&&typeof v==='boolean')out[s.id]=v;else if(s.type==='select'&&s.options.includes(v))out[s.id]=v;else if(s.type==='range'&&typeof v==='number'&&Number.isFinite(v))out[s.id]=clamp(v,s.min,s.max);}return out;};
+  // The body is drawn and jointed as seen from the side, facing +x (mirrored when spawned facing left). Both arms and both legs therefore bend the same way:
+  // arms and thighs swing forward negative, elbows only flex forward, knees only fold back, the trunk bends forward further than it arches.
   // Joint template: [parent slot, child slot, anchor on parent, anchor on child, min, max, name]. Slots index ANATOMY. Regeneration regrows from the same table.
   const JOINTS=[
-    [1,0,{x:0,y:-7},{x:0,y:14},-.6,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.35,.35,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.4,.4,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.4,.4,'waist'],
-    [2,5,{x:-21,y:-12},{x:3,y:-16},-2.6,1.4,'shoulder'],[5,6,{x:-1,y:17},{x:0,y:-16},-2.5,.08,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist'],
-    [2,8,{x:21,y:-12},{x:-3,y:-16},-1.4,2.6,'shoulder'],[8,9,{x:1,y:17},{x:0,y:-16},-.08,2.5,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist'],
-    [4,11,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle'],
-    [4,14,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle']
+    [1,0,{x:0,y:-7},{x:0,y:14},-.5,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.3,.45,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.55,.2,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.55,.2,'waist'],
+    [2,5,{x:-21,y:-12},{x:3,y:-16},-2.9,.9,'shoulder'],[5,6,{x:-1,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
+    [2,8,{x:21,y:-12},{x:-3,y:-16},-2.9,.9,'shoulder'],[8,9,{x:1,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
+    [4,11,{x:-10,y:11},{x:0,y:-22},-1.9,.6,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle'],
+    [4,14,{x:10,y:11},{x:0,y:-22},-1.9,.6,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle']
   ];
   const LOCK_STIFFNESS=1.25,SLOT_MUSCLE=Array.from({length:17},(_,slot)=>{const t=JOINTS.find(j=>j[1]===slot);return t?MUSCLE[t[6]]:1;}); // each slot's usual muscle strength, so a pose can ask for one absolute stiffness everywhere
-  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.1,AIR_LIMP=.35,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
+  const LIMIT_GAIN=.6,LIMIT_SPEED=.4,LIMIT_SHARE=.5,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.8,AIR_UPRIGHT=.15,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -294,7 +298,7 @@
     }
     // upright = wants to stand. Whether it can is derived from what is left of the body, so losing an arm never drops it but losing the spine does.
     canStand(e){
-      if(!e.alive||!e.upright)return false;const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],head=part('head')[0];
+      if(!e.alive||!e.upright||e.paralysed)return false;const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],head=part('head')[0];
       if(!chest||!head||chest.plugin.hp<35||head.plugin.hp<35)return false;
       const live=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id),has=n=>live.filter(c=>c.plugin.name===n).length;
       if(!has('atlas')||!has('neck')||!has('spine')||!has('waist'))return false;
@@ -311,10 +315,10 @@
       if(e.kind==='human'&&((e.pain||0)>=88||e.blood<SLUMP_BLOOD))return 'curl';if(this.canStand(e))return e.kind==='human'&&e.blood<KNEEL_BLOOD?'kneel':'stand'; // bleeding out: first the legs go, then it slumps, then it is unconscious
       const live=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id),joint=(slot)=>live.find(c=>c.bodyB.plugin.slot===slot),ok=slot=>{const c=joint(slot);return !!c&&!this.fractured(c.bodyB)&&c.bodyB.plugin.hp>0;};
       const chest=e.bodies.find(b=>b.plugin.slot===2),head=e.bodies.find(b=>b.plugin.slot===0);if(!chest||!head||chest.plugin.hp<35||head.plugin.hp<35||!joint(0)||!joint(1))return 'curl';
-      const trunk=!!joint(3)&&!!joint(4),brokenLeg=live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB));if(trunk&&!brokenLeg&&((ok(11)&&ok(12))||(ok(14)&&ok(15))))return 'kneel'; // kneeling is for missing feet, not for broken legs
+      const trunk=!!joint(3)&&!!joint(4)&&!e.paralysed,brokenLeg=live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB));if(trunk&&!brokenLeg&&((ok(11)&&ok(12))||(ok(14)&&ok(15))))return 'kneel'; // kneeling is for missing feet, not for broken legs
       const arms=(ok(5)&&ok(6)?1:0)+(ok(8)&&ok(9)?1:0);return arms===2?'crawl':arms===1?'drag':'curl';
     }
-    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
+    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
     // After death a nerve may still fire once or twice: a limb jerks at one joint, equal and opposite on its two parts, and that is the end of it. Then the body is left to come to rest.
     twitch(e,seconds) {
       e.deadFor+=seconds;if(e.deadFor<e.twitchAt[0])return;e.twitchAt.shift();if(e.twitchAt[0]>TWITCH_WINDOW)e.twitchAt.length=0;
@@ -343,6 +347,14 @@
       if(set.slowHealing){if(human){e.blood=Math.min(100,e.blood+seconds*.8);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*.4);}
         for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&random()<seconds*.06)p.wounds.shift();}}
     }
+    forced(part){const e=this.getEntity(part);return !!e&&((this.drag&&this.drag.bodyB.plugin.entityId===e.id)||this.time-(e.hitTime??-9)<.35);}
+    // A joint bent the wrong way, hard and for long enough, breaks. A limb joint fractures the limb below it; the neck kills; the spine takes the legs away.
+    snap(c) {
+      const b=c.bodyB,e=this.getEntity(b),at=Vector.add(b.position,c.pointB);c.plugin.broken=true;c.plugin.strain=0;this.onEffect('break',.5);if(b.plugin.material!=='flesh'){this.burst(at.x,at.y,8,'#ffe7a0',5);b.plugin.hp=Math.max(0,b.plugin.hp-60);return;}
+      this.burst(at.x,at.y,6,'#e8dcc0',3);b.plugin.bruise=Math.min(1,(b.plugin.bruise||0)+.6);if(b.plugin.slot>=5)b.plugin.bone=Math.min(b.plugin.bone??100,35);
+      if(!e||!e.alive)return;e.pain=Math.min(100,(e.pain||0)+30*this.settings.painSensitivity);e.hitTime=this.time;e.shoutT=.5;
+      if(c.plugin.name==='atlas'||c.plugin.name==='neck')this.kill(e,'broken neck');else if(c.plugin.name==='spine'||c.plugin.name==='waist')e.paralysed=true;
+    }
     // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
     strengthOf(b){return this.fractured(b)?0:clamp((b.plugin.hp??100)/50,.2,1);}
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
@@ -359,18 +371,18 @@
     }
     // Pose overlays for the moment: flinch, recovery steps, bracing. They write into the wanted pose; nothing is allocated.
     reactions(e,want,chest,down,seconds) {
-      const A=want.angle,P=want.power,awake=e.consciousness!=='unconscious';
-      if(e.flinch>0){e.flinch-=seconds;const m=e.flinchMag*clamp(e.flinch/FLINCH_TIME,0,1),d=e.flinchDir,s=e.flinchSlot;
-        A[0]+=-d*.55*m;A[1]+=-d*.2*m;A[3]+=-d*.22*m;A[4]+=-d*.15*m;P[0]=P[1]=2;                       // head snaps back, torso twists away from the blow
-        if(s>=5&&s<=7){A[5]+=.5*m;A[6]+=-1.4*m;P[5]=4;P[6]=9;}else if(s>=8&&s<=10){A[8]+=-.5*m;A[9]+=1.4*m;P[8]=4;P[9]=9;}       // the struck limb pulls in
-        else if(s>=11&&s<=13){A[11]+=-.45*m;A[12]+=.9*m;P[12]=2;}else if(s>=14){A[14]+=-.45*m;A[15]+=.9*m;P[15]=2;}
-        else{A[5]+=-.35*m;A[6]+=-.7*m;A[8]+=.35*m;A[9]+=.7*m;}}                                         // a blow to the trunk: both arms come in
+      const A=want.angle,P=want.power,awake=e.consciousness!=='unconscious',m=chest.plugin.flip?-1:1;
+      if(e.flinch>0){e.flinch-=seconds;const mag=e.flinchMag*clamp(e.flinch/FLINCH_TIME,0,1),d=e.flinchDir,s=e.flinchSlot;
+        A[0]+=d*m*.5*mag;A[1]+=d*m*.2*mag;A[3]+=-d*m*.22*mag;A[4]+=-d*m*.15*mag;P[0]=P[1]=2;                       // head snaps back, torso twists away from the blow
+        if(s>=5&&s<=10){const sh=s<8?5:8;A[sh]+=-.4*mag;A[sh+1]+=-1.4*mag;P[sh]=4;P[sh+1]=9;}                                       // the struck arm pulls in
+        else if(s>=11){const hip=s<14?11:14;A[hip]+=-.45*mag;A[hip+1]+=.9*mag;P[hip+1]=2;}
+        else{A[5]+=-.35*mag;A[6]+=-.7*mag;A[8]+=-.35*mag;A[9]+=-.7*mag;}}                                         // a blow to the trunk: both arms come in
       if(e.stagN>0){if(down||!awake){e.stagN=0;}else{e.stagT+=seconds;const swing=e.stagT<STEP_TIME*.5,hip=e.stagLeg?14:11,d=e.stagDir;
-          A[hip]+=-d*(swing?.42:.2);A[hip+1]+=swing?.7:.1;P[hip]=1.5;P[hip+1]=1.5;                                             // pick a leg up and swing it the way the body is going, then set it down ahead
+          A[hip]+=-d*m*(swing?.42:.2);A[hip+1]+=swing?.7:.1;P[hip]=1.5;P[hip+1]=1.5;                                             // pick a leg up and swing it the way the body is going, then set it down ahead
           if(e.stagT>=STEP_TIME){e.stagT=0;e.stagLeg^=1;e.stagN--;e.stagPush*=.45;}}}
       // Bracing: tipping over, or dropping fast, and awake. Arms go out toward the ground on the side it is falling to; the head turns away from it.
       const tilt=wrap(chest.angle),falling=chest.velocity.y>BRACE_FALL,moving=chest.speed>1.2&&!this.touching.has(chest);if(awake&&moving&&(Math.abs(tilt)>BRACE_TILT||falling)&&!(e.stun>0)){ /* only on the way down: a body already on the ground gets up instead */ const f=Math.abs(tilt)>.15?Math.sign(tilt):Math.sign(chest.velocity.x)||1;e.bracing=.4;e.braceDir=f;}
-      if(e.bracing>0){e.bracing-=seconds;const f=e.braceDir;A[5]=-f*1.25-tilt*.5;A[8]=-f*1.25-tilt*.5;A[6]=-.35;A[9]=.35;A[7]=A[10]=0;A[0]=-f*.45;P[5]=P[8]=6;P[6]=P[9]=4;P[0]=2;want.armsFree=true;}else want.armsFree=false;
+      if(e.bracing>0){e.bracing-=seconds;const f=e.braceDir;A[5]=A[8]=(-f*1.25-tilt*.5)*m;A[6]=A[9]=-.3;A[7]=A[10]=0;A[0]=-f*m*.4;P[5]=P[8]=6;P[6]=P[9]=4;P[0]=2;want.armsFree=true;}else want.armsFree=false;
     }
     // The weight the muscles are working against: only what is still attached to the chest. Severed limbs stay in the entity but are no longer carried. Refreshed ten times a second.
     carried(e,chest){if(!(this.time-(e.massAt??-1)<.1)){e.massAt=this.time;let m=0;for(const b of this.connected(chest))m+=b.mass;e.liveMass=m;}return e.liveMass;}
@@ -404,16 +416,16 @@
       // Trembling: slow noise on every limb joint (a random walk pulled back to zero, so it never jumps), worse with pain and with blood loss.
       const shake=e.tremor??=new Array(17).fill(0),amp=(pain*.9+Math.max(0,60-e.blood)/60)*.09*k;for(let i=0;i<17;i++){shake[i]+=(random()-.5)*seconds*26-shake[i]*seconds*9;A[i]+=shake[i]*amp;}
       // Hunching over the pain; the head sinks as the blood goes.
-      A[3]+=.32*pain*k;A[4]+=.22*pain*k;A[1]+=.18*pain*k;A[0]+=Math.max(0,70-e.blood)/70*.45;
+      A[3]+=-.32*pain*k;A[4]+=-.22*pain*k;A[1]+=.18*pain*k;A[0]+=Math.max(0,70-e.blood)/70*.45;
       // Writhing: down and in a lot of pain, it draws its legs up and lets them go, rocks, and now and then spasms. Calms as the pain ebbs.
       if((down||rung==='curl')&&pain>.55){const w=(pain-.4)*k,t=this.time,draw=.5+.5*Math.sin(t*1.7),curl=POSES.curl;for(const slot of [11,12,14,15]){const leg=slot<14?0:1.3;A[slot]=curl[slot][0]*(.35+.65*(.5+.5*Math.sin(t*1.7+leg)));P[slot]=1.2;}
         A[3]+=Math.sin(t*1.1)*.3*w;A[4]+=Math.sin(t*.9+1)*.25*w;A[5]+=Math.sin(t*2.3)*.6*w;A[8]-=Math.sin(t*2.1+.7)*.6*w;if(random()<seconds*.7*w){e.flinch=FLINCH_TIME;e.flinchMag=.7;e.flinchSlot=2;}void draw;}
       // On fire: arms beat at the flames, and if it is on its feet it staggers about, away from the heat.
-      if(e.burningParts>0){const t=this.time;A[5]=-1.2+Math.sin(t*17)*.9;A[6]=-1.0-Math.sin(t*19)*.8;A[8]=1.2-Math.sin(t*16+1)*.9;A[9]=1.0+Math.sin(t*18+2)*.8;P[5]=P[6]=P[8]=P[9]=5;want.armsFree=true;
+      if(e.burningParts>0){const t=this.time;A[5]=-1.4+Math.sin(t*17)*.9;A[6]=-1.0-Math.sin(t*19)*.8;A[8]=-1.4+Math.sin(t*16+1)*.9;A[9]=-1.0-Math.sin(t*18+2)*.8;P[5]=P[6]=P[8]=P[9]=5;want.armsFree=true;
         if(rung==='stand'&&!down&&!(e.stagN>0)){e.stagN=2;e.stagDir=e.panicDir=(random()<.2?-(e.panicDir||1):(e.panicDir||(random()<.5?-1:1)));e.stagT=0;e.stagLeg=e.stagDir>0?0:1;e.stagPush=STAGGER_MAX*1.4;}return;}
       // Guarding: a hurt arm is held in against the body; a badly hurt leg is kept off the floor if the other one can take the weight.
       const bodyAt=slot=>e.bodies.find(b=>b.plugin.slot===slot),hurt=(from,to)=>{let worst=1;for(let sl=from;sl<=to;sl++){const b=bodyAt(sl);if(b)worst=Math.min(worst,b.plugin.hp/b.plugin.maxHp);}return worst;};
-      for(const [sh,side] of [[5,-1],[8,1]])if(hurt(sh,sh+2)*100<GUARD_HP&&rung!=='crawl'&&rung!=='drag'){A[sh]=side*.35*k;A[sh+1]=side*1.5;P[sh]=P[sh+1]=2.5;}
+      for(const [sh,side] of [[5,-1],[8,1]])if(hurt(sh,sh+2)*100<GUARD_HP&&rung!=='crawl'&&rung!=='drag'){A[sh]=-.3*k;A[sh+1]=-1.5;P[sh]=P[sh+1]=2.5;}
       if(e.spareLeg&&!down){A[e.spareLeg]+=-.4;A[e.spareLeg+1]+=1.1;P[e.spareLeg]=P[e.spareLeg+1]=1.6;}
       // Clutching: the nearest hand that still works goes to the wound that hurts most and stays there; both hands for the head and trunk. Not while the arms are needed to crawl or to break a fall.
       if(e.pain>CLUTCH_PAIN&&e.hurtScore>0&&rung!=='crawl'&&rung!=='drag'&&!(e.bracing>0)){const part=bodyAt(e.hurtSlot);if(part){const local=Vector.rotate({x:e.hurtX,y:e.hurtY},part.angle),tx=part.position.x+local.x,ty=part.position.y+local.y,both=e.hurtSlot<=4;let done=0;
@@ -423,7 +435,7 @@
     }
     // Two-link reach: the upper arm points short of the target by alpha and the elbow makes up the rest. The elbow only bends its own way, which picks the solution.
     reach(want,chest,arm,tx,ty,flip,power) {
-      const d=clamp(Math.hypot(tx-arm.sx,ty-arm.sy),Math.abs(ARM_UPPER-ARM_FORE)+2,ARM_UPPER+ARM_FORE-2),bend=arm.side*flip,beta=bend*(Math.PI-Math.acos(clamp((ARM_UPPER**2+ARM_FORE**2-d*d)/(2*ARM_UPPER*ARM_FORE),-1,1)));
+      const d=clamp(Math.hypot(tx-arm.sx,ty-arm.sy),Math.abs(ARM_UPPER-ARM_FORE)+2,ARM_UPPER+ARM_FORE-2),bend=-flip,beta=bend*(Math.PI-Math.acos(clamp((ARM_UPPER**2+ARM_FORE**2-d*d)/(2*ARM_UPPER*ARM_FORE),-1,1)));
       const alpha=Math.atan2(ARM_FORE*Math.sin(beta),ARM_UPPER+ARM_FORE*Math.cos(beta)),aim=Math.atan2(-(tx-arm.sx),ty-arm.sy)-alpha,A=want.angle,P=want.power;
       A[arm.sh]=wrap(aim-chest.angle)*flip;A[arm.sh+1]=beta*flip;A[arm.sh+2]=0;P[arm.sh]=P[arm.sh+1]=power;want.armsFree=true;
     }
@@ -444,17 +456,16 @@
     // Crawling: belly down, head the way it is going. Each good arm reaches past the head, plants, and pulls; the pull on the body is reacted on the planted hand,
     // which is pressed into the floor for grip, so it is all internal. It crawls away from what last hurt it for a few seconds, then lies still.
     crawl(e,want,chest,rung,seconds) {
-      e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=e.flinchDir||(chest.plugin.flip?-1:1);if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);return 0;}e.idle=false; // nothing to flee: it lies there slack, and the rest logic can let it sleep
+      // A body seen from the side cannot turn round, and elbows only bend one way, so it crawls the way it faces, propped on its forearms. With nothing to flee it lies slack and the rest logic lets it sleep.
+      e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=chest.plugin.flip?-1:1;if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);return 0;}e.idle=false;
       const A=want.angle,P=want.power,period=rung==='drag'?CRAWL_PERIOD*1.4:CRAWL_PERIOD,mass=this.carried(e,chest),weight=mass*.001*Math.max(this.gravity,.2)*e.effort;
-      for(let k=0;k<2;k++){const upper=e.bodies.find(b=>b.plugin.slot===(k?8:5)),fore=upper&&e.bodies.find(b=>b.plugin.slot===(k?9:6));if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||!this.joints.some(c=>c.plugin.joint&&c.bodyB===fore))continue;
-        // Arm targets are world directions (forward-and-down to reach, back-and-down to finish the pull), turned into shoulder angles against the chest. The rig is a front view laid on its side,
-        // so one arm is on the floor side and its shoulder limit stops it short of a full reach; it still paddles, and the far arm does the long strokes.
-        const side=k?1:-1,phase=((this.time/period)+(k?.5:0))%1,sh=k?8:5,mirror=upper.plugin.flip?-1:1,shoulder=world=>wrap(world-chest.angle)*mirror;
-        const hand=e.bodies.find(b=>b.plugin.slot===sh+2);
-        if(phase<.45){A[sh]=shoulder(-d*1.15);A[sh+1]=side*.15;P[sh]=P[sh+1]=4;const tip=hand||fore;if(!tip.isStatic&&!chest.isStatic){tip.force.y-=CRAWL_LIFT*weight;chest.force.y+=CRAWL_LIFT*weight;}} // reach out past the head, hand lifted clear so it does not scrape the body backwards
-        else{const pull=(phase-.45)/.55;A[sh]=shoulder(-d*1.15+d*1.9*pull);A[sh+1]=side*(.15+.6*pull);P[sh]=6;P[sh+1]=4;         // plant and drag the body up to the hand
-          const grip=hand&&this.touching.has(hand)?hand:this.touching.has(fore)?fore:null;
-          if(grip&&!grip.isStatic&&!chest.isStatic&&chest.velocity.x*d<CRAWL_SPEED){ /* no faster than a crawl, however light the body has become */ grip.force.y+=CRAWL_PRESS*weight;chest.force.y-=CRAWL_PRESS*weight;grip.force.x-=d*CRAWL_PULL*weight;chest.force.x+=d*CRAWL_PULL*weight;}}}
+      for(let k=0;k<2;k++){const sh=k?8:5,upper=e.bodies.find(b=>b.plugin.slot===sh),fore=upper&&e.bodies.find(b=>b.plugin.slot===sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||!this.joints.some(c=>c.plugin.joint&&c.bodyB===fore))continue;
+        // Arm targets are world directions, turned into joint angles: the forearm lies along the floor pointing ahead, and the upper arm sweeps from "elbow out in front" to "elbow under the shoulder", which drags the chest forward over the planted forearm.
+        const phase=((this.time/period)+(k?.5:0))%1,reach=phase<.4,sweep=reach?1-phase/.4:(phase-.4)/.6,upperWorld=-d*(1.15-.95*sweep),foreWorld=-d*(reach?1.85:1.55);
+        A[sh]=wrap(upperWorld-chest.angle)*d;A[sh+1]=wrap(foreWorld-upperWorld)*d;P[sh]=reach?3:6;P[sh+1]=4;
+        if(reach){if(!fore.isStatic&&!chest.isStatic){fore.force.y-=CRAWL_LIFT*weight;chest.force.y+=CRAWL_LIFT*weight;}continue;} // lifted clear on the way forward, so it does not scrape the body back
+        const hand=e.bodies.find(b=>b.plugin.slot===sh+2),grip=this.touching.has(fore)?fore:hand&&this.touching.has(hand)?hand:null;
+        if(grip&&!grip.isStatic&&!chest.isStatic&&chest.velocity.x*d<CRAWL_SPEED){ /* no faster than a crawl, however light the body has become */ grip.force.y+=CRAWL_PRESS*weight;chest.force.y-=CRAWL_PRESS*weight;grip.force.x-=d*CRAWL_PULL*weight;chest.force.x+=d*CRAWL_PULL*weight;}}
       return d;
     }
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
@@ -462,9 +473,9 @@
     balance(e,rung='stand'){
       const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],pelvis=part('pelvis')[0];if(!chest)return;
       const free=b=>!b.isStatic&&this.drag?.bodyB!==b,tilt=wrap(chest.angle),human=e.kind==='human',seconds=1/120;
-      // Muscles need something to push against. Off the ground (carried, thrown, falling) the body only keeps a little tone, so it dangles from the hand that holds it;
-      // after a moment in the air its strength is gone too, so it crumples on landing and then gets up.
-      const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);e.airTime=supported?0:(e.airTime||0)+seconds;if(e.airTime>AIR_LIMP)e.effort=0;const tone=supported?1:AIR_TONE;
+      // Off the ground (carried, thrown, falling) the joints keep most of their tone, so a carried body holds itself together instead of folding like a rag;
+      // what it loses is the pull toward upright, which needs the ground: it hangs and swings from wherever it is held.
+      const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);const tone=supported?1:AIR_TONE;
       // What is holding the body up on this rung, how high it should hold the chest, and whether it is down and has to get up first.
       let support=this.support,height=0,uprightness=1,liftScale=1,base=POSES[rung]||POSES.stand;support.length=0;
       // A badly hurt leg is spared if the other can take the weight: it is drawn up, and its foot is not stood on.
@@ -497,7 +508,7 @@
         // Damping grows with the root of the strength: scaled linearly, the strong leg joints end up over-damped for a 120 Hz explicit step and chatter.
         const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
       // Two parts answer to the world rather than to a parent: the chest holds itself upright (or, crawling, level with the ground), and planted feet hold themselves flat. Both push against the ground through the limbs.
-      const lean=crawlDir?crawlDir*1.35:0;if(free(chest)&&(uprightness>0||crawlDir))chest.torque+=(clamp(wrap(lean-chest.angle),-.5,.5)*.0011*(crawlDir?1.5:uprightness)-chest.angularVelocity*.0022)*chest.inertia*vigour;
+      const lean=crawlDir?crawlDir*1.2:0;if(free(chest)&&(uprightness>0||crawlDir))chest.torque+=(clamp(wrap(lean-chest.angle),-.5,.5)*.0011*(crawlDir?1.5:uprightness)*(supported?1:AIR_UPRIGHT)-chest.angularVelocity*.0022)*chest.inertia*vigour;
       if(rung==='stand')for(const f of support)if(f.plugin.part==='foot'&&free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
       // Only what is really braced against something may take the body's weight. A light shin that is merely brushing the floor would be shot downward by it; a part already moving down is not holding anything up.
       for(let i=support.length-1;i>=0;i--)if(support[i].velocity.y>BRACED||support[i].speed>BRACED*3)support.splice(i,1);
@@ -524,6 +535,10 @@
     }
     removeEntity(body){const e=this.getEntity(body);if(e)for(const b of [...e.bodies])this.removeBody(b);}
     clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
+    // Toolbar housekeeping.
+    clearFire(){let n=0;for(const b of this.bodies){const p=b.plugin;if(p.burning||p.heat>this.settings.ambient+5){if(p.burning)n++;p.burning=false;p.heat=this.settings.ambient;delete p.fuse;}}for(const p of this.particles)if(p.type==='ember'||p.type==='smoke'||p.type==='fire')p.life=0;return n;}
+    clearDead(){let n=0;for(const e of [...this.entities]){const dead=e.blood!==undefined?!e.alive:e.kind==='debris';if(!dead)continue;n++;for(const b of [...e.bodies])this.removeBody(b);}this.stains.length=0;return n;}
+    clearObjects(){let n=0;for(const e of [...this.entities]){if(e.blood!==undefined||e.kind==='debris'&&e.bodies.some(b=>b.plugin.part))continue;n++;for(const b of [...e.bodies])this.removeBody(b);}for(const c of this.joints.filter(c=>c.plugin.rope&&!c.bodyA&&!c.bodyB))Composite.remove(this.world,c);return n;}
     freeze(body){if(!body)return;Body.setStatic(body,!body.isStatic);return body.isStatic;}
     beginDrag(body,point) {
       this.endDrag();if(!body)return;if(body.plugin.heldBy!==undefined)this.release(body); // grabbing a held thing takes it out of the hand
@@ -536,7 +551,9 @@
       while(queue.length){const current=queue.shift();for(const c of joints){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!connected.has(other)){connected.add(other);queue.push(other);}}}
       for(const b of connected)Body.translate(b,delta);
     }
-    endDrag(){if(this.drag){if(this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,0);Composite.remove(this.world,this.drag);}this.drag=null;this.dragAngle=null;} // let go without spin, so it leaves the hand at the chosen angle
+    endDrag(throwVelocity){if(this.drag&&throwVelocity&&!this.drag.bodyB.isStatic){const v={x:clamp(throwVelocity.x,-THROW_MAX,THROW_MAX),y:clamp(throwVelocity.y,-THROW_MAX,THROW_MAX)},held=this.drag.bodyB;
+      for(const b of this.connected(held,this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce)))if(!b.isStatic)Body.setVelocity(b,b===held?v:Vector.add(Vector.mult(b.velocity,.4),Vector.mult(v,.6)));}
+      if(this.drag){if(this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,0);Composite.remove(this.world,this.drag);}this.drag=null;this.dragAngle=null;} // let go without spin, so it leaves the hand at the chosen angle
     // Rotating a held body sets a target angle that the grab keeps steering to, so it stays put when the key is released.
     rotate(body,amount,immediate=false){
       if(!body)return;const held=this.drag?.bodyB===body;
@@ -621,24 +638,19 @@
     addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
     // Blood that lands on the floor joins a pool if one is there. Pools grow by area, up to a limit, instead of stacking dots.
     pool(x,r,oil) {
-      const stains=this.stains;for(let i=stains.length-1;i>=0;i--){const st=stains[i];if(st.wall||st.scorch||st.smear||st.print||!!st.oil!==!!oil||Math.abs(st.x-x)>st.r+4)continue;
+      const stains=this.stains;for(let i=stains.length-1;i>=0;i--){const st=stains[i];if(st.wall||st.scorch||!!st.oil!==!!oil||Math.abs(st.x-x)>st.r+4)continue;
         st.r=Math.min(POOL_MAX,Math.sqrt(st.r*st.r+r*r*.55));st.x+=(x-st.x)*.04;st.wet=1;st.age=0;return st;}
       return this.addStain({x,y:this.groundY-1,r,wet:1,age:0,oil:oil||undefined});
     }
-    // Thirty times a second: blood dries, old stains fade out, the count is capped, and whatever drags through a wet pool smears it or tracks it away.
+    // Thirty times a second: blood dries, old stains fade out, and the count is capped.
     stainsTick(dt,bodies) {
       const stains=this.stains,life=this.settings.stainLifetime;let keep=0;
       for(let i=0;i<stains.length;i++){const st=stains[i];if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);st.age=(st.age||0)+dt;if(!life||st.age<life)stains[keep++]=st;}stains.length=keep;
       // A pool that has spread over smaller floor stains swallows them.
-      for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.smear||big.print||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.smear||st.print||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
+      for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
       keep=0;for(let i=0;i<stains.length;i++)if(!stains[i].gone)stains[keep++]=stains[i];stains.length=keep;
       const over=stains.length-this.settings.maxStains;if(over>0)stains.splice(0,over);
       for(const b of bodies){const p=b.plugin;if(p.stains)for(const st of p.stains)if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);
-        if(b.bounds.max.y<this.groundY-2||b.isStatic)continue;const foot=p.part==='foot',x=b.position.x;
-        let wetPool=null;for(let i=stains.length-1;i>=0&&!wetPool;i--){const st=stains[i];if(!st.wall&&!st.scorch&&!st.smear&&!st.print&&st.wet>.4&&st.r>7&&Math.abs(st.x-x)<st.r)wetPool=st;}
-        if(wetPool){if(foot)p.wetFeet=4;if(Math.abs(b.velocity.x)>1.2&&this.settings.decals){const last=this.smears.get(b);if(last&&last.wet>.3&&Math.abs(last.x-x)<last.r+10){const from=Math.min(last.x-last.r,x-3),to=Math.max(last.x+last.r,x+3);last.x=(from+to)/2;last.r=Math.min(90,(to-from)/2);}
-            else this.smears.set(b,this.addStain({x,y:this.groundY-1,r:5,wet:wetPool.wet*.8,age:0,smear:true,oil:wetPool.oil}));this.stain(b,{x,y:b.bounds.max.y-1},2.5,wetPool.oil);}}
-        else if(foot&&p.wetFeet>0&&this.touching.has(b)&&Math.abs(x-(p.printX??-1e9))>16&&this.settings.decals){p.printX=x;this.addStain({x,y:this.groundY-1,r:6,wet:.5*p.wetFeet/4,age:0,print:true});p.wetFeet--;}
       }
     }
     // A part's bleeding is the sum of its wounds and stumps.
@@ -848,9 +860,12 @@
       }
       if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,clamp(wrap(this.dragAngle-this.drag.bodyB.angle)*.35,-.3,.3));
       // Limits are equal-and-opposite angular impulses: momentum-neutral, so a body pinned against the floor cannot walk itself sideways.
-      for(const c of this.joints){if(!c.plugin.joint||c.plugin.min===undefined)continue;const a=c.bodyA,b=c.bodyB,slack=this.fractured(a)||this.fractured(b)?FRACTURE_SLACK:0,relative=wrap(b.angle-a.angle),error=relative-clamp(relative,c.plugin.min-slack,c.plugin.max+slack);if(Math.abs(error)<.005)continue;
+      for(const c of this.joints){if(!c.plugin.joint||c.plugin.min===undefined)continue;const a=c.bodyA,b=c.bodyB,slack=this.fractured(a)||this.fractured(b)||c.plugin.broken?FRACTURE_SLACK:0,relative=wrap(b.angle-a.angle),error=relative-clamp(relative,c.plugin.min-slack,c.plugin.max+slack);
+        // Breaking takes force from outside: the cursor wrenching the body about, or a blow in the last moments. A body folding under its own weight, or pushing itself up off its face, does not snap its own neck.
+        const limp=this.getEntity(a)?.alive===false;if(Math.abs(error)>BREAK_BEND&&!slack&&(limp||this.forced(a))){c.plugin.strain=(c.plugin.strain||0)+seconds;if(c.plugin.strain>(limp&&!this.forced(a)?BREAK_TIME*8:BREAK_TIME))this.snap(c);} /* a dead body that lands with a limb folded the wrong way under it breaks it too, given a moment */ else if(c.plugin.strain)c.plugin.strain=0;
+        if(Math.abs(error)<.005)continue;
         const ia=a.isStatic?0:a.inverseInertia,ib=b.isStatic?0:b.inverseInertia,total=ia+ib;if(!total)continue;
-        const velocity=b.angularVelocity-a.angularVelocity,target=clamp(-error*LIMIT_GAIN,-LIMIT_SPEED,LIMIT_SPEED),impulse=target-velocity;
+        const velocity=b.angularVelocity-a.angularVelocity,target=clamp(-error*LIMIT_GAIN,-LIMIT_SPEED,LIMIT_SPEED),impulse=(target-velocity)*LIMIT_SHARE; // only part of the correction per step: the muscles across the same joint damp it too, and together a full correction overshoots and rings
         if(Math.sign(impulse)===Math.sign(error))continue; // already returning faster than required
         if(ia)Body.setAngularVelocity(a,a.angularVelocity-impulse*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity+impulse*ib/total);
       }
@@ -864,10 +879,11 @@
         e.restTime=held||peak>3?0:peak<1?(e.restTime||0)+seconds:Math.max(0,(e.restTime||0)-seconds*10);
         if(e.restTime<REST_DELAY){e.pin=null;continue;}
         const contacts=e.bodies.filter(b=>this.touching.has(b)).length;
-        e.pin??={contacts,gravity:this.gravity,pose:e.bodies.map(b=>({b,x:b.position.x,y:b.position.y,angle:b.angle}))};
+        if(e.pin&&e.pin.count!==e.bodies.length){e.pin=null;e.restTime=0;continue;} // a part came or went (graft, reattach, regrow, dismemberment): the saved pose is stale
+        e.pin??={contacts,count:e.bodies.length,gravity:this.gravity,pose:e.bodies.map(b=>({b,x:b.position.x,y:b.position.y,angle:b.angle}))};
         // Wakes: support taken away, or gravity changed. Hits, shoves and drags clear restTime where they happen.
         if(contacts<e.pin.contacts*.6||this.gravity!==e.pin.gravity){e.restTime=0;e.pin=null;continue;}
-        for(const {b,x,y,angle} of e.pin.pose){if(b.isStatic)continue;Body.setPosition(b,{x,y});Body.setAngle(b,angle);Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}
+        for(const {b,x,y,angle} of e.pin.pose){if(b.isStatic||b.plugin.entityId!==e.id)continue;Body.setPosition(b,{x,y});Body.setAngle(b,angle);Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}
       }
       for(const c of [...this.joints])if(c.plugin.joint&&Constraint.currentLength(c)>c.plugin.breakForce*this.settings.jointStrength)this.sever(c);
       this.blades();this.hands();
@@ -904,7 +920,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,paralysed:e.paralysed,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');

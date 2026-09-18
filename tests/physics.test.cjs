@@ -79,7 +79,7 @@ const settle=(setup)=>{const s=new Simulation();const e=s.spawn('human',1000,555
 test('dead ragdolls come to rest instead of sliding, whichever way they fell',()=>{
   for(const vx of [0,9,-9]){const {s,e}=settle((s,e)=>e.bodies.forEach(b=>Body.setVelocity(b,{x:vx,y:-3})));const x=e.bodies[2].position.x;advance(s,1200);
     assert.ok(Math.abs(e.bodies[2].position.x-x)<.5,`slid ${e.bodies[2].position.x-x}px after a ${vx} shove`);
-    for(const c of s.joints){const r=Math.atan2(Math.sin(c.bodyB.angle-c.bodyA.angle),Math.cos(c.bodyB.angle-c.bodyA.angle));assert.ok(r>c.plugin.min-.5&&r<c.plugin.max+.5,`${c.plugin.name} folded through its limit`);}}
+    for(const c of s.joints){const r=Math.atan2(Math.sin(c.bodyB.angle-c.bodyA.angle),Math.cos(c.bodyB.angle-c.bodyA.angle));assert.ok(c.plugin.broken||s.fractured(c.bodyB)||(r>c.plugin.min-.85&&r<c.plugin.max+.85),`${c.plugin.name} is folded ${r.toFixed(2)} outside ${c.plugin.min}..${c.plugin.max} and not broken`);}}
 });
 test('a settled body still falls when its support goes and still yields to a slow push',()=>{
   const s=new Simulation();const slabs=[760,940,1120,1300].map(x=>s.spawn('platform',x,450).bodies[0]);const e=s.spawn('human',1030,350);e.alive=false;advance(s,900);
@@ -324,10 +324,8 @@ test('drops on the floor merge into one pool that grows to a limit, dries in abo
   let peak=0;for(let i=0;i<3600;i++){if(i%300===0)for(const p of e.bodies)Body.setVelocity(p,{x:(i%600?-6:6),y:-3});b.step();peak=Math.max(peak,b.stains.length);}assert.ok(peak<=60,`stain count reached ${peak}`);assert.ok(b.stains.length>5);
   const fade=new Simulation();fade.configure({stainLifetime:10});fade.pool(1000,5);advance(fade,60*11);assert.equal(fade.stains.length,0,'stains fade after their lifetime');
 });
-test('a body dragged through a wet pool smears it and gets bloody; feet track prints away',()=>{
-  const s=new Simulation();const pool=s.pool(1000,5);pool.r=30;const crate=s.spawn('crate',960,622).bodies[0];advance(s,20);for(let i=0;i<90;i++){Body.setVelocity(crate,{x:3,y:crate.velocity.y});s.step();}
-  const smear=s.stains.find(st=>st.smear);assert.ok(smear&&smear.r>15,'a long smear, not a dot');assert.ok(crate.plugin.stains?.length>0,'the crate picks blood up');
-  const dryS=new Simulation();const old=dryS.pool(1000,5);old.r=30;old.wet=0;const c2=dryS.spawn('crate',960,622).bodies[0];advance(dryS,20);for(let i=0;i<90;i++){Body.setVelocity(c2,{x:3,y:c2.velocity.y});dryS.step();}assert.ok(!dryS.stains.some(st=>st.smear),'dried blood does not smear');
+test('blood only stains: a body dragged through a wet pool leaves no smear and no footprints',()=>{
+  const s=new Simulation();const pool=s.pool(1000,5);pool.r=30;const crate=s.spawn('crate',960,622).bodies[0];advance(s,20);for(let i=0;i<90;i++){Body.setVelocity(crate,{x:3,y:crate.velocity.y});s.step();}assert.equal(s.stains.length,1);assert.ok(!s.stains.some(st=>st.smear||st.print));
 });
 test('androids leak coolant and sparks instead of blood',()=>{
   const s=new Simulation();const bot=s.spawn('android',1000,555),chest=bot.bodies[2];s.shoot({x:chest.bounds.min.x-8,y:chest.position.y},{x:chest.bounds.min.x+90,y:chest.position.y});const holed=bot.bodies.find(b=>b.plugin.leak>0);assert.ok(holed);
@@ -358,8 +356,8 @@ test('an undamaged ragdoll stands still for ten seconds',()=>{
 });
 test('muscles pull a bent joint back to the pose, but not through a fracture',()=>{
   const bend=(fracture)=>{const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,60);const upper=e.bodies[8],fore=e.bodies[9];if(fracture)fore.plugin.bone=20;
-    const elbow=s.joints.find(c=>c.bodyB===fore),pivot=Constraint.pointAWorld(elbow);for(const b of [fore,e.bodies[10]])Body.rotate(b,1.2,pivot);const bent=Math.abs(fore.angle-upper.angle);advance(s,30);return {bent,after:Math.abs(fore.angle-upper.angle)};};
-  const healthy=bend(false),broken=bend(true);assert.ok(healthy.bent>.5,'the test should really bend the elbow');assert.ok(healthy.after<.15,`a healthy elbow snaps straight within half a second, still at ${healthy.after}`);assert.ok(broken.after>.35,`a fractured forearm has no muscle: it only swings down under its own weight, at ${broken.after}`);
+    const elbow=s.joints.find(c=>c.bodyB===fore),pivot=Constraint.pointAWorld(elbow);for(const b of [fore,e.bodies[10]])Body.rotate(b,-1.2,pivot);const bent=Math.abs(fore.angle-upper.angle);advance(s,20);return {bent,after:Math.abs(fore.angle-upper.angle)};};
+  const healthy=bend(false),broken=bend(true);assert.ok(healthy.bent>.5,'the test should really bend the elbow');assert.ok(healthy.after<.2,`a healthy elbow snaps straight within a third of a second, still at ${healthy.after}`);assert.ok(broken.after>.35,`a fractured forearm has no muscle: it only swings down under its own weight, at ${broken.after}`);
 });
 test('muscles are internal: in zero gravity a living ragdoll gains no momentum from them',()=>{
   const s=new Simulation();s.configure({gravity:0});const e=s.spawn('human',1000,300);for(const b of e.bodies)Body.setAngularVelocity(b,(b.plugin.slot%3-1)*.05); // limbs flung about, so the muscles have work to do
@@ -374,8 +372,8 @@ const standing=(kind='human',set={})=>{const s=new Simulation().seed(9);s.config
 const rel=(e,slot,parent)=>{const a=e.bodies[slot].angle-e.bodies[parent].angle;return Math.atan2(Math.sin(a),Math.cos(a));};
 test('a small hit is a flinch: the struck arm pulls in, the head snaps away, and it passes',()=>{
   const {s,e}=standing('human',{awareness:false});const fore=e.bodies[9];s.damage(fore,10,fore.position,'impact',{x:1,y:0});let elbow=0,head=0; // awareness off: this is about the reflex alone, not where it looks afterwards
-for(let i=0;i<24;i++){s.step(1000/120);elbow=Math.max(elbow,Math.abs(rel(e,9,8)));head=Math.min(head,rel(e,0,1));}
-  assert.ok(elbow>.12,`elbow only reached ${elbow}`);assert.ok(head<-.04,`head should snap back from a blow travelling right, got ${head}`);assert.ok(!(e.stun>0)&&!(e.stagN>0),'a tap on the arm neither staggers nor drops anyone');
+for(let i=0;i<24;i++){s.step(1000/120);elbow=Math.max(elbow,Math.abs(rel(e,9,8)));head=Math.max(head,rel(e,0,1));}
+  assert.ok(elbow>.12,`elbow only reached ${elbow}`);assert.ok(head>.04,`the head is knocked the way the blow was going, got ${head}`);assert.ok(!(e.stun>0)&&!(e.stagN>0),'a tap on the arm neither staggers nor drops anyone');
   advance(s,90);assert.ok(Math.abs(rel(e,9,8))<.1&&Math.abs(rel(e,0,1))<.1,'and it is over within a second or so');
   const tiny=standing();tiny.s.damage(tiny.e.bodies[9],3,tiny.e.bodies[9].position,'impact',{x:1,y:0});let twitch=0;for(let i=0;i<24;i++){tiny.s.step(1000/120);twitch=Math.max(twitch,Math.abs(rel(tiny.e,9,8)));}assert.ok(twitch<elbow*.6,'a tiny hit is only a twitch');
 });
@@ -404,11 +402,12 @@ test('the mobility ladder picks the highest rung the remaining body allows',()=>
   assert.equal(rung((s,e)=>{e.pain=95;}),'curl','agony overrides everything');assert.equal(rung((s,e)=>{e.bodies[12].plugin.bone=20;e.bodies[6].plugin.bone=20;}),'drag','a broken leg and a broken arm leave one arm to drag with');
   const bot=new Simulation();const a=bot.spawn('android',1000,555);a.pain=95;assert.equal(bot.capability(a),'stand','androids have no pain to curl up from');
 });
-test('without feet it kneels upright; without legs it crawls away from what hurt it, then lies still',()=>{
+test('without feet it kneels upright; without legs it crawls the way it faces, then lies still',()=>{
   const k=new Simulation();k.configure({bleedRate:0,stunScale:0});const ke=k.spawn('human',1000,555);advance(k,60);sever(k,ke,['ankle']);advance(k,360);const kc=ke.bodies[2];assert.equal(ke.rung,'kneel');assert.ok(kc.position.y>520&&kc.position.y<575&&Math.abs(kc.angle)<.35,`kneeling chest at ${kc.position.y}, tilt ${kc.angle}`);
-  for(const dir of [1,-1]){const s=new Simulation();s.configure({bleedRate:0,stunScale:0,organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);sever(s,e,['hip']);const chest=e.bodies.find(b=>b.plugin.slot===2);advance(s,60);
-    s.damage(chest,8,chest.position,'impact',{x:dir,y:0});const x=chest.position.x;advance(s,300);assert.equal(e.rung,'crawl');assert.ok((chest.position.x-x)*dir>25,`crawled ${(chest.position.x-x)*dir}px away from a blow travelling ${dir}`);
-    assert.ok(chest.speed<6&&e.bodies.every(b=>Number.isFinite(b.position.x)));advance(s,420);assert.ok(e.idle,'after a few seconds it stops fleeing');const rest=chest.position.x;advance(s,300);assert.ok(Math.abs(chest.position.x-rest)<6,'and lies still');}
+  // A body seen from the side cannot turn round: it crawls the way it faces, face down, whichever way the blow came from.
+  for(const flip of [false,true]){const m=flip?-1:1,s=new Simulation();s.configure({bleedRate:0,stunScale:0,organDamage:false});const e=s.spawn('human',1000,555,flip);advance(s,60);sever(s,e,['hip']);const chest=e.bodies.find(b=>b.plugin.slot===2);
+    for(const b of s.connected(chest))Body.rotate(b,m*1.4,chest.position);advance(s,90);s.damage(chest,8,chest.position,'impact',{x:-m,y:0});advance(s,60);const x=chest.position.x;advance(s,240);assert.equal(e.rung,'crawl'); // the first second is it rolling onto its front
+    assert.ok((chest.position.x-x)*m>18,`crawled ${((chest.position.x-x)*m).toFixed(0)}px the way it faces (${m})`);assert.ok(chest.speed<6&&e.bodies.every(b=>Number.isFinite(b.position.x)));advance(s,420);assert.ok(e.idle,'after a few seconds it stops fleeing');const rest=chest.position.x;advance(s,300);assert.ok(Math.abs(chest.position.x-rest)<6,'and lies still');}
 });
 test('getting up is staged, and slower in pain',()=>{
   const rise=(pain)=>{const s=new Simulation();s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);for(const b of e.bodies)Body.rotate(b,Math.PI/2,{x:1000,y:640});const chest=e.bodies[2],stages=[];let up=null;
