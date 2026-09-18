@@ -350,3 +350,21 @@ test('blood sprays along the blow: an exit wound throws it forward, an entry wou
   const flow=(forward)=>{const s=new Simulation();s.spray({x:1000,y:300},{x:1,y:0},200,6,forward);return s.particles.reduce((n,p)=>n+p.vx,0)/s.particles.length;};
   assert.ok(flow(1)>2,'exit: forward');assert.ok(flow(-.35)<flow(.6),'an entry wound sends more back than a cut does');const s=new Simulation();s.spray({x:0,y:0},null,20,5,1);assert.equal(s.particles.length,20,'no direction: a plain burst');
 });
+// ---- reaction spec, section 1: pose-target muscles
+test('an undamaged ragdoll stands still for ten seconds',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,120);const chest=e.bodies[2],x=chest.position.x;let low=1e9,high=-1e9;for(let i=0;i<600;i++){s.step();low=Math.min(low,chest.position.y);high=Math.max(high,chest.position.y);}
+  assert.ok(high-low<1.5,`chest height wandered ${high-low}px`);assert.ok(Math.abs(chest.position.x-x)<2,`drifted ${chest.position.x-x}px`);assert.ok(chest.speed<.3&&Math.abs(chest.angle)<.05);assert.equal(s.joints.length,16);
+});
+test('muscles pull a bent joint back to the pose, but not through a fracture',()=>{
+  const bend=(fracture)=>{const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,60);const upper=e.bodies[8],fore=e.bodies[9];if(fracture)fore.plugin.bone=20;
+    const elbow=s.joints.find(c=>c.bodyB===fore),pivot=Constraint.pointAWorld(elbow);for(const b of [fore,e.bodies[10]])Body.rotate(b,1.2,pivot);const bent=Math.abs(fore.angle-upper.angle);advance(s,30);return {bent,after:Math.abs(fore.angle-upper.angle)};};
+  const healthy=bend(false),broken=bend(true);assert.ok(healthy.bent>.5,'the test should really bend the elbow');assert.ok(healthy.after<.15,`a healthy elbow snaps straight within half a second, still at ${healthy.after}`);assert.ok(broken.after>.35,`a fractured forearm has no muscle: it only swings down under its own weight, at ${broken.after}`);
+});
+test('muscles are internal: in zero gravity a living ragdoll gains no momentum from them',()=>{
+  const s=new Simulation();s.configure({gravity:0});const e=s.spawn('human',1000,300);for(const b of e.bodies)Body.setAngularVelocity(b,(b.plugin.slot%3-1)*.05); // limbs flung about, so the muscles have work to do
+  const momentum=()=>e.bodies.reduce((m,b)=>({x:m.x+b.velocity.x*b.mass,y:m.y+b.velocity.y*b.mass}),{x:0,y:0});const before=momentum();advance(s,300);const after=momentum(),mass=e.bodies.reduce((n,b)=>n+b.mass,0);
+  assert.ok(Math.hypot(after.x-before.x,after.y-before.y)/mass<.05,`centre of mass sped up by ${Math.hypot(after.x-before.x,after.y-before.y)/mass} px/step`);for(const b of e.bodies)assert.ok(b.speed<20&&Number.isFinite(b.position.x));
+});
+test('the pose blend is part of a save',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);assert.equal(e.poseNow.angle.length,17);const r=new Simulation();r.restore(JSON.parse(JSON.stringify(s.serialize())));assert.deepEqual(r.entities[0].poseNow,JSON.parse(JSON.stringify(e.poseNow)));advance(r,120);assert.ok(r.bodies[2].position.y<505);
+});

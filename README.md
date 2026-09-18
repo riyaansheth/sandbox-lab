@@ -33,6 +33,7 @@ npm run dev
 - Each part is painted once into a cached sprite and repainted only when its damage changes, so ten wounded ragdolls cost ten ragdolls' worth of drawImage
 - Gibs: crushed and blasted limbs throw flesh chunks and bone fragments that trail blood, capped at 36 and gone after ~14 s. Blood sprays along the blow: forward from an exit wound, mostly back from an entry wound
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
+- Muscles: every joint has a PD muscle pulling its two parts toward a pose's relative angle, equal and opposite, so muscles alone can never move or turn the body as a whole (tested in zero gravity). Poses are data tables, blended over a quarter of a second and layered. Only the chest (upright) and planted feet (flat) answer to the world; planted ankles give. Strength scales with each part's health and bone, and with blood, pain and consciousness
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
 - Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
 - Damage-driven collapse and breakable joints

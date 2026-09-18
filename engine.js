@@ -119,6 +119,15 @@
   const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
   const FRACTURE=50,FRACTURE_SLACK=.7; // bone at or below this is fractured; a fractured limb's joints bend this much further
+  // ---- Muscles. A pose is a table of joint targets, keyed by the slot of the joint's outer part: [angle relative to the parent part, strength multiplier].
+  // Angles are for a right-facing body and are mirrored for a left-facing one. Anything a pose does not mention is [0, 1]: straight, full strength.
+  // Arms are mirror images of each other (the left elbow bends negative, the right positive), so arm entries come in pairs.
+  const POSES={
+    stand:{5:[.05,1],8:[-.05,1]},
+    limp:Object.fromEntries(Array.from({length:17},(_,slot)=>[slot,[0,0]]))        // every muscle off: unconscious or dead
+  };
+  // How strong each joint's muscles are next to each other, and how hard any of them can pull: the error a muscle "sees" is capped, which caps its torque.
+  const MUSCLE={atlas:.5,neck:.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.6,POSE_BLEND=.25;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
   const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
   const defaults=()=>Object.fromEntries(SETTINGS.map(s=>[s.id,s.def]));
@@ -138,7 +147,7 @@
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.smears=new WeakMap();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.smears=new WeakMap();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -315,6 +324,15 @@
       if(set.slowHealing){if(human){e.blood=Math.min(100,e.blood+seconds*.8);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*.4);}
         for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&Math.random()<seconds*.06)p.wounds.shift();}}
     }
+    // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
+    strengthOf(b){return this.fractured(b)?0:clamp((b.plugin.hp??100)/50,.2,1);}
+    // Blend toward the wanted pose. Layers are applied in order, later ones overriding the joints they mention; an armed hand's arm is aimed last of all.
+    pose(e,layers,aiming,chest,down,seconds) {
+      const now=e.poseNow??={angle:new Array(17).fill(0),power:new Array(17).fill(1)},want=this.poseWant,k=1-Math.exp(-seconds/POSE_BLEND);want.angle.fill(0);want.power.fill(1);
+      for(const layer of layers)for(const slot in layer){want.angle[slot]=layer[slot][0];want.power[slot]=layer[slot][1];}
+      if(!down)for(const b of aiming){const slot=b.plugin.slot,shoulder=slot===5||slot===8;want.angle[slot]=shoulder?-1.45-chest.angle*(b.plugin.flip?-1:1):0;want.power[slot]=shoulder?7:4;} // point the armed arm forward, whatever the chest is doing
+      for(let i=0;i<17;i++){now.angle[i]+=(want.angle[i]-now.angle[i])*k;now.power[i]+=(want.power[i]-now.power[i])*k;}
+    }
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
     // Feet that are not on something produce no lift, so a ragdoll can never fly or hover its way upright.
     balance(e){
@@ -326,10 +344,19 @@
       // The pistol is levelled directly as well: a hand is far too light to hold a pistol's weight level by its own torque.
       const aiming=new Set();for(const hand of part('hand')){const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
         if(!down&&free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
-      for(const b of e.bodies){if(!free(b))continue;const kind=b.plugin.part,foot=kind==='foot',arm=['upper arm','forearm','hand'].includes(kind),aim=aiming.has(b)&&!down;
-        if(this.fractured(b))continue; // a broken limb hangs
-        const strength=(foot?.0024:aim?AIM_STRENGTH:arm?.00015:.0009)*(down&&!arm?GETUP_TORQUE:1)*e.effort*tone,target=aim?(b.plugin.flip?1:-1)*1.45:0; // an armed hand points forward instead of hanging
-        b.torque+=clamp(wrap(target-b.angle),-.5,.5)*b.inertia*strength-b.angularVelocity*b.inertia*(foot?.003:aim?.004:.002);}
+      // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
+      const human=e.kind==='human',vigour=e.effort*tone*(human?clamp((e.blood-25)/50,.25,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.75:1):1);
+      this.pose(e,[POSES.stand],aiming,chest,down,1/120);
+      // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
+      const live=this.joints;for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
+        if(c.plugin.name==='ankle'&&this.touching.has(b))continue; // a planted foot lies flat on the ground whatever the shin does; the ankle gives. Holding it to the shin makes the foot rock on its edge and walk.
+        const limb=Math.min(this.strengthOf(a),this.strengthOf(b)),power=e.poseNow.power[slot]*limb*vigour*(MUSCLE[c.plugin.name]||1);if(power<=0)continue;
+        const target=e.poseNow.angle[slot]*(b.plugin.flip?-1:1),error=clamp(wrap(target-(b.angle-a.angle)),-MUSCLE_REACH,MUSCLE_REACH),ia=free(a)?a.inverseInertia:0,ib=free(b)?b.inverseInertia:0;if(!ia&&!ib)continue;
+        // Damping grows with the root of the strength: scaled linearly, the strong leg joints end up over-damped for a 120 Hz explicit step and chatter.
+        const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
+      // Two parts answer to the world rather than to a parent: the chest holds itself upright, and planted feet hold themselves flat. Both push against the ground through the legs.
+      if(free(chest)&&!this.fractured(chest))chest.torque+=(clamp(wrap(-chest.angle),-.5,.5)*.0011*(down?GETUP_TORQUE:1)-chest.angularVelocity*.0022)*chest.inertia*vigour;
+      for(const f of feet)if(free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
       if(!feet.length||!pelvis||!free(chest))return;
       const mass=e.bodies.reduce((n,b)=>n+b.mass,0),weight=mass*.001*Math.max(this.gravity,.2),footX=feet.reduce((n,f)=>n+f.position.x,0)/feet.length,footY=Math.max(...feet.map(f=>f.position.y));
       const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort;
@@ -704,7 +731,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');
