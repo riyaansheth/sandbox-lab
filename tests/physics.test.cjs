@@ -386,9 +386,9 @@ test('a medium hit staggers with recovery steps and stays up; a big one goes dow
   const lying=standing();lying.e.stun=3;advance(lying.s,90);lying.s.damage(lying.chest,60,lying.chest.position,'impact',{x:1,y:0});assert.ok(lying.e.stun>=3&&!(lying.e.stagN>0),'a body already down is just stunned, it does not try to step');
 });
 test('a falling, conscious ragdoll gets its arms out on the side it is falling to, and lands on them',()=>{
-  for(const dir of [1,-1]){const s=new Simulation();const e=s.spawn('human',1000,330);for(const b of e.bodies)Body.rotate(b,dir*1.35,{x:1000,y:330});let hands=null,body=null,shoulders=null;
-    for(let i=0;i<150;i++){s.step();if(i===20)shoulders=[rel(e,5,2),rel(e,8,2)];if(hands===null&&[6,7,9,10].some(k=>s.touching.has(e.bodies[k])))hands=i;if(body===null&&[0,2].some(k=>s.touching.has(e.bodies[k])))body=i;}
-    assert.ok(e.braceDir===dir);for(const a of shoulders)assert.ok(a*dir<-.6,`arms should reach toward the fall (${dir}), shoulder at ${a}`);assert.ok(hands!==null&&(body===null||hands<body),'hands should reach the ground before the chest or head');}
+  for(const dir of [1,-1]){const s=new Simulation();const e=s.spawn('human',1000,330);for(const b of e.bodies)Body.rotate(b,dir*1.35,{x:1000,y:330});let hands=null,body=null,shoulders=null,side=0;
+    for(let i=0;i<150;i++){s.step();if(i===20){shoulders=[rel(e,5,2),rel(e,8,2)];side=e.braceDir;}if(hands===null&&[6,7,9,10].some(k=>s.touching.has(e.bodies[k])))hands=i;if(body===null&&[0,2].some(k=>s.touching.has(e.bodies[k])))body=i;}
+    assert.equal(side,dir);for(const a of shoulders)assert.ok(a*dir<-.6,`arms should reach toward the fall (${dir}), shoulder at ${a}`);assert.ok(hands!==null&&(body===null||hands<body),'hands should reach the ground before the chest or head');}
   const out=new Simulation();const e=out.spawn('human',1000,330);e.stun=5;for(const b of e.bodies)Body.rotate(b,1.35,{x:1000,y:330});advance(out,40);assert.ok(!(e.bracing>0),'a stunned body does not brace');
 });
 test('androids stagger and brace too, but feel nothing',()=>{
@@ -413,4 +413,36 @@ test('getting up is staged, and slower in pain',()=>{
   const rise=(pain)=>{const s=new Simulation();s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);for(const b of e.bodies)Body.rotate(b,Math.PI/2,{x:1000,y:640});const chest=e.bodies[2],stages=[];let up=null;
     for(let i=0;i<900&&up===null;i++){if(pain)e.pain=pain;s.step();const st=e.rise?e.rise.stage:-1;if(st>=0&&stages[stages.length-1]!==st)stages.push(st);if(chest.position.y<505&&Math.abs(chest.angle)<.3&&!e.rise)up=i/60;}return {stages,up};};
   const fit=rise(0),hurt=rise(60);assert.deepEqual(fit.stages,[0,1,2,3],'gather, push up, knees under, stand');assert.ok(fit.up!==null&&fit.up>1.2,`a staged get-up takes more than a second, took ${fit.up}`);assert.ok(hurt.up===null||hurt.up>fit.up*1.4,`pain should slow it: ${hurt.up} vs ${fit.up}`);
+});
+// ---- reaction spec, section 3: sustained pain behaviour
+const handTo=(s,e,slot)=>{const hand=e.bodies.find(b=>b.plugin.slot===slot),part=e.bodies.find(b=>b.plugin.slot===e.hurtSlot),c=Math.cos(part.angle),n=Math.sin(part.angle);return Math.hypot(hand.position.x-(part.position.x+e.hurtX*c-e.hurtY*n),hand.position.y-(part.position.y+e.hurtX*n+e.hurtY*c));};
+test('a hand goes to the wound: hit on the left arm, the right hand is on it within two seconds',()=>{
+  const {s,e}=standing('human',{bleedRate:0});const arm=e.bodies[5];s.damage(arm,30,{x:arm.position.x,y:arm.position.y+4},'cut',{x:1,y:0});assert.equal(e.hurtSlot,5);const before=handTo(s,e,10);advance(s,120);
+  assert.ok(e.clutching>=1);assert.ok(handTo(s,e,10)<16,`right hand is ${handTo(s,e,10).toFixed(1)}px from the wound (was ${before.toFixed(1)})`);assert.ok(e.bodies[2].position.y<505,'and it stays on its feet');
+  const belly=standing('human',{bleedRate:0});belly.s.damage(belly.e.bodies[3],30,belly.e.bodies[3].position,'stab',{x:1,y:0});advance(belly.s,150);assert.equal(belly.e.clutching,2,'both hands for a wound in the trunk');assert.ok(handTo(belly.s,belly.e,7)<18&&handTo(belly.s,belly.e,10)<18);
+  belly.e.pain=0;belly.e.hurtScore=0;advance(belly.s,120);assert.ok(Math.abs(rel(belly.e,9,8))<.35,'when it stops hurting the hands come away');
+  const off=standing('human',{painReactions:false});off.s.damage(off.e.bodies[5],30,off.e.bodies[5].position,'cut');advance(off.s,120);assert.ok(!off.e.clutching,'pain reactions off: no clutching');
+});
+test('a hurt leg takes less of the load and the body leans over the good one; a very bad one is kept off the floor',()=>{
+  const {s,e,chest}=standing('human',{bleedRate:0,stunScale:0});const over=()=>chest.position.x-(e.bodies[13].position.x+e.bodies[16].position.x)/2;advance(s,30);const x=over();assert.ok(Math.abs(e.loadLeft-.5)<.05,'sound legs share the load');
+  const right=e.bodies[14];right.plugin.hp=55;advance(s,180);assert.ok(e.loadLeft>.7,`left leg should carry most of it, carries ${e.loadLeft}`);assert.ok(over()<x-1.5,`and the body shifts over it: ${over()} vs ${x}`);assert.ok(chest.position.y<505);
+  right.plugin.hp=30;advance(s,240);assert.ok(rel(e,15,14)>.5,'a badly hurt leg is drawn up');assert.ok(chest.position.y<512&&Math.abs(chest.angle)<.25,'and it still stands');
+});
+test('electric shock locks every muscle rigid, then the body goes slack; androids lock too but feel nothing',()=>{
+  for(const kind of ['human','android']){const {s,e,chest}=standing(kind,{organDamage:false});s.shock(chest);assert.ok(e.shockT>0&&!(e.stun>0),'no stun while the current flows');let spread=0;const pose=()=>[6,9,12,15].map(slot=>rel(e,slot,slot-1));const first=pose();
+    for(let i=0;i<30;i++){s.step(1000/120);pose().forEach((a,k)=>spread=Math.max(spread,Math.abs(a-first[k])));}assert.ok(spread<.35,`locked joints moved ${spread}`);advance(s,30);assert.ok(e.stun>0,'then it goes limp');if(kind==='android'){assert.ok(!e.pain);assert.ok(!e.clutching);}}
+});
+test('being on fire hurts more and more, and sets a standing ragdoll staggering about',()=>{
+  const {s,e,chest}=standing('human',{organDamage:false,bleedRate:0});s.ignite(e.bodies[8]);advance(s,60);const early=e.pain;assert.ok(early>3);assert.ok(e.stagN>0||e.stagDir,'it should be stumbling');advance(s,120);assert.ok(e.pain>early+10);
+});
+test('a living ragdoll breathes: the shoulders rise and fall, faster in pain, and the phase is saved',()=>{
+  const swing=(pain)=>{const {s,e}=standing('human',{stunScale:0});let low=9,high=-9,beats=0,last=0;for(let i=0;i<600;i++){if(pain)e.pain=pain;s.step();const a=e.poseNow.angle[5];low=Math.min(low,a);high=Math.max(high,a);if(e.breath<last)beats++;last=e.breath;}return {range:high-low,beats};};
+  const calm=swing(0),hurt=swing(50);assert.ok(calm.range>.03,'visible at rest');assert.ok(calm.beats>=1&&calm.beats<=3,`about 12 breaths a minute at rest, got ${calm.beats} in 10 s`);assert.ok(hurt.beats>calm.beats&&hurt.range>calm.range,'faster and deeper in pain');
+  const {s,e}=standing();advance(s,77);const r=new Simulation();r.restore(JSON.parse(JSON.stringify(s.serialize())));assert.equal(r.entities[0].breath,e.breath);
+  const off=standing('human',{breathing:false});let moved=0;const a0=off.e.poseNow.angle[5];for(let i=0;i<300;i++){off.s.step();moved=Math.max(moved,Math.abs(off.e.poseNow.angle[5]-a0));}assert.ok(moved<.01);
+});
+test('ten ragdolls in pain for thirty seconds: nothing blows up',()=>{
+  const s=new Simulation().seed(11);s.configure({organDamage:false,bleedRate:.2});const all=[];for(let i=0;i<10;i++)all.push(s.spawn(i%4===3?'android':'human',400+i*180,555,i%2===1));advance(s,60);
+  all.forEach((e,i)=>{const hit=e.bodies[[2,5,11,3,14,8,0,12,6,15][i]];s.damage(hit,28+i*3,hit.position,['impact','cut','stab','bullet','blast'][i%5],{x:i%2?1:-1,y:0});if(i===4)s.ignite(e.bodies[2]);if(i===7)s.shock(e.bodies[2]);});
+  let top=0;for(let i=0;i<1800;i++){s.step();if(i%10===0)for(const b of s.bodies){assert.ok(Number.isFinite(b.position.x)&&Number.isFinite(b.angle),`NaN at step ${i}`);top=Math.max(top,b.speed);}}assert.ok(top<60,`a body reached ${top} px/step`);
 });

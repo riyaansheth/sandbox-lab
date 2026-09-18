@@ -58,6 +58,10 @@
     {id:'legStrength',section:'Ragdolls',label:'Leg strength',help:'How hard the legs can push, in multiples of body weight.',type:'range',min:.5,max:4,step:.1,def:2,unit:'×'},
     {id:'getUpTime',section:'Ragdolls',label:'Get-up time',help:'Seconds for strength to return after a knockdown. Lower is snappier.',type:'range',min:.3,max:5,step:.1,def:1.2,unit:' s'},
     {id:'stunScale',section:'Ragdolls',label:'Knockdown length',help:'Multiplier on how long a hard hit leaves a ragdoll stunned. Zero means hits never knock anyone down.',type:'range',min:0,max:4,step:.1,def:1,unit:'×'},
+    {id:'painReactions',section:'Ragdolls',label:'Pain reactions',help:'Flinching, clutching wounds, guarding, limping, hunching, trembling, writhing, panic when burning. Off, a hurt ragdoll just stands or falls.',type:'toggle',def:true},
+    {id:'reactionIntensity',section:'Ragdolls',label:'Reaction intensity',help:'How big the movements of a reaction are.',type:'range',min:.25,max:2,step:.05,def:1,unit:'×'},
+    {id:'painSensitivity',section:'Ragdolls',label:'Pain sensitivity',help:'How much pain a given injury causes.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
+    {id:'breathing',section:'Ragdolls',label:'Breathing',help:'Living humans breathe: faster and deeper in pain, shallow near death.',type:'toggle',def:true},
     {id:'brainDamage',section:'Ragdolls',label:'Brain damage',help:'A damaged head causes blackouts: the ragdoll collapses now and then.',type:'toggle',def:false},
     {id:'slowHealing',section:'Ragdolls',label:'Slow injury healing',help:'Wounds of the living slowly close, bones knit and blood is replaced.',type:'toggle',def:false},
     {id:'fragility',section:'Gore',label:'Fragility multiplier',help:'Multiplies all damage to ragdolls. Higher is more fragile.',type:'range',min:.1,max:10,step:.1,def:1,unit:'×'},
@@ -110,7 +114,7 @@
     exit:  {bone:.2, bleed:1/30, pain:.5, stun:0,  deep:false,wound:'exit'},    // the far side of a through-shot: bigger, wetter
     blast: {bone:1,  bleed:1/70, pain:1,  stun:1.3,deep:true, wound:'blast'},
     burn:  {bone:.1, bleed:0,    pain:1.2,stun:.5, deep:false,wound:'burn'},    // cauterises: see damage()
-    shock: {bone:0,  bleed:0,    pain:.9, stun:1,  deep:false,wound:null}       // current cooks; it does not cut
+    shock: {bone:0,  bleed:0,    pain:.22,stun:0,  deep:false,wound:null}       // current cooks; it does not cut
   };
   // How much of a bullet's power a material soaks up on the way through, for the materials that can be passed at all.
   const ABSORB={flesh:.35,wood:.5,glass:.1};
@@ -135,9 +139,12 @@
     limp:Object.fromEntries(Array.from({length:17},(_,slot)=>[slot,[0,0]]))        // every muscle off: unconscious or dead
   };
   // How strong each joint's muscles are next to each other, and how hard any of them can pull: the error a muscle "sees" is capped, which caps its torque.
-  const MUSCLE={atlas:.5,neck:.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.6,POSE_BLEND=.25;
+  const MUSCLE={atlas:.5,neck:.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.45,MUSCLE_MAX=2,POSE_BLEND=.25; // MUSCLE_MAX: the chest carries five joints, so their stiffnesses add up on it; much above 2 each and a rigid pose rings, then explodes
   // Reactions. FLINCH: seconds a flinch lasts. STEP: seconds per recovery step, and how far a stagger shifts the balance point (px per point of damage, capped).
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
+  const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
+  const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
+  const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -154,12 +161,13 @@
     [4,11,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle'],
     [4,14,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle']
   ];
+  const LOCK_STIFFNESS=1.25,SLOT_MUSCLE=Array.from({length:17},(_,slot)=>{const t=JOINTS.find(j=>j[1]===slot);return t?MUSCLE[t[6]]:1;}); // each slot's usual muscle strength, so a pose can ask for one absolute stiffness everywhere
   const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.1,AIR_LIMP=.35,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -335,6 +343,8 @@
         e.blood=Math.max(0,(e.blood??100)-(open*.5+inside)*seconds*set.bleedRate);
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
+        e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
+        e.burningParts=burning;e.breath=((e.breath||0)+seconds*(12+e.pain*.28+(e.rise||e.stagN>0?8:0))/60)%1;
         // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
         e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
         const brain=organs?organs.brain:100;
@@ -380,9 +390,42 @@
       const now=e.poseNow??={angle:new Array(17).fill(0),power:new Array(17).fill(1)},want=this.poseWant,k=1-Math.exp(-seconds/(e.flinch>0?.05:POSE_BLEND));want.angle.fill(0);want.power.fill(1); // a flinch is quick: the blend tightens while it lasts
       for(const slot in base){want.angle[slot]=base[slot][0];want.power[slot]=base[slot][1];}
       const crawlDir=(rung==='crawl'||rung==='drag')?this.crawl(e,want,chest,rung,seconds):0;
-      this.reactions(e,want,chest,down,seconds);
+      this.sustain(e,want,chest,down,seconds,rung);this.reactions(e,want,chest,down,seconds);
       if(!down)for(const b of aiming){const slot=b.plugin.slot,shoulder=slot===5||slot===8;want.angle[slot]=shoulder?-1.45-chest.angle*(b.plugin.flip?-1:1):0;want.power[slot]=shoulder?7:4;} // point the armed arm forward, whatever the chest is doing
       for(let i=0;i<17;i++){now.angle[i]+=(want.angle[i]-now.angle[i])*k;now.power[i]+=(want.power[i]-now.power[i])*k;}return crawlDir;
+    }
+    // What a hurt body does for as long as it hurts. Everything here is a change to the wanted pose: the muscles do the rest.
+    sustain(e,want,chest,down,seconds,rung) {
+      const A=want.angle,P=want.power,set=this.settings,human=e.kind==='human',k=set.reactionIntensity,pain=human&&set.painReactions?(e.pain||0)/100:0,flip=chest.plugin.flip?-1:1;
+      // Electric shock: every muscle locks where it was, at full strength, shaking. When the current stops the body goes slack for a moment (an android reboots).
+      if(e.shockT>0){e.shockT-=seconds;const lock=e.lockPose??=[...e.poseNow.angle];for(let i=0;i<17;i++){A[i]=lock[i]+Math.sin(this.time*55+i*2.4)*.025*k;P[i]=LOCK_STIFFNESS/SLOT_MUSCLE[i];} // the same stiffness at every joint, whatever its usual strength: rigid, but not so rigid that the whole body rings
+        if(e.shockT<=0){e.lockPose=null;e.poseNow.power.fill(1);e.stun=Math.max(e.stun||0,SHOCK_LIMP);}return;}
+      e.lockPose=null;
+      if(human&&set.breathing){const b=Math.sin(e.breath*Math.PI*2),weak=e.blood<45,depth=(.035+pain*.05)*(weak?.45:1)*(weak?1+.5*Math.sin(this.time*5.3):1);A[5]+=b*depth;A[8]-=b*depth;A[3]+=b*depth*.35;A[1]-=b*depth*.3;} // shoulders rise and fall, the spine with them
+      if(!human){ // androids feel nothing, but damaged actuators glitch: jerky, more so the worse off it is
+        let hp=0;for(const b of e.bodies)hp+=b.plugin.hp/b.plugin.maxHp;hp/=e.bodies.length||1;if(hp<.6){const g=(.6-hp)*1.2*k;for(let i=5;i<17;i++)A[i]+=(Math.floor(this.time*9+i*3.7)%5-2)*.06*g*((i*7+Math.floor(this.time*9))%3);if(random()<seconds*g*4){const b=e.bodies[(random()*e.bodies.length)|0];this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}}return;}
+      if(!set.painReactions)return; // from here on it is behaviour, not reflex. Most of it scales with pain; guarding a damaged limb does not need it to still hurt.
+      // Trembling: slow noise on every limb joint (a random walk pulled back to zero, so it never jumps), worse with pain and with blood loss.
+      const shake=e.tremor??=new Array(17).fill(0),amp=(pain*.9+Math.max(0,60-e.blood)/60)*.09*k;for(let i=0;i<17;i++){shake[i]+=(random()-.5)*seconds*26-shake[i]*seconds*9;A[i]+=shake[i]*amp;}
+      // Hunching over the pain; the head sinks as the blood goes.
+      A[3]+=.32*pain*k;A[4]+=.22*pain*k;A[1]+=.18*pain*k;A[0]+=Math.max(0,70-e.blood)/70*.45;
+      // Writhing: down and in a lot of pain, it draws its legs up and lets them go, rocks, and now and then spasms. Calms as the pain ebbs.
+      if((down||rung==='curl')&&pain>.55){const w=(pain-.4)*k,t=this.time,draw=.5+.5*Math.sin(t*1.7),curl=POSES.curl;for(const slot of [11,12,14,15]){const leg=slot<14?0:1.3;A[slot]=curl[slot][0]*(.35+.65*(.5+.5*Math.sin(t*1.7+leg)));P[slot]=1.2;}
+        A[3]+=Math.sin(t*1.1)*.3*w;A[4]+=Math.sin(t*.9+1)*.25*w;A[5]+=Math.sin(t*2.3)*.6*w;A[8]-=Math.sin(t*2.1+.7)*.6*w;if(random()<seconds*.7*w){e.flinch=FLINCH_TIME;e.flinchMag=.7;e.flinchSlot=2;}void draw;}
+      // On fire: arms beat at the flames, and if it is on its feet it staggers about, away from the heat.
+      if(e.burningParts>0){const t=this.time;A[5]=-1.2+Math.sin(t*17)*.9;A[6]=-1.0-Math.sin(t*19)*.8;A[8]=1.2-Math.sin(t*16+1)*.9;A[9]=1.0+Math.sin(t*18+2)*.8;P[5]=P[6]=P[8]=P[9]=5;want.armsFree=true;
+        if(rung==='stand'&&!down&&!(e.stagN>0)){e.stagN=2;e.stagDir=e.panicDir=(random()<.2?-(e.panicDir||1):(e.panicDir||(random()<.5?-1:1)));e.stagT=0;e.stagLeg=e.stagDir>0?0:1;e.stagPush=STAGGER_MAX*1.4;}return;}
+      // Guarding: a hurt arm is held in against the body; a badly hurt leg is kept off the floor if the other one can take the weight.
+      const bodyAt=slot=>e.bodies.find(b=>b.plugin.slot===slot),hurt=(from,to)=>{let worst=1;for(let sl=from;sl<=to;sl++){const b=bodyAt(sl);if(b)worst=Math.min(worst,b.plugin.hp/b.plugin.maxHp);}return worst;};
+      for(const [sh,side] of [[5,-1],[8,1]])if(hurt(sh,sh+2)*100<GUARD_HP&&rung!=='crawl'&&rung!=='drag'){A[sh]=side*.35*k;A[sh+1]=side*1.5;P[sh]=P[sh+1]=2.5;}
+      if(e.spareLeg&&!down){A[e.spareLeg]+=-.4;A[e.spareLeg+1]+=1.1;P[e.spareLeg]=P[e.spareLeg+1]=1.6;}
+      // Clutching: the nearest hand that still works goes to the wound that hurts most and stays there; both hands for the head and trunk. Not while the arms are needed to crawl or to break a fall.
+      if(e.pain>CLUTCH_PAIN&&e.hurtScore>0&&rung!=='crawl'&&rung!=='drag'&&!(e.bracing>0)){const part=bodyAt(e.hurtSlot);if(part){const local=Vector.rotate({x:e.hurtX,y:e.hurtY},part.angle),tx=part.position.x+local.x,ty=part.position.y+local.y,both=e.hurtSlot<=4;let done=0;
+        const arms=[[5,-1],[8,1]].map(([sh,side])=>{const upper=bodyAt(sh),fore=bodyAt(sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||(e.hurtSlot>=sh&&e.hurtSlot<=sh+2)||upper.plugin.hp<=0)return null;const sx=upper.position.x+Math.sin(upper.angle)*upper.plugin.h/2,sy=upper.position.y-Math.cos(upper.angle)*upper.plugin.h/2;return {sh,side,sx,sy,far:Math.hypot(tx-sx,ty-sy)};}).filter(Boolean).sort((a,b)=>a.far-b.far);
+        for(const arm of arms){if(done&&!both)break;const d=clamp(arm.far,Math.abs(ARM_UPPER-ARM_FORE)+2,ARM_UPPER+ARM_FORE-2),bend=arm.side*flip,beta=bend*(Math.PI-Math.acos(clamp((ARM_UPPER**2+ARM_FORE**2-d*d)/(2*ARM_UPPER*ARM_FORE),-1,1)));
+          const alpha=Math.atan2(ARM_FORE*Math.sin(beta),ARM_UPPER+ARM_FORE*Math.cos(beta)),aim=Math.atan2(-(tx-arm.sx),ty-arm.sy)-alpha; // two-link reach: the upper arm points short of the target by alpha, the elbow makes up the rest
+          A[arm.sh]=wrap(aim-chest.angle)*flip;A[arm.sh+1]=beta*flip;A[arm.sh+2]=0;P[arm.sh]=P[arm.sh+1]=4.5;want.armsFree=true;done++;}
+        e.clutching=done;}else e.clutching=0;}else e.clutching=0;
     }
     // Crawling: belly down, head the way it is going. Each good arm reaches past the head, plants, and pulls; the pull on the body is reacted on the planted hand,
     // which is pressed into the floor for grip, so it is all internal. It crawls away from what last hurt it for a few seconds, then lies still.
@@ -410,7 +453,10 @@
       const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);e.airTime=supported?0:(e.airTime||0)+seconds;if(e.airTime>AIR_LIMP)e.effort=0;const tone=supported?1:AIR_TONE;
       // What is holding the body up on this rung, how high it should hold the chest, and whether it is down and has to get up first.
       let support=this.support,height=0,uprightness=1,liftScale=1,base=POSES[rung]||POSES.stand;support.length=0;
-      if(rung==='stand'){for(const f of e.bodies)if(f.plugin.part==='foot'&&this.touching.has(f)&&this.bears(f))support.push(f);height=STAND_HEIGHT;}
+      // A badly hurt leg is spared if the other can take the weight: it is drawn up, and its foot is not stood on.
+      let legL=1,legR=1;for(const b of e.bodies){const sl=b.plugin.slot;if(sl>=11&&sl<=13)legL=Math.min(legL,b.plugin.hp/b.plugin.maxHp);else if(sl>=14)legR=Math.min(legR,b.plugin.hp/b.plugin.maxHp);}
+      e.spareLeg=human&&this.settings.painReactions&&rung==='stand'&&!(e.stagN>0)?(legL*100<SPARE_LEG_HP&&legR>.7?11:legR*100<SPARE_LEG_HP&&legL>.7?14:0):0;
+      if(rung==='stand'){for(const f of e.bodies)if(f.plugin.part==='foot'&&f.plugin.slot!==e.spareLeg+2&&this.touching.has(f)&&this.bears(f))support.push(f);height=STAND_HEIGHT;}
       else if(rung==='kneel'){for(const b of e.bodies)if((b.plugin.part==='shin'||b.plugin.part==='thigh')&&this.touching.has(b)&&!this.fractured(b))support.push(b);height=KNEEL_HEIGHT;}
       else{uprightness=0;liftScale=0;}
       const down=rung==='stand'&&(Math.abs(tilt)>.6||!support.length);
@@ -432,20 +478,25 @@
       // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
       const live=this.joints;for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
         if(c.plugin.name==='ankle'&&this.touching.has(b)&&rung==='stand')continue; // a planted foot lies flat on the ground whatever the shin does; the ankle gives. Holding it to the shin makes the foot rock on its edge and walk.
-        const arm=slot>=5&&slot<=10,limb=Math.min(this.strengthOf(a),this.strengthOf(b)),power=e.poseNow.power[slot]*limb*(arm&&this.poseWant.armsFree?vigour/tone:vigour)*(MUSCLE[c.plugin.name]||1);if(power<=0)continue; // arms need no ground to reach out
+        const arm=slot>=5&&slot<=10,limb=Math.min(this.strengthOf(a),this.strengthOf(b));let power=e.poseNow.power[slot]*limb*(arm&&this.poseWant.armsFree?vigour/tone:vigour)*(MUSCLE[c.plugin.name]||1);if(power<=0)continue;if(power>MUSCLE_MAX)power=MUSCLE_MAX; // arms need no ground to reach out; and no muscle, however it is driven, is stiffer than the step can integrate
         const target=e.poseNow.angle[slot]*(b.plugin.flip?-1:1),error=clamp(wrap(target-(b.angle-a.angle)),-MUSCLE_REACH,MUSCLE_REACH),ia=free(a)?a.inverseInertia:0,ib=free(b)?b.inverseInertia:0;if(!ia&&!ib)continue;
         // Damping grows with the root of the strength: scaled linearly, the strong leg joints end up over-damped for a 120 Hz explicit step and chatter.
         const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
       // Two parts answer to the world rather than to a parent: the chest holds itself upright (or, crawling, level with the ground), and planted feet hold themselves flat. Both push against the ground through the limbs.
       const lean=crawlDir?crawlDir*1.35:0;if(free(chest)&&(uprightness>0||crawlDir))chest.torque+=(clamp(wrap(lean-chest.angle),-.5,.5)*.0011*(crawlDir?1.5:uprightness)-chest.angularVelocity*.0022)*chest.inertia*vigour;
       if(rung==='stand')for(const f of support)if(f.plugin.part==='foot'&&free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
+      // Only what is really braced against something may take the body's weight. A light shin that is merely brushing the floor would be shot downward by it; a part already moving down is not holding anything up.
+      for(let i=support.length-1;i>=0;i--)if(support[i].velocity.y>BRACED||support[i].speed>BRACED*3)support.splice(i,1);
       if(!support.length||!pelvis||!free(chest)||!liftScale)return;
       // The leg push: lift on the torso, reacted on whatever is planted, so it is an internal force. Nothing planted, no lift: a ragdoll can never fly or hover its way upright.
-      let mass=this.carried(e,chest),footX=0,footY=-1e9;for(const f of support){footX+=f.position.x/support.length;footY=Math.max(footY,f.bounds.max.y-6);}
+      // A hurt leg takes less of the load, so the body shifts over the good one: that is a limp. Shares are by the health of each supporting leg, from its foot up to the hip.
+      let mass=this.carried(e,chest),footX=0,footY=-1e9,total=0;const shares=this.shares;shares.length=support.length;
+      for(let i=0;i<support.length;i++){const f=support[i],slot=f.plugin.slot,from=slot>=14?14:11;let health=1;for(const b of e.bodies)if(b.plugin.slot>=from&&b.plugin.slot<=from+2)health=Math.min(health,b.plugin.hp/b.plugin.maxHp);shares[i]=clamp(health*health,.12,1);total+=shares[i];}
+      for(let i=0;i<support.length;i++){shares[i]/=total;footX+=support[i].position.x*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
       const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
       const sway=clamp((footX+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
       chest.force.x+=sway*.6;chest.force.y-=lift*.6;if(free(pelvis)){pelvis.force.x+=sway*.4;pelvis.force.y-=lift*.4;}
-      for(const f of support)if(free(f)){f.force.x-=sway/support.length;f.force.y+=lift/support.length;}
+      for(let i=0;i<support.length;i++){const f=support[i];if(free(f)){f.force.x-=sway*this.shares[i];f.force.y+=lift*this.shares[i];}}
     }
     bodyAt(point){return Query.point(this.bodies,point).reverse()[0]||null;}
     removeBody(body) {
@@ -515,7 +566,10 @@
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
       if(e)e.hitTime=this.time;
-      if(e&&e.kind==='human'&&e.alive)e.pain=Math.min(100,(e.pain||0)+amount*profile.pain*(PAIN_PART[p.part]??1));
+      if(e&&e.kind==='human'&&e.alive){const hurt=amount*profile.pain*(PAIN_PART[p.part]??1)*set.painSensitivity;e.pain=Math.min(100,(e.pain||0)+hurt);
+        // the wound that hurts most is the one the hands go to; an older one only keeps that place while it still hurts more
+        if(p.slot!==undefined&&hurt>=(e.hurtScore||0)){const local=Vector.rotate(Vector.sub(point,body.position),-body.angle);e.hurtScore=hurt;e.hurtSlot=p.slot;e.hurtX=local.x;e.hurtY=local.y;}}
+      if(e&&e.alive&&type==='shock')e.shockT=Math.max(e.shockT||0,SHOCK_LOCK);
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
         p.bone=Math.max(0,(p.bone??100)-amount*profile.bone);
@@ -657,7 +711,7 @@
         for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';if(body.plugin.part==='hand'&&this.held(body))return this.activate(this.held(body));const p=body.plugin;
       if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
@@ -698,6 +752,8 @@
         const pins=this.joints.filter(c=>c.plugin.pierce&&c.bodyB===sword);
         // Matter's pins barely stretch, so a hand pull is measured on the grab itself: how far the cursor has drawn away from the hilt.
         const pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4;
+        // A blade in the body hurts all the time, and much more when someone moves it.
+        if(pins.length){const host=this.getEntity(pins[0].bodyA);if(host&&host.kind==='human'&&host.alive){const moved=this.drag?.bodyB===sword;host.pain=Math.min(100,(host.pain||0)+(moved?14:1.6)/120*this.settings.painSensitivity);if(moved&&!(host.flinch>0)){host.flinch=FLINCH_TIME;host.flinchMag=.5;host.flinchSlot=pins[0].bodyA.plugin.slot;host.flinchDir=host.flinchDir||1;}}}
         if(pins.length&&!pulled&&pins.every(c=>Constraint.currentLength(c)<this.settings.bladeGrip))continue;
         for(const c of pins){Composite.remove(this.world,c);{const host=c.bodyA.plugin,stab=(host.wounds||[]).filter(w=>w.type==='stab').pop();if(stab)stab.bleed=Math.min(4,(stab.bleed||0)+.8);this.bleedOf(host);}const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
         // Collisions come back only once the blade is clear, otherwise the solver would fire it out of the body.
@@ -716,13 +772,16 @@
       const bodies=this.bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.alive)this.vitals(e,seconds);
-        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}if(!this.active(e)){e.effort=0;e.rung='limp';e.rise=null;continue;}
+        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
+        if(!this.active(e)&&!locked){e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.7:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
         this.balance(e,e.rung=this.capability(e));
       }
       for(const b of bodies){const p=b.plugin;
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
+        // A sanity limit, not a behaviour: if solver and muscles ever gang up on a limb, it is slowed rather than fired across the room. Far above anything a throw, a blast or a fall produces.
+        if(p.part&&!b.isStatic){if(b.speed>LIMB_SPEED)Body.setVelocity(b,Vector.mult(b.velocity,LIMB_SPEED/b.speed));if(b.angularSpeed>LIMB_SPIN)Body.setAngularVelocity(b,Math.sign(b.angularVelocity)*LIMB_SPIN);}
         if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
         p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
@@ -815,7 +874,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');
