@@ -160,7 +160,7 @@
   function paintPart(canvas, p, state) {
     const w = p.w, h = p.h, part = p.part, slot = p.slot ?? 0, size = { w: Math.ceil((w + PAD * 2) * SCALE), h: Math.ceil((h + PAD * 2) * SCALE) };
     canvas.width = size.w; canvas.height = size.h; const c = canvas.getContext('2d'); c.setTransform(SCALE, 0, 0, SCALE, size.w / 2, size.h / 2); c.lineJoin = 'round';
-    const wounds = state.noGore ? [] : p.wounds || [], hp = p.hp ?? 100, broken = (p.bone ?? 100) <= 50 && !state.noGore;
+    const wounds = state.noGore ? [] : p.wounds || [], hp = p.hp ?? 100, broken = (p.bone ?? 100) <= 50 && slot >= 5 && !state.noGore;   // limbs only, like the engine's fractured()
     // Beyond its individual wounds, a part that is nearly destroyed loses skin, and then muscle, in seeded patches.
     const torn = []; if (!state.noGore) { const skinLoss = Math.floor(clamp((48 - hp) / 7, 0, 7)), deep = Math.floor(clamp((16 - hp) / 4, 0, 4));
       for (let i = 0; i < skinLoss; i++) torn.push({ x: (hash(slot * 9.1 + i) - .5) * w * .8, y: (hash(slot * 5.3 + i * 2.7) - .5) * h * .8, r: 3 + hash(i + slot) * 3.5, seed: slot + i, deep: i < deep }); }

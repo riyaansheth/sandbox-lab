@@ -89,7 +89,7 @@ test('a settled body still falls when its support goes and still yields to a slo
 });
 test('a living ragdoll gets back up after a knockdown; a dead one stays down until revived',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,60);const chest=e.bodies[2];
-  s.damage(chest,30,chest.position);Body.setVelocity(chest,{x:7,y:0});advance(s,40);assert.ok(e.stun>0,'a hard hit should stun');advance(s,45);assert.ok(chest.position.y>540,'was not knocked down');
+  s.damage(chest,45,chest.position);Body.setVelocity(chest,{x:7,y:0});advance(s,40);assert.ok(e.stun>0,'a hard hit should stun');advance(s,45);assert.ok(chest.position.y>540,'was not knocked down');
   advance(s,500);assert.ok(chest.position.y<505&&Math.abs(chest.angle)<.3,'did not get back up');
   e.alive=false;advance(s,600);assert.ok(chest.position.y>560);s.heal(chest);advance(s,300);assert.ok(chest.position.y>560,'heal must not resurrect');
   assert.equal(s.revive(chest),true);advance(s,400);assert.ok(e.alive&&chest.position.y<505&&Math.abs(chest.angle)<.3,'revive did not stand it up');
@@ -148,7 +148,7 @@ test('defaults leave behaviour unchanged, and each gameplay setting does what it
   const hit=(set,amount=30)=>{const s=new Simulation();s.configure(set);const arm=s.spawn('human',1000,555).bodies[5];s.damage(arm,amount,arm.position);return {s,arm};};
   assert.equal(hit({}).arm.plugin.hp,70);assert.equal(hit({fragility:2}).arm.plugin.hp,40);assert.equal(hit({fragility:.5}).arm.plugin.hp,85);
   assert.ok(hit({fragility:2}).s.spawn('crate',300,300).bodies[0].plugin.hp===80,'fragility is for ragdolls only');
-  const stunned=set=>{const s=new Simulation();s.configure(set);const chest=s.spawn('human',1000,555).bodies[2];s.damage(chest,30,chest.position);return s.getEntity(chest).stun||0;};assert.ok(stunned({})>0);assert.equal(stunned({stunScale:0}),0);assert.ok(stunned({stunScale:3})>stunned({})*2.5);
+  const stunned=set=>{const s=new Simulation();s.configure(set);const chest=s.spawn('human',1000,555).bodies[2];s.damage(chest,45,chest.position);const e=s.getEntity(chest);return Math.max(e.stun||0,e.stunNext||0);}; // a standing body is knocked down a moment later, through a staggerassert.ok(stunned({})>0);assert.equal(stunned({stunScale:0}),0);assert.ok(stunned({stunScale:3})>stunned({})*2.5);
   const bullet=set=>{const s=new Simulation();s.configure(set);const b=s.spawn('metal',600,300).bodies[0];s.shoot({x:100,y:300},{x:1000,y:300});return 500-b.plugin.hp;};assert.equal(bullet({}),55);assert.equal(bullet({bulletDamage:200}),200);
   const g=new Simulation();g.configure({gravity:-9.81});const up=g.spawn('crate',1000,300).bodies[0];advance(g,60);assert.ok(up.position.y<290,'negative gravity should fall upward');
   const v=new Simulation();v.configure({airDrag:0});assert.equal(v.spawn('crate',1,1).bodies[0].frictionAir,0);v.configure({airDrag:2});assert.ok(Math.abs(v.bodies[0].frictionAir-.012)<1e-9);
@@ -367,4 +367,29 @@ test('muscles are internal: in zero gravity a living ragdoll gains no momentum f
 });
 test('the pose blend is part of a save',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);assert.equal(e.poseNow.angle.length,17);const r=new Simulation();r.restore(JSON.parse(JSON.stringify(s.serialize())));assert.deepEqual(r.entities[0].poseNow,JSON.parse(JSON.stringify(e.poseNow)));advance(r,120);assert.ok(r.bodies[2].position.y<505);
+});
+// ---- reaction spec, section 2: immediate hit reactions
+const standing=(kind='human',set={})=>{const s=new Simulation();s.configure({organDamage:false,...set});const e=s.spawn(kind,1000,555);advance(s,120);return {s,e,chest:e.bodies[2]};};
+const rel=(e,slot,parent)=>{const a=e.bodies[slot].angle-e.bodies[parent].angle;return Math.atan2(Math.sin(a),Math.cos(a));};
+test('a small hit is a flinch: the struck arm pulls in, the head snaps away, and it passes',()=>{
+  const {s,e}=standing();const fore=e.bodies[9];s.damage(fore,10,fore.position,'impact',{x:1,y:0});let elbow=0,head=0;for(let i=0;i<24;i++){s.step(1000/120);elbow=Math.max(elbow,Math.abs(rel(e,9,8)));head=Math.min(head,rel(e,0,1));}
+  assert.ok(elbow>.12,`elbow only reached ${elbow}`);assert.ok(head<-.04,`head should snap back from a blow travelling right, got ${head}`);assert.ok(!(e.stun>0)&&!(e.stagN>0),'a tap on the arm neither staggers nor drops anyone');
+  advance(s,90);assert.ok(Math.abs(rel(e,9,8))<.1&&Math.abs(rel(e,0,1))<.1,'and it is over within a second or so');
+  const tiny=standing();tiny.s.damage(tiny.e.bodies[9],3,tiny.e.bodies[9].position,'impact',{x:1,y:0});let twitch=0;for(let i=0;i<24;i++){tiny.s.step(1000/120);twitch=Math.max(twitch,Math.abs(rel(tiny.e,9,8)));}assert.ok(twitch<elbow*.6,'a tiny hit is only a twitch');
+});
+test('a medium hit staggers with recovery steps and stays up; a big one goes down through the stagger and gets up again',()=>{
+  const mid=standing();mid.s.damage(mid.chest,24,mid.chest.position,'impact',{x:1,y:0});assert.ok(mid.e.stagN>=1&&mid.e.stagDir===1);assert.ok(!(mid.e.stunNext>0));let low=0,hipSwing=0;
+  for(let i=0;i<360;i++){mid.s.step();low=Math.max(low,mid.chest.position.y);hipSwing=Math.max(hipSwing,Math.abs(rel(mid.e,11,4)),Math.abs(rel(mid.e,14,4)));}assert.ok(low<520,`a stagger should not put it on the floor, chest sank to ${low}`);assert.ok(hipSwing>.15,'a leg should swing out to catch it');assert.ok(mid.chest.position.y<505&&Math.abs(mid.chest.angle)<.2);
+  const big=standing();big.s.damage(big.chest,60,big.chest.position,'impact',{x:1,y:0});assert.ok(!(big.e.stun>0)&&big.e.stunNext>0,'the knockdown waits for the stagger');advance(big.s,30);assert.ok(big.e.stun>0);let floor=0;for(let i=0;i<150;i++){big.s.step();floor=Math.max(floor,big.chest.position.y);}assert.ok(floor>545,'it should go down');
+  advance(big.s,480);assert.ok(big.chest.position.y<505&&Math.abs(big.chest.angle)<.25,'and get back up, torso and all, even with cracked ribs');
+  const lying=standing();lying.e.stun=3;advance(lying.s,90);lying.s.damage(lying.chest,60,lying.chest.position,'impact',{x:1,y:0});assert.ok(lying.e.stun>=3&&!(lying.e.stagN>0),'a body already down is just stunned, it does not try to step');
+});
+test('a falling, conscious ragdoll gets its arms out on the side it is falling to, and lands on them',()=>{
+  for(const dir of [1,-1]){const s=new Simulation();const e=s.spawn('human',1000,330);for(const b of e.bodies)Body.rotate(b,dir*1.35,{x:1000,y:330});let hands=null,body=null,shoulders=null;
+    for(let i=0;i<150;i++){s.step();if(i===20)shoulders=[rel(e,5,2),rel(e,8,2)];if(hands===null&&[6,7,9,10].some(k=>s.touching.has(e.bodies[k])))hands=i;if(body===null&&[0,2].some(k=>s.touching.has(e.bodies[k])))body=i;}
+    assert.ok(e.braceDir===dir);for(const a of shoulders)assert.ok(a*dir<-.6,`arms should reach toward the fall (${dir}), shoulder at ${a}`);assert.ok(hands!==null&&(body===null||hands<body),'hands should reach the ground before the chest or head');}
+  const out=new Simulation();const e=out.spawn('human',1000,330);e.stun=5;for(const b of e.bodies)Body.rotate(b,1.35,{x:1000,y:330});advance(out,40);assert.ok(!(e.bracing>0),'a stunned body does not brace');
+});
+test('androids stagger and brace too, but feel nothing',()=>{
+  const {s,e,chest}=standing('android');s.damage(chest,24,chest.position,'impact',{x:-1,y:0});assert.ok(e.stagN>=1&&e.stagDir===-1);advance(s,240);assert.ok(chest.position.y<505);assert.ok(!e.pain);
 });
