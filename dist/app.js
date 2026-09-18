@@ -66,7 +66,7 @@
     const w=p.w||14,h=p.h||30,health=p.hp??100,dead=health<=0,char=clamp(((p.heat||20)-180)/600,0,.85);
     humanOutline(c,p);
     const skin=c.createLinearGradient(-w/2,0,w/2,0);skin.addColorStop(0,dead?'#8b7873':'#b48d78');skin.addColorStop(.32,dead?'#b49a8b':'#e1bca2');skin.addColorStop(.7,dead?'#a68c81':'#d6ac91');skin.addColorStop(1,dead?'#776b68':'#967762');
-    c.fillStyle=skin;c.fill();c.strokeStyle='#58483e';c.lineWidth=.7;c.stroke();
+    c.fillStyle=skin;c.fill();const pale=pallor.get(p.entityId);if(pale&&!dead){c.fillStyle=`rgba(226,224,214,${pale*.55})`;c.fill();}c.strokeStyle='#58483e';c.lineWidth=.7;c.stroke();
     c.save();humanOutline(c,p);c.clip();
     // Muscle contours and anatomical landmarks remain subtle until tissue is damaged.
     c.strokeStyle='#8c645850';c.lineWidth=.65;c.beginPath();
@@ -241,12 +241,16 @@
     if(set.rain){ctx.strokeStyle='rgba(170,195,215,.34)';ctx.lineWidth=1;ctx.beginPath();for(let i=0;i<170;i++){const speed=900+hash(i)*500,x=(hash(i+.5)*(width+200)+time*120)%(width+200)-100,y=(hash(i+.25)*height+time*speed)%height,len=13+hash(i+.75)*12;ctx.moveTo(x,y);ctx.lineTo(x-len*.16,y-len);}ctx.stroke();}
     if(set.snow){ctx.fillStyle='rgba(235,242,246,.8)';for(let i=0;i<120;i++){const fall=32+hash(i)*45,x=(hash(i+.5)*width+Math.sin(time*.9+i)*22+time*8)%width,y=(hash(i+.25)*height+time*fall)%height,r=.9+hash(i+.75)*1.9;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();}}
   }
+  // Blood dries from bright red to a dark brown over about half a minute; android coolant from teal to near black.
+  const STAIN_RAMP=[[155,31,42],[72,26,28]],OIL_RAMP=[[47,84,90],[24,34,36]];
+  function stainColor(wet,oil){const [a,b]=oil?OIL_RAMP:STAIN_RAMP;return `rgb(${Math.round(b[0]+(a[0]-b[0])*wet)},${Math.round(b[1]+(a[1]-b[1])*wet)},${Math.round(b[2]+(a[2]-b[2])*wet)})`;}
+  const pallor=new Map(); // entity id -> 0..1, how drained of blood it is; filled once per frame
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
     ctx.save();ctx.translate(width/2+(Math.random()-.5)*shake,height/2+(Math.random()-.5)*shake);ctx.scale(camera.zoom,camera.zoom);ctx.translate(-camera.x,-camera.y);shake*=.88;{const m=ctx.getTransform();view.a=m.a;view.e=m.e;view.f=m.f;}
     const left=camera.x-width/2/camera.zoom,right=camera.x+width/2/camera.zoom,top=camera.y-height/2/camera.zoom,bottom=camera.y+height/2/camera.zoom;
     ctx.lineWidth=1/camera.zoom;
-    const set=sim.settings;
+    const set=sim.settings;pallor.clear();for(const e of sim.entities)if(e.kind==='human'&&e.blood<75)pallor.set(e.id,clamp((75-e.blood)/50,0,1));
     if(set.grid)for(let x=Math.floor(left/32)*32;x<right;x+=32){ctx.strokeStyle=x%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,Math.min(bottom,sim.groundY));ctx.stroke();}
     if(set.grid)for(let y=Math.floor(top/32)*32;y<Math.min(bottom,sim.groundY);y+=32){ctx.strokeStyle=y%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
     // Far wall measurement ticks and subtle workshop fixtures.
@@ -256,7 +260,12 @@
     ctx.strokeStyle='#222d34';ctx.lineWidth=2;for(let x=Math.floor(left/35)*35;x<right;x+=35){ctx.beginPath();ctx.moveTo(x,sim.groundY+15);ctx.lineTo(x+22,sim.groundY+37);ctx.stroke();}
     ctx.strokeStyle='#465357';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,sim.groundY+38);ctx.lineTo(right,sim.groundY+38);ctx.stroke();
     for(const x of [0,2600]){ctx.fillStyle='#3d494e';ctx.fillRect(x-8,-370,16,1020);}
-    if(set.decals)for(const s of sim.stains){if(s.scorch){const g=ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,s.r);g.addColorStop(0,'#0b0d0ecc');g.addColorStop(1,'#0b0d0e00');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(s.x,s.y,s.r,3.5,0,0,7);ctx.fill();continue;}if(set.noGore)continue;ctx.fillStyle='#81443eaa';ctx.beginPath();ctx.ellipse(s.x,s.y,s.r,1.5,0,0,7);ctx.fill();}
+    if(set.decals)for(const st of sim.stains){if(st.x+st.r<left||st.x-st.r>right)continue;
+      if(st.scorch){ctx.globalAlpha=.8;ctx.drawImage(glowSprite('scorch','11,13,14',1),st.x-st.r,st.y-3.5,st.r*2,7);ctx.globalAlpha=1;continue;}
+      if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=(st.smear?.7:st.print?.75:.9)*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
+      if(st.wall){ctx.ellipse(st.x,st.y,2.6,st.r,0,0,7);ctx.fill();ctx.fillRect(st.x-.8,st.y,1.6,st.r*(2.2-wet)*1.4);} // a run down the wall that lengthens as it dries
+      else{const ry=st.smear?1.5:st.print?1.4:Math.min(4.2,1.4+st.r*.07);ctx.ellipse(st.x,st.y,st.r,ry,0,0,7);ctx.fill();if(wet>.35&&st.r>6&&!st.smear){ctx.globalAlpha=wet*.3*fade;ctx.fillStyle=st.oil?'#8fb3b8':'#e58a8a';ctx.beginPath();ctx.ellipse(st.x-st.r*.3,st.y-ry*.3,st.r*.35,ry*.28,0,0,7);ctx.fill();}}
+    }ctx.globalAlpha=1;
     for(const c of sim.joints){const a=Constraint.pointAWorld(c),b=Constraint.pointBWorld(c),organic=c.bodyA?.plugin.material==='flesh';ctx.strokeStyle=c.plugin.rope?'#c8b889':organic?'#bf967d':'#596d67';ctx.lineWidth=c.plugin.rope?2:organic?Math.min(c.bodyA.plugin.w,c.bodyB.plugin.w)*.72:6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.lineCap='butt';if(c.plugin.rope){ctx.fillStyle='#d0c6aa';for(const p of [a,b]){ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill();}}}
     // A lodged blade is drawn first, so the body hides the part inside it and the point shows out the far side.
     for(const b of [...sim.bodies].sort((a,b)=>(b.plugin.stuck!==undefined)-(a.plugin.stuck!==undefined))){const p=b.plugin;if(b.bounds.max.x<left||b.bounds.min.x>right||b.bounds.max.y<top||b.bounds.min.y>bottom)continue;
@@ -268,6 +277,8 @@
       // A growing part starts raw and wet and settles into skin; a grafted body glows while the surge runs through it.
       if(growing){ctx.globalAlpha=(1-p.grow)*.7;ctx.fillStyle=p.kind==='human'?'#b8323c':'#7fe3ff';ctx.beginPath();ctx.roundRect(-p.w/2,-p.h/2,p.w,p.h,4);ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=`rgba(150,255,210,${(1-p.grow)*.3})`;ctx.lineWidth=6;ctx.stroke();ctx.strokeStyle=`rgba(190,255,230,${1-p.grow})`;ctx.lineWidth=1.5;ctx.stroke();}
       if(p.surge){const pulse=p.surge*(.65+.35*Math.sin(sim.time*40));ctx.beginPath();ctx.roundRect(-(p.w||20)/2-1,-(p.h||20)/2-1,(p.w||20)+2,(p.h||20)+2,4);ctx.strokeStyle=`rgba(120,230,255,${Math.min(.35,pulse*.35)})`;ctx.lineWidth=8;ctx.stroke();ctx.strokeStyle=`rgba(200,250,255,${Math.min(1,pulse)})`;ctx.lineWidth=2;ctx.stroke();}
+      if(p.stains?.length&&set.decals){ctx.save();if(p.flip)ctx.scale(-1,1);ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,3);ctx.clip();
+        for(const st of p.stains){if(set.noGore&&!st.oil)continue;ctx.globalAlpha=.88;ctx.fillStyle=stainColor(st.wet||0,st.oil);ctx.beginPath();ctx.ellipse(st.x,st.y,st.r,st.r*(1+(1-(st.wet||0))*.5),-b.angle,0,7);ctx.fill();}ctx.restore();} // they sag downward as they dry: the long axis stays vertical in the world
       if(p.char&&p.kind!=='human'){ctx.fillStyle=`rgba(14,11,9,${Math.min(.8,p.char*.85)})`;ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,2);ctx.fill();}
       if(p.heat>100&&p.kind!=='human'){ctx.fillStyle=`rgba(219,99,49,${Math.min(.55,(p.heat-100)/1000)})`;ctx.fillRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24);}
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}

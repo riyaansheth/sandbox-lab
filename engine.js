@@ -65,6 +65,10 @@
     {id:'crushSensitivity',section:'Gore',label:'Limb crush sensitivity',help:'How little force it takes to crush a destroyed limb.',type:'range',min:25,max:400,step:5,def:100,unit:'%'},
     {id:'fragments',section:'Gore',label:'Procedural fragments',help:'Crushed limbs leave physical fragments behind.',type:'toggle',def:true},
     {id:'extraGunshot',section:'Gore',label:'Extra gunshot particles',help:'Bullet hits throw out more debris.',type:'toggle',def:false},
+    {id:'bloodAmount',section:'Gore',label:'Blood amount',help:'How much blood sprays and drips. Visual only; bleeding rate decides how fast anyone bleeds out.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
+    {id:'arterialSpurts',section:'Gore',label:'Arterial spurts',help:'Deep wounds to the neck, upper arms, thighs and heart pump blood out in time with the pulse, and drain far faster.',type:'toggle',def:true},
+    {id:'maxStains',section:'Gore',label:'Maximum stains',help:'Oldest stains and pools are removed beyond this many.',type:'range',min:50,max:600,step:10,def:300,unit:''},
+    {id:'stainLifetime',section:'Gore',label:'Stain lifetime',help:'Seconds before a dried stain fades away. Zero keeps them until the limit is reached.',type:'range',min:0,max:600,step:10,def:180,unit:' s'},
     {id:'organDamage',section:'Gore',label:'Organ damage',help:'Deep wounds can find the brain, heart, lungs or gut: instant death, blackouts, internal bleeding, suffocation.',type:'toggle',def:true},
     {id:'noGore',section:'Gore',label:'No gore',help:'Hides blood, stains and wounds. Injuries still happen, they are just not drawn.',type:'toggle',def:false},
     {id:'bulletDamage',section:'Weapons',label:'Bullet damage',help:'Damage of one bullet, from the shoot tool or a pistol.',type:'range',min:5,max:300,step:5,def:55,unit:''},
@@ -110,6 +114,8 @@
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
   const ORGANS={head:[['brain',-1,-1,1,.35,1.5]],chest:[['heart',-.55,-.6,.2,.25,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
+  const ARTERIAL=new Set(['neck','upper arm','thigh']),ARTERY_RATE=2.5; // deep wounds here hit an artery: they bleed this much faster, in spurts
+  const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=10,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const FRACTURE=50,FRACTURE_SLACK=.7; // bone at or below this is fractured; a fractured limb's joints bend this much further
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
   const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
@@ -130,7 +136,7 @@
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.smears=new WeakMap();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -194,7 +200,7 @@
       const turn=stump.angle-limb.angle,pivot=anchor(limb);for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
       const to=anchor(stump),move=Vector.sub(to,anchor(limb));for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
       const joint=this.makeJoint(owner.kind,flip,a,b,t);if(a.plugin.kind==='android'||b.plugin.kind==='android')joint.plugin.breakForce=45;Composite.add(this.world,joint);links.push(joint);
-      for(const x of [a,b]){x.plugin.severed=[];x.plugin.bleed=Math.min(x.plugin.bleed||0,.3);}
+      for(const x of [a,b]){x.plugin.severed=[];this.bleedOf(x.plugin);}
       for(const x of piece){const old=this.getEntity(x);if(old&&old!==owner){old.bodies=old.bodies.filter(o=>o!==x);old.joints=old.joints.filter(c=>c.bodyA!==x&&c.bodyB!==x);}if(!owner.bodies.includes(x))owner.bodies.push(x);
         x.plugin.entityId=owner.id;x.collisionFilter.group=stump.collisionFilter.group;if(flip)x.plugin.flip=true;else delete x.plugin.flip;main.add(x);}
       owner.bodies.sort((x,y)=>x.plugin.slot-y.plugin.slot);owner.joints=links.filter(c=>main.has(c.bodyA));this.entities=this.entities.filter(e=>e.bodies.length);owner.restTime=0;this.burst(to.x,to.y,8,'#9fcbb1',2);return to;
@@ -257,7 +263,7 @@
       if(!keeps){this.entities.push(owner);e.bodies=remains;e.joints=e.joints.filter(c=>remains.includes(c.bodyA));e.alive=false;e.upright=false;}
       else if(remains.length){const left={id:this.nextId++,kind:e.kind,bodies:remains,joints:e.joints.filter(c=>remains.includes(c.bodyA)),upright:false,blood:0,alive:false};this.entities.push(left);for(const b of remains)b.plugin.entityId=left.id;}
       owner.bodies=[...whole].sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints=links.filter(c=>whole.has(c.bodyA));for(const b of owner.bodies)b.plugin.entityId=owner.id;
-      this.entities=this.entities.filter(x=>x.bodies.length);for(const b of whole){b.plugin.severed=[];b.plugin.bleed=Math.min(b.plugin.bleed||0,.2);}
+      this.entities=this.entities.filter(x=>x.bodies.length);for(const b of whole){b.plugin.severed=[];this.bleedOf(b.plugin);}
       this.regrowing.push({root:body,wait:0});owner.restTime=0;return missing;
     }
     // One part per beat. The new part is full size to the physics at once; plugin.grow (0..1) lets the renderer swell it out of the stump.
@@ -295,6 +301,8 @@
         e.blood=Math.max(0,(e.blood??100)-(open*.5+inside)*seconds*set.bleedRate);
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
+        // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
+        e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
         const brain=organs?organs.brain:100;
         if(e.blood<25)this.kill(e,'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
         else e.consciousness=e.blood<40||e.oxygen<30||brain<35||e.pain>=97?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70?'dazed':'awake';
@@ -303,7 +311,7 @@
       // Brain damage setting: the worse the head, the more often it blacks out.
       if(set.brainDamage&&head&&head.plugin.hp<60&&!(e.stun>0)&&Math.random()<seconds*.25*(1-head.plugin.hp/60))e.stun=rnd(1,3.5);
       if(set.slowHealing){if(human){e.blood=Math.min(100,e.blood+seconds*.8);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*.4);}
-        for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);p.bleed=Math.max(0,(p.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&Math.random()<seconds*.06)p.wounds.shift();}}
+        for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&Math.random()<seconds*.06)p.wounds.shift();}}
     }
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
     // Feet that are not on something produce no lift, so a ragdoll can never fly or hover its way upright.
@@ -362,15 +370,20 @@
       const c=Constraint.create({bodyA:a||undefined,bodyB:b||undefined,pointA:a?Vector.sub(pa,a.position):{...pa},pointB:b?Vector.sub(pb,b.position):{...pb},stiffness:.8,damping:.06});
       c.plugin={rope:true};Composite.add(this.world,c);return c;
     }
+    // Particles are recycled: dead ones go to a free list and come back, and the live array is compacted in place, so a long bleed allocates nothing.
+    emit(x,y,vx,vy,life,maxLife,color,size,type) {
+      if(type==='blood'||type==='oil'){if(this.settings.bloodAmount<1&&Math.random()>this.settings.bloodAmount)return null;}
+      const list=this.particles,p=list.length>=900?list.shift():(this.spare.pop()||{});p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.maxLife=maxLife;p.color=color;p.size=size;p.type=type;p.owner=0;list.push(p);return p;
+    }
     burst(x,y,count,color,speed=5,type='spark') {
-      for(let i=0;i<count;i++)this.particles.push({x,y,vx:rnd(-speed,speed),vy:rnd(-speed,speed),life:rnd(.25,1),maxLife:1,color,size:rnd(1,3.5),type});
-      if(this.particles.length>900)this.particles.splice(0,this.particles.length-900);
+      if(type==='blood')count=Math.round(count*Math.max(1,this.settings.bloodAmount));
+      for(let i=0;i<count;i++)this.emit(x,y,rnd(-speed,speed),rnd(-speed,speed),rnd(.25,1),1,color,rnd(1,3.5),type);
     }
     sever(c) {
       if(!this.joints.includes(c))return;
       for(const [b,point] of [[c.bodyA,c.pointA],[c.bodyB,c.pointB]]){
         if(!b)continue;const p=b.plugin;const local=Vector.rotate(point,-b.angle);
-        p.severed??=[];p.severed.push({x:p.flip?-local.x:local.x,y:local.y});p.bleed=(p.bleed||0)+1.8; // the stump's bone is not marked fractured: losing an arm must not break the chest it hung from
+        p.severed??=[];p.severed.push({x:p.flip?-local.x:local.x,y:local.y,bleed:p.material==='flesh'?1.8:0,fresh:1.6});this.bleedOf(p); // the stump's bone is not marked fractured: losing an arm must not break the chest it hung from
         if(p.material==='flesh')this.burst(b.position.x+point.x,b.position.y+point.y,16,'#a32e31',4,'blood');
       }
       Composite.remove(this.world,c);const owner=this.getEntity(c.bodyA||c.bodyB);if(owner)owner.restTime=0;
@@ -385,14 +398,18 @@
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
         p.bone=Math.max(0,(p.bone??100)-amount*profile.bone);
-        p.bleed=type==='burn'?Math.max(0,(p.bleed||0)-amount/40):Math.min(7,(p.bleed||0)+amount*profile.bleed); // fire seals what it burns
+        // Bleeding belongs to the wound, not the limb. A burn seals what is there; a new blow next to an old wound opens it again.
+        const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
+        if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
+        else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9)w.bleed=Math.min(4,(w.bleed||0)+rate*.3);
         if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:Math.random()*6.28;
-          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:Math.random()*6.28});p.wounds=p.wounds.slice(-14);
+          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:Math.random()*6.28,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
           if(type!=='burn')this.burst(point.x,point.y,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),'#a4373c',type==='bullet'?6:3,'blood');}
+        this.bleedOf(p);
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
           if(e.alive&&(p.part==='head'||p.part==='chest')&&p.hp<12)this.kill(e,`massive ${p.part} trauma`);}
       }
-      else this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);
+      else{this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);if(p.part&&profile.deep)p.leak=Math.min(3,(p.leak||0)+amount/70);}
       if(p.hp<=0) {
         if(p.kind==='bomb'||p.kind==='barrel'){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
         else if(p.material==='flesh'||p.kind==='android'){
@@ -404,6 +421,37 @@
         else if(!p.debris&&!p.destroying&&p.kind!=='platform'){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
       }
     }
+    // Blood that lands on a body stays where it landed, in that body's own frame, so it turns with it. Oldest goes first.
+    stain(body,point,r,oil) {
+      const p=body.plugin,local=Vector.rotate(Vector.sub(point,body.position),-body.angle);p.stains??=[];
+      for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(5,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
+      p.stains.push({x:local.x,y:local.y,r,wet:1,oil:oil||undefined});if(p.stains.length>BODY_STAINS)p.stains.shift();
+    }
+    addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
+    // Blood that lands on the floor joins a pool if one is there. Pools grow by area, up to a limit, instead of stacking dots.
+    pool(x,r,oil) {
+      const stains=this.stains;for(let i=stains.length-1;i>=0;i--){const st=stains[i];if(st.wall||st.scorch||st.smear||st.print||!!st.oil!==!!oil||Math.abs(st.x-x)>st.r+4)continue;
+        st.r=Math.min(POOL_MAX,Math.sqrt(st.r*st.r+r*r*.55));st.x+=(x-st.x)*.04;st.wet=1;st.age=0;return st;}
+      return this.addStain({x,y:this.groundY-1,r,wet:1,age:0,oil:oil||undefined});
+    }
+    // Thirty times a second: blood dries, old stains fade out, the count is capped, and whatever drags through a wet pool smears it or tracks it away.
+    stainsTick(dt,bodies) {
+      const stains=this.stains,life=this.settings.stainLifetime;let keep=0;
+      for(let i=0;i<stains.length;i++){const st=stains[i];if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);st.age=(st.age||0)+dt;if(!life||st.age<life)stains[keep++]=st;}stains.length=keep;
+      // A pool that has spread over smaller floor stains swallows them.
+      for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.smear||big.print||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.smear||st.print||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
+      keep=0;for(let i=0;i<stains.length;i++)if(!stains[i].gone)stains[keep++]=stains[i];stains.length=keep;
+      const over=stains.length-this.settings.maxStains;if(over>0)stains.splice(0,over);
+      for(const b of bodies){const p=b.plugin;if(p.stains)for(const st of p.stains)if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);
+        if(b.bounds.max.y<this.groundY-2||b.isStatic)continue;const foot=p.part==='foot',x=b.position.x;
+        let wetPool=null;for(let i=stains.length-1;i>=0&&!wetPool;i--){const st=stains[i];if(!st.wall&&!st.scorch&&!st.smear&&!st.print&&st.wet>.4&&st.r>7&&Math.abs(st.x-x)<st.r)wetPool=st;}
+        if(wetPool){if(foot)p.wetFeet=4;if(Math.abs(b.velocity.x)>1.2&&this.settings.decals){const last=this.smears.get(b);if(last&&last.wet>.3&&Math.abs(last.x-x)<last.r+10){const from=Math.min(last.x-last.r,x-3),to=Math.max(last.x+last.r,x+3);last.x=(from+to)/2;last.r=Math.min(90,(to-from)/2);}
+            else this.smears.set(b,this.addStain({x,y:this.groundY-1,r:5,wet:wetPool.wet*.8,age:0,smear:true,oil:wetPool.oil}));this.stain(b,{x,y:b.bounds.max.y-1},2.5,wetPool.oil);}}
+        else if(foot&&p.wetFeet>0&&this.touching.has(b)&&Math.abs(x-(p.printX??-1e9))>16&&this.settings.decals){p.printX=x;this.addStain({x,y:this.groundY-1,r:6,wet:.5*p.wetFeet/4,age:0,print:true});p.wetFeet--;}
+      }
+    }
+    // A part's bleeding is the sum of its wounds and stumps.
+    bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
     kill(e,cause){if(!e.alive)return;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;}
     // Where on the part the blow landed decides whether it found an organ. Blunt force only reaches the brain (concussion).
     organHit(e,body,lx,ly,amount,type) {
@@ -459,7 +507,7 @@
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
         const absorb=ABSORB[body.plugin.material]??1;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
-        const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.particles.push({x:exit.x,y:exit.y,vx:direction.x*rnd(2,7)+rnd(-1,1),vy:direction.y*rnd(2,7)+rnd(-1.5,.5),life:rnd(.4,1),maxLife:1,color:'#a4373c',size:rnd(1,3),type:'blood'});}
+        const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
         stop=exit;power*=1-absorb;if(power<.2)break;}
       this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
       this.onEffect('shot',.3);return first;
@@ -469,7 +517,7 @@
     lightning(x) {
       const under=this.bodies.filter(b=>b.bounds.min.x<=x&&b.bounds.max.x>=x).sort((a,b)=>a.bounds.min.y-b.bounds.min.y)[0],y=under?under.bounds.min.y:this.groundY,top=-370;
       this.traces.push({from:{x:x+rnd(-140,140),y:top},to:{x,y},life:.55,maxLife:.55,electric:true,bolt:true});this.flashes.push({x,y,radius:90,life:.35,maxLife:.35,sky:true});
-      this.burst(x,y,26,'#dff3ff',9);this.burst(x,y,10,'#8f9aa0',3,'smoke');if(this.settings.decals&&!under)this.stains.push({x,y:this.groundY-1,r:rnd(14,24),scorch:true});
+      this.burst(x,y,26,'#dff3ff',9);this.burst(x,y,10,'#8f9aa0',3,'smoke');if(this.settings.decals&&!under)this.addStain({x,y:this.groundY-1,r:rnd(14,24),scorch:true,age:0});
       if(under){this.shock(under);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
       this.onEffect('thunder',1);return under||null;
     }
@@ -479,7 +527,7 @@
         for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';if(body.plugin.part==='hand'&&this.held(body))return this.activate(this.held(body));const p=body.plugin;
       if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
@@ -521,7 +569,7 @@
         // Matter's pins barely stretch, so a hand pull is measured on the grab itself: how far the cursor has drawn away from the hilt.
         const pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4;
         if(pins.length&&!pulled&&pins.every(c=>Constraint.currentLength(c)<this.settings.bladeGrip))continue;
-        for(const c of pins){Composite.remove(this.world,c);c.bodyA.plugin.bleed=Math.min(7,(c.bodyA.plugin.bleed||0)+.8);const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
+        for(const c of pins){Composite.remove(this.world,c);{const host=c.bodyA.plugin,stab=(host.wounds||[]).filter(w=>w.type==='stab').pop();if(stab)stab.bleed=Math.min(4,(stab.bleed||0)+.8);this.bleedOf(host);}const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
         // Collisions come back only once the blade is clear, otherwise the solver would fire it out of the body.
         const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;}
       }
@@ -546,18 +594,27 @@
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
         p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
-        if(p.material==='flesh'&&p.bleed>.02){
-          const e=this.getEntity(b);if((e?.blood??100)>0&&Math.random()<p.bleed*seconds*5*Math.min(2,this.settings.bleedRate)){
-            const source=p.severed?.[0]||p.wounds?.[p.wounds.length-1]||{x:0,y:0};const pos=Vector.add(b.position,Vector.rotate({x:p.flip?-source.x:source.x,y:source.y},b.angle));
-            this.particles.push({x:pos.x,y:pos.y,vx:b.velocity.x*.4+rnd(-1.2,1.2),vy:b.velocity.y*.4+rnd(-.7,.8),life:3,maxLife:3,color:'#922c33',size:rnd(.8,2.6),type:'blood'});
-          }p.bleed=Math.max(0,p.bleed-seconds*.009);
+        if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
+          // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
+          const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate);let sum=0,drop=null;
+          for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0))continue;w.bleed=Math.max(0,w.bleed-clot*(pass?.5:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);sum+=w.bleed;
+            if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(Math.random()>=chance)continue;
+            const wx=p.flip?-w.x:w.x,cos=Math.cos(b.angle),sin=Math.sin(b.angle),px=b.position.x+wx*cos-w.y*sin,py=b.position.y+wx*sin+w.y*cos;
+            // A spurt leaves along the line from the limb's centre through the wound, weaker as the blood runs out; anything else just drips.
+            if(gush){const len=Math.hypot(wx,w.y)||1,ox=(wx*cos-w.y*sin)/len,oy=(wx*sin+w.y*cos)/len,force=(3+3.5*pulse)*(.35+.65*blood/100);drop=this.emit(px,py,b.velocity.x*.4+ox*force+rnd(-.5,.5),b.velocity.y*.4+oy*force-1+rnd(-.5,.5),2.5,2.5,BLOOD,rnd(1.2,2.8),'blood');}
+            else drop=this.emit(px,py,b.velocity.x*.4+rnd(-1.2,1.2),b.velocity.y*.4+rnd(-.7,.8),3,3,BLOOD,rnd(.8,2.6),'blood');if(drop)drop.owner=p.entityId;}}
+          p.bleed=Math.min(7,sum);
         }
+        // Androids do not bleed. A holed casing leaks coolant and throws the odd spark until it runs dry.
+        if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(Math.random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(Math.random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}
+        // Blood on a surface runs: while it is wet, a stain lets go of the odd drop.
+        if(p.stains?.length&&Math.random()<seconds*.5){const st=p.stains[(Math.random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
         if(p.heat>170&&['wood','flesh','rubber'].includes(p.material))p.burning=true;
-        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);if(p.bleed)p.bleed=Math.max(0,p.bleed-seconds*.5);
+        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
           // Embers and smoke come off the top of the body, more of both the hotter it burns.
           const hot=clamp((p.heat-150)/400,.3,1.2),wide=b.bounds.max.x-b.bounds.min.x,top=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.4;
-          if(Math.random()<seconds*9*hot)this.particles.push({x:b.position.x+rnd(-.5,.5)*wide,y:top,vx:rnd(-.6,.6),vy:rnd(-2.6,-1.2),life:rnd(.5,1.4),maxLife:1.4,color:'#ffcf7a',size:rnd(.7,1.8),type:'ember'});
-          if(Math.random()<seconds*5*hot*clamp(wide/50,.2,1))this.particles.push({x:b.position.x+rnd(-.4,.4)*wide,y:top-rnd(55,95),vx:rnd(-.3,.3),vy:rnd(-1.5,-.8),life:rnd(1.4,2.6),maxLife:2.6,color:'#1c1d1f',size:rnd(6,12),type:'smoke'}); // smoke leaves from above the flame tips, and small parts make little
+          if(Math.random()<seconds*9*hot)this.emit(b.position.x+rnd(-.5,.5)*wide,top,rnd(-.6,.6),rnd(-2.6,-1.2),rnd(.5,1.4),1.4,'#ffcf7a',rnd(.7,1.8),'ember');
+          if(Math.random()<seconds*5*hot*clamp(wide/50,.2,1))this.emit(b.position.x+rnd(-.4,.4)*wide,top-rnd(55,95),rnd(-.3,.3),rnd(-1.5,-.8),rnd(1.4,2.6),2.6,'#1c1d1f',rnd(6,12),'smoke'); // smoke leaves from above the flame tips, and small parts make little
           if(Math.random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
           if(p.hp<=0)this.damage(b,.1);
         }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
@@ -596,12 +653,17 @@
       this.blades();this.hands();
       this.regrowing=this.regrowing.filter(job=>{job.wait-=seconds;if(job.wait>0)return true;job.wait=REGROW_BEAT;return this.growNext(job);});
       const pending=this.damageQueue.splice(0);for(const fn of pending)fn();
-      for(const p of this.particles){p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;
-        if(p.type==='blood'||p.type==='spark')p.vy+=seconds*12;
+      // Particles move every substep, but what they land on is tested 30 times a second: bounds first, exact shape only on a hit.
+      const land=(this.tick=(this.tick+1)%4)===0,decals=this.settings.decals,list=this.particles;let keep=0;
+      for(let i=0;i<list.length;i++){const p=list[i];p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;const wet=p.type==='blood'||p.type==='oil';
+        if(wet||p.type==='spark')p.vy+=seconds*12;
         else if(p.type==='ember'){p.vx+=Math.sin(this.time*9+p.y*.05)*seconds*5;p.vy-=seconds*.6;}else if(p.type==='smoke'){p.vx+=seconds*.35;p.vy*=1-seconds*.5;}
-        if(p.type==='blood'&&p.y>=this.groundY){this.stains.push({x:p.x,y:this.groundY-1,r:rnd(2,8),wet:1});p.life=0;}
-      }
-      this.particles=this.particles.filter(p=>p.life>0).slice(-900);this.stains=this.stains.slice(-300);
+        if(wet&&p.life>0){if(p.y>=this.groundY){if(decals)this.pool(p.x,rnd(2,5),p.type==='oil');p.life=0;}
+          else if(p.x<=2||p.x>=this.width-2){if(decals)this.addStain({x:p.x<=2?1:this.width-1,y:p.y,r:rnd(2,5),wet:1,age:0,wall:true,oil:p.type==='oil'||undefined});p.life=0;}
+          else if(land&&p.life<p.maxLife-.08){for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||(p.owner===b.plugin.entityId&&p.life>p.maxLife-.45)||!M.Vertices.contains(b.vertices,p))continue;if(decals)this.stain(b,p,rnd(1,2.4),p.type==='oil');p.life=0;break;}}}
+        if(p.life>0)list[keep++]=p;else if(this.spare.length<900)this.spare.push(p);}
+      list.length=keep;
+      if(land)this.stainsTick(seconds*4,bodies);
       for(const list of [this.flashes,this.traces]){for(const f of list)f.life-=seconds;while(list.length&&list[0].life<=0)list.shift();}
     }
     loadPreset(name) {
@@ -637,7 +699,7 @@
       const joints=data.joints.map(d=>{const a=d.a===null?null:bodies[d.a],b=d.b===null?null:bodies[d.b];const c=Constraint.create({bodyA:a,bodyB:b,angleA:a?.angle||0,angleB:b?.angle||0,pointA:{...d.pointA},pointB:{...d.pointB},length:d.length,stiffness:d.stiffness,damping:d.damping});c.plugin={...d.plugin};return c;});Composite.add(this.world,joints);
       this.entities=data.entities.map(e=>({...e,bodies:bodies.filter(b=>b.plugin.entityId===e.id),joints:joints.filter(c=>c.plugin.joint&&c.bodyA?.plugin.entityId===e.id)}));
       for(const b of bodies)b.frictionAir=this.drag_(b); // bodies are rebuilt without their drag, so give it back
-      this.nextId=Math.max(0,...this.entities.map(e=>e.id))+1;this.stains=Array.isArray(data.stains)?data.stains.slice(-300):[];
+      this.nextId=Math.max(0,...this.entities.map(e=>e.id))+1;this.stains=Array.isArray(data.stains)?data.stains.filter(st=>st&&Number.isFinite(st.x)&&Number.isFinite(st.r)).slice(-600):[];
       // Keep new ragdolls' collision groups distinct from restored groups.
       Body._nextNonCollidingGroup=Math.min(Body._nextNonCollidingGroup,...bodies.map(b=>b.collisionFilter.group-1));
     }

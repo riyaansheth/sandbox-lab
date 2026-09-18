@@ -246,6 +246,7 @@ test('electric shocks hurt without leaving wounds, weaker with each hop',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);s.shock(e.bodies[2]);assert.ok(e.bodies.every(b=>b.plugin.wounds.length===0&&!b.plugin.bleed));const hurt=e.bodies.map(b=>100-b.plugin.hp).filter(Boolean);assert.ok(Math.max(...hurt)>Math.min(...hurt)*3,'far parts take much less');
 });
 // ---- gore spec, section 1: damage model
+const dry=body=>{for(const w of body.plugin.wounds)w.bleed=0;body.plugin.bleed=0;}; // stop the visible bleeding so a test can watch something else
 const fresh=(set={})=>{const s=new Simulation();s.configure({stunScale:0,...set});const e=s.spawn('human',1000,555);return {s,e,part:n=>e.bodies.find(b=>b.plugin.part===n)};};
 test('each damage type is its own kind of injury',()=>{
   const hurt=type=>{const {s,part}=fresh();const thigh=part('thigh');s.damage(thigh,30,thigh.position,type);return thigh.plugin;};
@@ -268,9 +269,9 @@ test('a heart shot kills without severing anything, and says why',()=>{
 test('brain, lungs and gut each fail in their own way',()=>{
   const b=fresh({stunScale:1});const head=b.part('head');b.s.damage(head,55,{x:head.position.x,y:head.position.y-8},'bullet');assert.ok(b.e.alive&&b.e.stun>5,'one head shot: a long blackout');b.s.step();assert.equal(b.e.consciousness,'unconscious');
   b.s.damage(head,55,{x:head.position.x,y:head.position.y-8},'bullet');assert.equal(b.e.causeOfDeath,'brain destroyed');
-  const l=fresh();const chest=l.part('chest');for(let i=0;i<4;i++){l.s.damage(chest,25,{x:chest.position.x+12,y:chest.position.y-14},'stab');chest.plugin.hp=100;} /* keep the chest itself whole: this is about the lungs */ assert.equal(l.e.organs.lungs,0);assert.equal(l.e.organs.heart,100);l.e.blood=100;l.e.pain=0;chest.plugin.bleed=0; // isolate suffocation from blood loss and pain
-  const seen=new Set();for(let i=0;i<1800&&l.e.alive;i++){chest.plugin.bleed=0;l.s.step();seen.add(l.e.consciousness);}assert.equal(l.e.causeOfDeath,'suffocation');assert.deepEqual([...seen],['awake','dazed','unconscious','dead']);
-  const g=fresh();const belly=g.part('abdomen');g.s.damage(belly,50,belly.position,'stab');belly.plugin.bleed=0;const blood=g.e.blood,drops=g.s.particles.length;g.s.particles.length=0;advance(g.s,300);
+  const l=fresh();const chest=l.part('chest');for(let i=0;i<4;i++){l.s.damage(chest,25,{x:chest.position.x+12,y:chest.position.y-14},'stab');chest.plugin.hp=100;} /* keep the chest itself whole: this is about the lungs */ assert.equal(l.e.organs.lungs,0);assert.equal(l.e.organs.heart,100);l.e.blood=100;l.e.pain=0;dry(chest); // isolate suffocation from blood loss and pain
+  const seen=new Set();for(let i=0;i<1800&&l.e.alive;i++){l.s.step();seen.add(l.e.consciousness);}assert.equal(l.e.causeOfDeath,'suffocation');assert.deepEqual([...seen],['awake','dazed','unconscious','dead']);
+  const g=fresh();const belly=g.part('abdomen');g.s.damage(belly,50,belly.position,'stab');dry(belly);const blood=g.e.blood,drops=g.s.particles.length;g.s.particles.length=0;advance(g.s,300);
   assert.ok(g.e.blood<blood-1,'internal bleeding drains blood');assert.equal(g.s.particles.filter(p=>p.type==='blood').length,0,'with nothing to see');assert.ok(belly.plugin.bruise>0,'except a spreading bruise');
 });
 test('fractures: a broken leg carries no weight, two broken legs cannot stand, and healing mends them',()=>{
@@ -290,4 +291,51 @@ test('injuries survive save and load, heal clears them, and old saves still load
   r.heal(r.bodies[0]);assert.equal(re.organs,undefined);assert.equal(re.pain,0);assert.ok(r.bodies.every(b=>!b.plugin.internal&&!b.plugin.bruise&&!(b.plugin.wounds||[]).length));
   for(const x of data.entities){delete x.pain;delete x.organs;delete x.oxygen;delete x.consciousness;delete x.causeOfDeath;}const old=new Simulation();old.restore(data);advance(old,60);assert.ok(old.entities[0].alive&&Number.isFinite(old.entities[0].oxygen));
   const dead=fresh();dead.s.kill(dead.e,'testing');dead.s.revive(dead.e.bodies[0]);assert.equal(dead.e.causeOfDeath,undefined);assert.equal(dead.e.consciousness,'awake');
+});
+// ---- gore spec, section 2: blood
+test('an arterial wound drains blood far faster than a bruise from an equal blow',()=>{
+  const drain=(type)=>{const {s,e,part}=fresh({organDamage:false});const thigh=part('thigh');s.damage(thigh,40,thigh.position,type);advance(s,600);return 100-e.blood;};
+  const bruise=drain('impact'),artery=drain('stab');assert.ok(artery>bruise*6,`artery ${artery} vs bruise ${bruise}`);
+  const off=fresh({organDamage:false,arterialSpurts:false});const t=off.part('thigh');off.s.damage(t,40,t.position,'stab');assert.equal(t.plugin.wounds[0].artery,undefined);advance(off.s,600);assert.ok(100-off.e.blood<artery*.6,'with spurts off a thigh stab is an ordinary wound');
+  const shin=fresh();const sh=shin.part('shin');shin.s.damage(sh,40,sh.position,'stab');assert.equal(sh.plugin.wounds[0].artery,undefined,'no artery in the shin');
+});
+test('a still wound clots: its bleeding strictly decreases, and slower on a limb that keeps moving',()=>{
+  const {s,e,part}=fresh({autoBalance:false,gravity:0});s.gravity=0;const arm=part('forearm');s.damage(arm,40,arm.position,'cut');let last=arm.plugin.bleed;assert.ok(last>.3);
+  for(let i=0;i<20;i++){advance(s,30);assert.ok(arm.plugin.bleed<last,`bleed rose or stalled at ${i}`);last=arm.plugin.bleed;}
+  const moving=fresh({autoBalance:false,gravity:0});moving.s.gravity=0;const m=moving.part('forearm');moving.s.damage(m,40,m.position,'cut');for(let i=0;i<600;i++){Body.setVelocity(m,{x:Math.sin(i/5)*3,y:0});moving.s.step();}assert.ok(m.plugin.bleed>last,'movement keeps a wound open');
+  const again=arm.plugin.wounds[0].bleed;s.damage(arm,10,arm.position,'impact');assert.ok(arm.plugin.wounds[0].bleed>again,'a new blow on an old wound opens it again');
+});
+test('the heart races with pain and early blood loss, then fails; spurts follow the pulse',()=>{
+  const {s,e,part}=fresh();advance(s,10);const calm=e.heartRate;assert.ok(calm>=65&&calm<=80);s.damage(part('pelvis'),40,part('pelvis').position,'impact');s.step();assert.ok(e.heartRate>calm+20);
+  e.pain=0;e.blood=70;s.step();const racing=e.heartRate;e.blood=30;s.step();assert.ok(e.heartRate<racing,'a failing heart slows');assert.ok(e.pulse>=0&&e.pulse<=1);
+});
+test('blood lands on objects and walls where it hits, in their own frame, and stays capped',()=>{
+  const s=new Simulation();s.gravity=0;s.configure({gravity:0});const crate=s.spawn('crate',1000,300).bodies[0];for(let i=0;i<40;i++)s.emit(1000+((i%7)-3)*6,240,0,3,3,3,'#922c33',2,'blood');advance(s,60);
+  assert.ok(crate.plugin.stains.length>0&&crate.plugin.stains.length<=10);for(const st of crate.plugin.stains)assert.ok(Math.abs(st.x)<=27&&Math.abs(st.y)<=27,'stains are in the crate\'s own frame');
+  const before={...crate.plugin.stains[0]};Body.setAngle(crate,1);Body.setPosition(crate,{x:1500,y:500});assert.deepEqual({x:crate.plugin.stains[0].x,y:crate.plugin.stains[0].y},{x:before.x,y:before.y},'so they turn and travel with it');
+  for(let i=0;i<8;i++)s.emit(8,300+i*10,-4,0,3,3,'#922c33',2,'blood');advance(s,30);assert.ok(s.stains.some(st=>st.wall&&st.x<3),'walls take blood too');
+  const none=new Simulation();none.configure({decals:false});const c=none.spawn('crate',1000,620).bodies[0];for(let i=0;i<30;i++)none.emit(1000,560,0,3,3,3,'#922c33',2,'blood');advance(none,60);assert.ok(!c.plugin.stains?.length&&none.stains.length===0,'decals off: no stains at all');
+});
+test('drops on the floor merge into one pool that grows to a limit, dries in about 30 s, and the count stays capped',()=>{
+  const s=new Simulation();for(let i=0;i<400;i++){s.emit(1000+((i*7)%11)-5,640,0,2,3,3,'#922c33',2,'blood');if(i%4===0)s.step();}advance(s,30);
+  const pools=s.stains.filter(st=>Math.abs(st.x-1000)<60);assert.equal(pools.length,1,'one pool, not a pile of dots');assert.ok(pools[0].r>12&&pools[0].r<=46);assert.ok(pools[0].wet>.8);advance(s,60*31);assert.equal(pools[0].wet,0,'dry after half a minute');
+  const b=new Simulation();b.configure({maxStains:60,stainLifetime:0,organDamage:false,autoBalance:false});const e=b.spawn('human',1000,555);for(const name of ['hip','shoulder','knee'])b.sever(b.joints.find(c=>c.plugin.name===name));
+  let peak=0;for(let i=0;i<3600;i++){if(i%300===0)for(const p of e.bodies)Body.setVelocity(p,{x:(i%600?-6:6),y:-3});b.step();peak=Math.max(peak,b.stains.length);}assert.ok(peak<=60,`stain count reached ${peak}`);assert.ok(b.stains.length>5);
+  const fade=new Simulation();fade.configure({stainLifetime:10});fade.pool(1000,5);advance(fade,60*11);assert.equal(fade.stains.length,0,'stains fade after their lifetime');
+});
+test('a body dragged through a wet pool smears it and gets bloody; feet track prints away',()=>{
+  const s=new Simulation();const pool=s.pool(1000,5);pool.r=30;const crate=s.spawn('crate',960,622).bodies[0];advance(s,20);for(let i=0;i<90;i++){Body.setVelocity(crate,{x:3,y:crate.velocity.y});s.step();}
+  const smear=s.stains.find(st=>st.smear);assert.ok(smear&&smear.r>15,'a long smear, not a dot');assert.ok(crate.plugin.stains?.length>0,'the crate picks blood up');
+  const dryS=new Simulation();const old=dryS.pool(1000,5);old.r=30;old.wet=0;const c2=dryS.spawn('crate',960,622).bodies[0];advance(dryS,20);for(let i=0;i<90;i++){Body.setVelocity(c2,{x:3,y:c2.velocity.y});dryS.step();}assert.ok(!dryS.stains.some(st=>st.smear),'dried blood does not smear');
+});
+test('androids leak coolant and sparks instead of blood',()=>{
+  const s=new Simulation();const bot=s.spawn('android',1000,555),chest=bot.bodies[2];s.shoot({x:chest.bounds.min.x-8,y:chest.position.y},{x:chest.bounds.min.x+90,y:chest.position.y});const holed=bot.bodies.find(b=>b.plugin.leak>0);assert.ok(holed);
+  let oil=0;for(let i=0;i<480;i++){s.step();oil+=s.particles.filter(p=>p.type==='oil').length;}const marks=[...s.stains,...s.bodies.flatMap(b=>b.plugin.stains||[])];
+  assert.ok(oil>0,'coolant should come out');assert.ok(marks.length>0&&marks.every(st=>st.oil),'and whatever it lands on is stained with coolant, never blood');assert.ok(!s.particles.some(p=>p.type==='blood'));assert.equal(bot.blood,100);
+});
+test('blood state survives save and load',()=>{
+  const {s,e,part}=fresh({organDamage:false});const thigh=part('thigh');s.damage(thigh,40,thigh.position,'stab');advance(s,240);s.stain(thigh,thigh.position,3);const data=JSON.parse(JSON.stringify(s.serialize()));
+  const r=new Simulation();r.restore(data);const t=r.bodies.find(b=>b.plugin.slot===thigh.plugin.slot);assert.deepEqual(t.plugin.wounds,thigh.plugin.wounds);assert.deepEqual(t.plugin.stains,JSON.parse(JSON.stringify(thigh.plugin.stains)));assert.equal(r.stains.length,s.stains.length);
+  const blood=r.entities[0].blood;advance(r,300);assert.ok(r.entities[0].blood<blood,'and the wound keeps bleeding after loading');
+  for(const b of data.bodies)for(const w of b.plugin.wounds||[])delete w.bleed;const old=new Simulation();old.restore(data);advance(old,60);assert.ok(old.bodies.every(b=>Number.isFinite(b.plugin.bleed??0)),'wounds from an old save have no rate of their own and simply do not bleed');
 });
