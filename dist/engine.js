@@ -60,8 +60,8 @@
     {id:'bulletDamage',section:'Weapons',label:'Bullet damage',help:'Damage of one bullet, from the shoot tool or a pistol.',type:'range',min:5,max:300,step:5,def:55,unit:''},
     {id:'bulletForce',section:'Weapons',label:'Bullet knockback',help:'How hard a bullet shoves what it hits.',type:'range',min:0,max:6,step:.1,def:1,unit:'×'},
     {id:'explosionPower',section:'Weapons',label:'Explosion power',help:'Multiplies the blast force and damage of every explosion.',type:'range',min:.25,max:4,step:.05,def:1,unit:'×'},
-    {id:'pierceSpeed',section:'Weapons',label:'Piercing speed',help:'How fast a blade must travel point-first to run a body through. Lower pierces more easily.',type:'range',min:1,max:20,step:.5,def:5,unit:''},
-    {id:'bladeGrip',section:'Weapons',label:'Blade grip',help:'How firmly flesh holds a lodged blade. Low values let it slide out with a light pull, or under the body\'s own weight.',type:'range',min:1,max:30,step:1,def:5,unit:''},
+    {id:'pierceSpeed',section:'Weapons',label:'Piercing speed',help:'How fast a blade must travel point-first to run a body through. Lower pierces more easily.',type:'range',min:.5,max:20,step:.5,def:2.5,unit:''},
+    {id:'bladeGrip',section:'Weapons',label:'Blade grip',help:'How firmly flesh holds a lodged blade. Low values let it slide out with a light pull, or under the body\'s own weight.',type:'range',min:1,max:30,step:1,def:2,unit:''},
     {id:'iterations',section:'Physics',label:'Physics iterations',help:'Solver passes per step. Higher is more accurate and slower.',type:'range',min:4,max:64,step:1,def:10,unit:''},
     {id:'airDrag',section:'Physics',label:'Air resistance',help:'Multiplier on air drag. Zero is a vacuum.',type:'range',min:0,max:5,step:.1,def:1,unit:'×'},
     {id:'grabStrength',section:'Physics',label:'Grab strength',help:'How firmly the cursor holds what it drags. Higher also throws harder.',type:'range',min:.04,max:.6,step:.01,def:.16,unit:''},
@@ -121,6 +121,7 @@
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
+  const PIN_TEAR=14; // px a lodged blade's pins may stretch before it is torn out
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
@@ -146,7 +147,7 @@
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -731,21 +732,26 @@
       const def=defs[p.kind]||{},name=def.name||'Object';
       if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
       if(def.firearm){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,def.firearm.muzzle)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-def.firearm.recoil));return `${name} fired`;}
+      if(def.device==='ram')return this.ram(body);
       if(def.device){p.active=!p.active;return `${name} ${p.active?'on':'off'}`;}
       return 'This object has no activation';
     }
     // ponytail: a blade in a hand shares that body's collision group, which piercing also needs, so held blades slash and do not pierce. Per-pair filtering would lift this.
+    // A hot blade seals what it cuts: the wound does not bleed, and the flesh round it is cooked.
+    sear(part){const p=part.plugin;for(const w of p.wounds||[])w.bleed=0;this.bleedOf(p);p.heat=Math.min(260,p.heat+90);p.char=Math.min(1,(p.char||0)+.12);}
     // Blades: the tip is the -y end of a sharp body. A fast, point-first hit on flesh runs it through instead of bouncing off.
-    blade(sword){const h=sword.plugin.h,axis=Vector.rotate({x:0,y:-1},sword.angle);return {axis,tip:Vector.add(sword.position,Vector.mult(axis,h/2)),length:h*.76};}
+    blade(sword){const h=sword.plugin.h,axis=Vector.rotate({x:0,y:-1},sword.angle);return {axis,tip:Vector.add(sword.position,Vector.mult(axis,h/2)),length:h*(defs[sword.plugin.kind]?.sharp?.length??.76)};}
+    // Is this thing's blade live right now? A plain blade always is; a powered one (chainsaw, energy sword) only while it is switched on.
+    cuts(body,how){const def=defs[body.plugin.kind];return !!def?.sharp?.[how]&&(!def.device||!!body.plugin.active);}
     pierce(pair,sword,part) {
-      const p=sword.plugin;if(!defs[p.kind]?.sharp?.tip||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
+      const p=sword.plugin;if(!this.cuts(sword,'tip')||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
       const {axis,tip}=this.blade(sword),contact=pair.collision.supports[0]||part.position;if(Vector.magnitude(Vector.sub(contact,tip))>26)return false;
       const arm=Vector.sub(tip,sword.position),tipVelocity={x:sword.velocity.x-sword.angularVelocity*arm.y,y:sword.velocity.y+sword.angularVelocity*arm.x};
       const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed)return false;
       // ponytail: the blade joins the victim's no-collide group, so one sword skewers one ragdoll at a time. Per-pair filtering if kebabs matter.
       pair.isSensor=true;p.stuck=part.plugin.entityId;p.bloody=true;sword.collisionFilter.group=part.collisionFilter.group;
       this.piercing.set(sword,{part,steps:40});
-      this.damage(part,clamp(20+speed*3,25,70),contact,'stab',axis);this.onEffect('impact',.4);return true;
+      this.damage(part,clamp(20+speed*3,25,70),contact,'stab',axis);if(defs[p.kind].sharp.hot)this.sear(part);this.onEffect('impact',.4);return true;
     }
     // The blade slides for a few steps, then the flesh grips it: two pins along the blade act as a weld. Pulled hard enough, it comes out and the wound opens up.
     blades(){
@@ -768,15 +774,24 @@
         const pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4;
         // A blade in the body hurts all the time, and much more when someone moves it.
         if(pins.length){const host=this.getEntity(pins[0].bodyA);if(host&&host.kind==='human'&&host.alive){const moved=this.drag?.bodyB===sword;host.pain=Math.min(100,(host.pain||0)+(moved?14:1.6)/120*this.settings.painSensitivity);if(moved&&!(host.flinch>0)){host.flinch=FLINCH_TIME;host.flinchMag=.5;host.flinchSlot=pins[0].bodyA.plugin.slot;host.flinchDir=host.flinchDir||1;}}}
-        if(pins.length&&!pulled&&pins.every(c=>Constraint.currentLength(c)<this.settings.bladeGrip))continue;
+        if(pins.length&&!pulled&&(this.drag?.bodyB===sword||pins.every(c=>Constraint.currentLength(c)<PIN_TEAR)))continue; // a hand pull is what the grip setting governs; the pins themselves only give way to real violence
         for(const c of pins){Composite.remove(this.world,c);{const host=c.bodyA.plugin,stab=(host.wounds||[]).filter(w=>w.type==='stab').pop();if(stab)stab.bleed=Math.min(4,(stab.bleed||0)+.8);this.bleedOf(host);}const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
         // Collisions come back only once the blade is clear, otherwise the solver would fire it out of the body.
         const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;}
       }
     }
-    disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
+    disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
+      if(other.plugin.active&&defs[other.plugin.kind]?.device==='chainsaw'&&!target.plugin.boundary&&this.time-(this.bites.get(target)||0)>.1){this.bites.set(target,this.time); /* ten bites a second into each thing the bar touches */ const at=Vector.mult(Vector.add(target.position,other.position),.5);this.damage(target,14,at,'cut',Vector.rotate({x:0,y:-1},other.angle));if(matOf(target.plugin).soft>=1)other.plugin.bloody=true;else this.burst(at.x,at.y,4,'#ffe7a0',5);}if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
+    // The power hammer's ram: everything in front of the head is struck along the hammer's axis, and the hammer kicks back.
+    ram(body) {
+      const axis=Vector.rotate({x:0,y:-1},body.angle),head=Vector.add(body.position,Vector.mult(axis,body.plugin.h*.42));let struck=0;
+      for(const b of this.bodies){if(b===body||b.isStatic||Vector.magnitude(Vector.sub(b.position,head))>46+Math.max(b.plugin.w||0,b.plugin.r||0)/2)continue;const toward=Vector.dot(Vector.sub(b.position,body.position),axis);if(toward<0)continue;
+        Body.setVelocity(b,Vector.add(b.velocity,Vector.mult(axis,16)));this.damage(b,75,head,'impact',axis);struck++;}
+      Body.setVelocity(body,Vector.add(body.velocity,Vector.mult(axis,-5)));this.flashes.push({x:head.x,y:head.y,radius:60,life:.25,maxLife:.25});this.onEffect('explosion',.5);return struck?`Ram fired: ${struck} hit`:'Ram fired';
+    }
+    // Units: inside Matter's collision events a body's velocity is per substep (1/120 s), half the per-frame figure the rest of the engine sees. Every speed threshold in here and in pierce() is in those units.
     collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;const speed=Vector.magnitude(Vector.sub(a.velocity,b.velocity));
-      if(speed>7){for(const [target,other] of [[a,b],[b,a]]){if(target.plugin.boundary)continue;const multiplier=matOf(target.plugin).brittle?3:1;const point=Vector.mult(Vector.add(target.position,other.position),.5);const blade=!!defs[other.plugin.kind]?.sharp?.edge;this.damage(target,blade?Math.min(60,(speed-7)*4.5):(speed-7)*multiplier*1.5,point,blade?'cut':'impact',other.plugin.boundary?Vector.neg(target.velocity):Vector.sub(other.velocity,target.velocity));}}
+      if(speed>7){for(const [target,other] of [[a,b],[b,a]]){if(target.plugin.boundary)continue;const multiplier=matOf(target.plugin).brittle?3:1;const point=Vector.mult(Vector.add(target.position,other.position),.5);const blade=this.cuts(other,'edge'),od=defs[other.plugin.kind];this.damage(target,blade?Math.min(od.sharp.power??60,(speed-7)*4.5):(speed-7)*multiplier*1.5*(od?.blunt||1),point,blade?'cut':'impact',other.plugin.boundary?Vector.neg(target.velocity):Vector.sub(other.velocity,target.velocity));if(blade&&od.sharp.hot)this.sear(target);}}
       if(speed>3)this.onEffect('impact',Math.min(.5,speed/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
@@ -827,6 +842,7 @@
         {const hot=defs[p.kind]?.explosive?.onHeat;if(hot&&p.heat>hot&&p.fuse===undefined)p.fuse=.5;}
         if(p.active&&!b.isStatic){const device=defs[p.kind]?.device;if(device==='thruster'){const force=Vector.rotate({x:0,y:-.0025*b.mass},b.angle);Body.applyForce(b,b.position,force);const jet=Vector.add(b.position,Vector.rotate({x:0,y:30},b.angle));this.burst(jet.x,jet.y,2,'#f3c885',2,'fire');}
           if(device==='wheel')Body.setAngularVelocity(b,.18);
+          if(device==='chainsaw')Body.setVelocity(b,{x:b.velocity.x+rnd(-.25,.25),y:b.velocity.y+rnd(-.25,.25)});
         }
         if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b);}
       }

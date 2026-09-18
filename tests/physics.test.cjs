@@ -5,7 +5,7 @@ const { Body, Constraint } = require('matter-js');
 const advance=(sim,n=120)=>{for(let i=0;i<n;i++)sim.step();};
 
 test('all catalogue objects spawn and remain finite under gravity',()=>{
-  const s=new Simulation();CATALOG.forEach((c,i)=>s.spawn(c.id,100+i*140,300));advance(s,240);
+  const s=new Simulation();s.configure({maxObjects:1000});CATALOG.forEach((c,i)=>assert.ok(s.spawn(c.id,180+(i%14)*170,420-Math.floor(i/14)*190),`${c.id} did not spawn`));advance(s,240); // rows: the catalogue is longer than the floor
   assert.ok(s.bodies.length>20);
   for(const b of s.bodies){assert.ok(Number.isFinite(b.position.x));assert.ok(Number.isFinite(b.position.y));assert.ok(b.position.y<710);}
 });
@@ -200,7 +200,7 @@ test('reattach puts a severed limb back on its own ragdoll, from either end',()=
 test('a lodged blade slides out with a light pull, and grip is adjustable',()=>{
   const pull=grip=>{const s=new Simulation();s.gravity=0;s.configure({bladeGrip:grip,gravity:0});const e=s.spawn('human',1000,400);e.alive=false;const chest=e.bodies[2],sword=s.spawn('sword',880,chest.position.y).bodies[0];thrust(s,sword,14);advance(s,40);
     assert.notEqual(sword.plugin.stuck,undefined);s.freeze(chest);s.beginDrag(sword,{...sword.position});let steps=0;const hold={x:sword.position.x-60,y:sword.position.y};for(;steps<400&&s.joints.some(c=>c.plugin.pierce);steps++){s.moveDrag(hold);s.step();}return steps;};
-  const easy=pull(5),firm=pull(30);assert.ok(easy<60&&firm===400,`a 60px pull should free the blade within a second, took ${easy} steps`);assert.ok(firm>easy,'a higher grip should hold longer');
+  const easy=pull(2),firm=pull(30);assert.ok(easy<30&&firm>easy*5,`a 60px pull should free the blade within a second, took ${easy} steps`);assert.ok(firm>easy,'a higher grip should hold longer');
 });
 test('a lone head regrows a whole body outward from itself: neck, then chest, then the rest',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);const head=e.bodies[0];s.sever(s.joints.find(c=>c.plugin.name==='atlas'));
@@ -370,7 +370,7 @@ test('the pose blend is part of a save',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);assert.equal(e.poseNow.angle.length,17);const r=new Simulation();r.restore(JSON.parse(JSON.stringify(s.serialize())));assert.deepEqual(r.entities[0].poseNow,JSON.parse(JSON.stringify(e.poseNow)));advance(r,120);assert.ok(r.bodies[2].position.y<505);
 });
 // ---- reaction spec, section 2: immediate hit reactions
-const standing=(kind='human',set={})=>{const s=new Simulation();s.configure({organDamage:false,...set});const e=s.spawn(kind,1000,555);advance(s,120);return {s,e,chest:e.bodies[2]};};
+const standing=(kind='human',set={})=>{const s=new Simulation().seed(9);s.configure({organDamage:false,...set});const e=s.spawn(kind,1000,555);advance(s,120);return {s,e,chest:e.bodies[2]};};
 const rel=(e,slot,parent)=>{const a=e.bodies[slot].angle-e.bodies[parent].angle;return Math.atan2(Math.sin(a),Math.cos(a));};
 test('a small hit is a flinch: the struck arm pulls in, the head snaps away, and it passes',()=>{
   const {s,e}=standing('human',{awareness:false});const fore=e.bodies[9];s.damage(fore,10,fore.position,'impact',{x:1,y:0});let elbow=0,head=0; // awareness off: this is about the reflex alone, not where it looks afterwards
@@ -487,4 +487,30 @@ test('heat close by makes it shrink away; a neighbour being hurt makes it start 
 test('grunts are off by default and only come from conscious humans when on',()=>{
   const count=(kind,set)=>{const {s,e,chest}=standing(kind,set);let n=0;s.onEffect=t=>{if(t==='grunt')n++;};s.damage(chest,25,chest.position,'impact',{x:1,y:0});return n;};
   assert.equal(count('human',{}),0);assert.equal(count('human',{grunts:true}),1);assert.equal(count('android',{grunts:true}),0);
+});
+// ---- catalogue: melee
+const {defs}=require('../engine.js');
+const arena=(set={})=>{const s=new Simulation().seed(4);s.gravity=0;s.configure({gravity:0,organDamage:false,autoBalance:false,...set});const e=s.spawn('human',1000,400);e.alive=false;return {s,e,chest:e.bodies[2]};};
+const hurl=(s,kind,target,speed,angle=Math.PI/2,from=-130)=>{const w=s.spawn(kind,target.position.x+from,target.position.y).bodies[0];Body.setAngle(w,angle);Body.setVelocity(w,{x:speed*Math.sign(-from),y:0});return w;};
+test('every pointed melee weapon pierces when thrown point-first; blunt ones never do',()=>{
+  for(const kind of ['knife','spear','lance','bolt','spike','crystal']){const {s,chest}=arena();const w=hurl(s,kind,chest,14,Math.PI/2,-(defs[kind].h/2+60));advance(s,60);assert.ok(w.plugin.stuck!==undefined,`${kind} did not lodge`);assert.equal(s.joints.filter(c=>c.plugin.pierce).length,2);}
+  for(const kind of ['bat','hammer','rod','wrench','stick','axe']){const {s,chest}=arena();const w=hurl(s,kind,chest,14,Math.PI/2,-(defs[kind].h/2+60));advance(s,60);assert.equal(w.plugin.stuck,undefined,`${kind} should not pierce`);}
+});
+test('blunt weapons hit harder than their speed, and break bone rather than skin',()=>{
+  const blow=(kind)=>{const {s,e}=arena();const w=hurl(s,kind,e.bodies[5],24,0,-70);advance(s,40);const hit=e.bodies.filter(b=>b.plugin.hp<100);return {hp:hit.reduce((n,b)=>n+100-b.plugin.hp,0),bone:Math.min(...e.bodies.map(b=>b.plugin.bone)),wounds:hit.flatMap(b=>b.plugin.wounds)};};
+  const crate=blow('crate'),bat=blow('bat'),hammer=blow('hammer');assert.ok(crate.hp>0);assert.ok(bat.hp>crate.hp*1.4,`bat ${bat.hp} vs crate ${crate.hp}`);assert.ok(hammer.hp>bat.hp);assert.ok(bat.bone<crate.bone);assert.ok(bat.wounds.length&&bat.wounds.every(w=>w.type==='impact'));
+});
+test('an axe takes a limb off in one swing; a knife only cuts',()=>{
+  const swing=(kind)=>{const {s,e}=arena();const w=hurl(s,kind,e.bodies[6],60,0,-70);advance(s,40);return {joints:s.joints.filter(c=>c.plugin.joint).length,wounds:e.bodies.flatMap(b=>b.plugin.wounds.map(x=>x.type))};};
+  const axe=swing('axe'),knife=swing('knife');assert.ok(axe.joints<16,'the axe should sever');assert.equal(knife.joints,16);assert.ok(knife.wounds.includes('cut'));
+});
+test('powered blades only cut while they are on: the energy sword sears, the chainsaw keeps cutting',()=>{
+  const {s,e}=arena();const arm=e.bodies[5],blade=hurl(s,'esword',arm,20,0,-60);advance(s,40);assert.ok(!arm.plugin.wounds.some(w=>w.type==='cut'),'switched off, it is a metal stick');
+  const hot=arena();const limb=hot.e.bodies[5],lit=hurl(hot.s,'esword',limb,20,0,-60);hot.s.activate(lit);assert.equal(lit.plugin.active,true);advance(hot.s,40);assert.ok(limb.plugin.wounds.some(w=>w.type==='cut'));assert.equal(limb.plugin.bleed,0,'seared shut');assert.ok(limb.plugin.heat>60);
+  const saw=arena();const thigh=saw.e.bodies[11],c=saw.s.spawn('chainsaw',thigh.position.x-18,thigh.position.y).bodies[0];saw.s.freeze(c);const lost=()=>saw.e.bodies.reduce((n,b)=>n+100-b.plugin.hp,0);advance(saw.s,60);assert.equal(lost(),0,'a stopped chainsaw is harmless to lean on');
+  saw.s.activate(c);for(let i=0;i<90;i++){Body.setPosition(c,{x:thigh.position.x-18,y:thigh.position.y});saw.s.step();}assert.ok(lost()>80,`running, it should chew through whatever the bar touches: ${lost()}`);assert.ok(c.plugin.bloody);
+});
+test('the power hammer fires its ram at what is in front of the head',()=>{
+  const s=new Simulation();s.gravity=0;s.configure({gravity:0});const h=s.spawn('phammer',1000,400).bodies[0],front=s.spawn('crate',1000,400-45-40).bodies[0],behind=s.spawn('crate',1000,400+45+60).bodies[0];
+  assert.match(s.activate(h),/1 hit/);assert.ok(front.velocity.y<-10);assert.ok(front.plugin.hp<80);assert.equal(behind.plugin.hp,80);assert.ok(h.velocity.y>2,'and the hammer kicks back');
 });
