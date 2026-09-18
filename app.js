@@ -11,7 +11,7 @@
     {id:'grab',name:'Grab',symbol:'↖',key:'1',title:'Grab & move',desc:'Drag anything. See what happens.'},
     {id:'rope',name:'Rope',symbol:'⌁',key:'2',title:'Connect objects',desc:'Click two objects, or an object and empty space.'},
     {id:'freeze',name:'Freeze',symbol:'❄',key:'3',title:'Freeze in place',desc:'Click a body to freeze it. Click again to release.'},
-    {id:'shoot',name:'Shoot',symbol:'⌖',key:'4',title:'Take your shot',desc:'Click or hold. Bullets travel from the left toward your cursor.'},
+    {id:'shoot',name:'Shoot',symbol:'⌖',key:'4',title:'Take your shot',desc:'Click or hold. Fires point-blank, left to right, into whatever is under the cursor.'},
     {id:'fire',name:'Fire',symbol:'♨',key:'5',title:'Turn up the heat',desc:'Click or hold on an object to ignite it.'},
     {id:'shock',name:'Shock',symbol:'ϟ',key:'6',title:'A little electricity',desc:'Click a conductor. Electricity spreads to nearby objects.'},
     {id:'blast',name:'Blast',symbol:'✳',key:'7',title:'Make an impact',desc:'Click anywhere to create an explosion.'},
@@ -48,7 +48,8 @@
   function temperature(c){const unit=sim.settings.tempUnit;return unit==='Fahrenheit'?Math.round(c*9/5+32)+'°F':unit==='Kelvin'?Math.round(c+273)+' K':Math.round(c)+'°C';}
   function select(body){state.selected=body;if(body?.plugin.part==='hand'){const picked=sim.equip(body);if(picked)toast(picked);}updateSelection();}
   function updateSelection(){const b=state.selected;if(!b||!sim.bodies.includes(b)){state.selected=null;$('#selection-panel').hidden=true;return;}$('#selection-panel').hidden=false;const p=b.plugin,c=CATALOG.find(c=>c.id===p.kind);$('#selection-name').textContent=(c?.name||'Fragment')+(p.part?' · '+p.part:'');$('#selection-info').innerHTML=`<div class="stat-row"><span>Integrity</span><b>${Math.round(p.hp/p.maxHp*100)}%</b></div><div class="health-bar"><i style="width:${clamp(p.hp/p.maxHp*100,0,100)}%"></i></div><div class="stat-row"><span>Temperature</span><b>${temperature(p.heat)}</b></div><div class="stat-row"><span>State</span><b>${b.isStatic?'Frozen':p.burning?'Burning':p.charge>.1?'Electrified':p.hp<=0?'Broken':p.active?'Active':'Dynamic'}</b></div>`;$('#freeze-selection').textContent=b.isStatic?'Unfreeze':'Freeze';$('#activate-selection').disabled=!['barrel','bomb','gun','thruster','wheel','battery'].includes(p.kind);}
-  function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh')return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Dead':e?.stun>0?'Knocked down':p.bleed>.05?'Bleeding':'Stable'}</b></div>`);}
+  function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh'||!b.plugin.part)return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Dead':e?.consciousness==='unconscious'?'Unconscious':e?.stun>0?'Knocked down':e?.consciousness==='dazed'?'Dazed':p.bleed>.05?'Bleeding':'Stable'}</b></div>`+(p.bone<=50?`<div class="stat-row"><span>Limb</span><b>Fractured</b></div>`:'')+(p.internal>.02?`<div class="stat-row"><span>Internal bleeding</span><b>${p.internal>1?'Massive':p.internal>.3?'Heavy':'Slow'}</b></div>`:'')
+    +(e&&e.kind==='human'?`<div class="stat-row"><span>Pain</span><b>${Math.round(e.pain||0)}%</b></div><div class="stat-row"><span>Oxygen</span><b>${Math.round(e.oxygen??100)}%</b></div>`+(e.organs?Object.entries(e.organs).filter(([,v])=>v<100).map(([k,v])=>`<div class="stat-row"><span>${k[0].toUpperCase()+k.slice(1)}</span><b>${v<=0?'Destroyed':Math.round(v)+'%'}</b></div>`).join(''):'')+(e.causeOfDeath?`<div class="stat-row"><span>Cause of death</span><b>${e.causeOfDeath}</b></div>`:''):''));}
   function roundRect(c,x,y,w,h,r=2){c.beginPath();c.roundRect(x,y,w,h,r);}
   function humanOutline(c,p){
     const w=p.w||14,h=p.h||30;c.beginPath();
@@ -77,6 +78,11 @@
     c.stroke();
     if(p.part==='pelvis'){c.fillStyle='#545c59';c.fillRect(-w/2-2,-h/2,w+4,h*.82);c.fillStyle='#717c73';c.fillRect(-w/2,-h/2,w,3);}
     if(p.part==='head'){c.fillStyle='#403b36';c.beginPath();c.moveTo(-13,-3);c.lineTo(-10,-15);c.quadraticCurveTo(3,-20,10,-10);c.lineTo(3,-11);c.lineTo(-4,-7);c.lineTo(-8,2);c.lineTo(-10,3);c.fill();c.fillStyle=dead?'#463d39':'#e9e6d5';c.fillRect(5,-4,4,1.8);if(!dead){c.fillStyle='#373b35';c.fillRect(7,-4,1.3,1.8);}c.strokeStyle='#9c7561';c.beginPath();c.ellipse(-5,1,2,3,0,0,7);c.stroke();}
+    if(!sim.settings.noGore){
+      // Internal bleeding: a dark bruise spreading under the skin. A fracture: a kink of swelling and a bone shard through the skin.
+      if(p.bruise>.02){const g=c.createRadialGradient(0,0,0,0,0,Math.max(w,h)*.6*p.bruise+3);g.addColorStop(0,`rgba(74,32,78,${Math.min(.75,p.bruise)})`);g.addColorStop(.7,`rgba(96,60,44,${Math.min(.45,p.bruise*.6)})`);g.addColorStop(1,'rgba(96,60,44,0)');c.fillStyle=g;c.fillRect(-w,-h,w*2,h*2);}
+      if((p.bone??100)<=50&&!['head','chest','abdomen','pelvis','neck'].includes(p.part)){const y=h*.08,side=(p.slot%2?1:-1);c.fillStyle='#6d3a4a88';c.beginPath();c.ellipse(side*w*.12,y,w*.55,h*.16,0,0,7);c.fill();c.fillStyle='#e6dcc0';c.strokeStyle='#7a2b30';c.lineWidth=.7;c.beginPath();c.moveTo(side*w*.05,y+3);c.lineTo(side*w*.62,y-5);c.lineTo(side*w*.5,y+1);c.lineTo(side*w*.2,y+5);c.closePath();c.fill();c.stroke();}
+    }
     for(const wound of sim.settings.noGore?[]:p.wounds||[]){
       const r=wound.radius||3,x=wound.x,y=wound.y;c.fillStyle=wound.type==='impact'?'#72425288':'#803039';c.beginPath();c.ellipse(x,y,r*1.65,r*1.3,wound.seed,0,7);c.fill();
       if(wound.type!=='impact'||health<35){c.fillStyle='#65272e';c.beginPath();for(let i=0;i<9;i++){const a=i/9*Math.PI*2,rr=r*(.7+.25*Math.sin(i*2.3+wound.seed));const px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr;(i?c.lineTo:c.moveTo).call(c,px,py);}c.closePath();c.fill();c.strokeStyle='#c46861';c.lineWidth=.65;c.stroke();
@@ -174,22 +180,35 @@
   function renderCatalog(){const query=$('#search').value.trim().toLowerCase();const list=CATALOG.filter(c=>(state.category==='all'||c.category===state.category)&&`${c.name} ${c.description}`.toLowerCase().includes(query));$('#catalog-count').textContent=list.length+' objects';$('#catalog').replaceChildren();for(const item of list){const button=document.createElement('button');button.className='object-card'+(state.spawn===item.id?' active':'');button.dataset.object=item.id;button.title=item.description;button.setAttribute('aria-label','Spawn '+item.name);const preview=document.createElement('canvas');preview.width=160;preview.height=114;preview.setAttribute('aria-hidden','true');button.appendChild(preview);const name=document.createElement('span');name.className='name';name.textContent=item.name;button.appendChild(name);if(item.id==='human'){const tag=document.createElement('span');tag.className='tag';tag.textContent='Start here';button.appendChild(tag);}button.addEventListener('click',()=>chooseSpawn(item.id));$('#catalog').appendChild(button);drawMini(preview.getContext('2d'),item.id);}if(!list.length){const p=document.createElement('p');p.className='no-results';p.textContent='No objects match your search.';$('#catalog').appendChild(p);}}
   for(const tool of TOOLS){const b=document.createElement('button');b.className='tool'+(tool.id==='grab'?' active':'');b.dataset.tool=tool.id;b.title=`${tool.title} (${tool.key})`;b.setAttribute('aria-label',tool.title);b.setAttribute('aria-pressed',String(tool.id==='grab'));b.innerHTML=`<span class="shortcut">${tool.key}</span><span class="symbol">${tool.symbol}</span><span class="tool-name">${tool.name}</span>`;b.addEventListener('click',()=>setTool(tool.id));$('#tools').appendChild(b);}
   const hash=n=>{const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);};
-  // Fire. Flames are not particles: each burning body carries a row of tongues along its top, shaped by smooth noise so they lick and lean rather than blink.
-  // Two layers, drawn additively: a wide red-orange body and a narrow yellow-white core, over a glow on whatever is beneath.
+  // Fire. A flame is hundreds of soft blobs drawn additively: each is born somewhere on the burning body, accelerates upward, wanders in the turbulence,
+  // shrinks and cools from white-yellow through orange to red. Overlapping blobs add up into one continuous, flickering flame body, so a burning ragdoll
+  // is wrapped in a single fire rather than wearing seventeen small ones. Visual only, so it lives here and not in the engine.
   const smooth=t=>{const i=Math.floor(t),f=t-i,u=f*f*(3-2*f);return hash(i)*(1-u)+hash(i+1)*u;};
+  const FLAMES=1600,flame={x:new Float32Array(FLAMES),y:new Float32Array(FLAMES),vx:new Float32Array(FLAMES),vy:new Float32Array(FLAMES),age:new Float32Array(FLAMES),life:new Float32Array(FLAMES),size:new Float32Array(FLAMES),next:0,alive:0};
+  function emitFlames(b,dt){const p=b.plugin,w=p.w||p.r*2||20,h=p.h||p.r*2||20,power=clamp((p.heat-150)/380,.5,1.3),rate=clamp(w*h/34,8,115)*power*(flame.alive>1200?.35:1); // by surface area: a crate burns with many more blobs than a hand
+    let count=rate*dt;count=Math.floor(count)+(Math.random()<count%1?1:0);const cos=Math.cos(b.angle),sin=Math.sin(b.angle),base=clamp(Math.min(w,h)*.5,5,15);
+    for(;count>0;count--){const i=flame.next=(flame.next+1)%FLAMES;let x=0,y=1e9;
+      // Fire climbs: of two random points on the body, the higher one burns. That keeps the base of the flame on the object and its bulk above it.
+      for(let tries=0;tries<2;tries++){const lx=(Math.random()-.5)*w,ly=(Math.random()-.5)*h,wy=b.position.y+lx*sin+ly*cos;if(wy<y){y=wy;x=b.position.x+lx*cos-ly*sin;}}
+      flame.x[i]=x;flame.y[i]=y;flame.vx[i]=b.velocity.x*30+(Math.random()-.5)*22;flame.vy[i]=b.velocity.y*18-45-Math.random()*55;
+      flame.age[i]=0;flame.life[i]=(.55+Math.random()*.65)*(.8+power*.3);flame.size[i]=base*(.75+Math.random()*.6)*(.85+power*.25);}}
+  function drawFire(dt,left,right){
+    if(dt>0)for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left-80&&b.bounds.min.x<right+80)emitFlames(b,dt);
+    const hot=glowSprite('flameHot','255,236,170',1),mid=glowSprite('flameMid','255,138,32',1),cool=glowSprite('flameCool','205,44,12',1),t=sim.time;let alive=0;
+    for(let i=0;i<FLAMES;i++){if(flame.age[i]>=flame.life[i])continue;alive++;
+      if(dt>0){flame.age[i]+=dt;flame.vy[i]-=230*dt;flame.vx[i]+=((smooth(flame.y[i]*.035+t*2.2+i%7)-.5)*260-flame.vx[i]*2.2)*dt;flame.x[i]+=flame.vx[i]*dt;flame.y[i]+=flame.vy[i]*dt;}
+      const k=flame.age[i]/flame.life[i];if(k>=1)continue;const r=flame.size[i]*(1.2-k*1.02),x=flame.x[i],y=flame.y[i],stretch=1+k*.9; // blobs stretch upward as they rise, which reads as licking tongues
+      // red outer haze the whole way up, orange through the middle of its life, yellow-white only while young. Alphas are low because the blobs add up.
+      ctx.globalAlpha=.2*(1-k);ctx.drawImage(cool,x-r*1.45,y-r*1.45*stretch,r*2.9,r*2.9*stretch);
+      if(k<.7){ctx.globalAlpha=.3*(1-k/.7);ctx.drawImage(mid,x-r,y-r*stretch,r*2,r*2*stretch);}
+      if(k<.28){ctx.globalAlpha=.32*(1-k/.28);ctx.drawImage(hot,x-r*.5,y-r*.5,r,r);}}
+    flame.alive=alive;ctx.globalAlpha=1;}
   // Performance: nothing here builds a gradient or blurs per frame. Flame tongues, glows and smoke are painted once into small sprites and stamped with drawImage.
   const sprites={};
   function sprite(name,w,h,paint){if(!sprites[name]){const c=document.createElement('canvas');c.width=w;c.height=h;paint(c.getContext('2d'),w,h);sprites[name]=c;}return sprites[name];}
-  const flameSprite=(name,inner,mid,tip)=>sprite(name,64,128,(c,w,h)=>{const g=c.createLinearGradient(0,h,0,0);g.addColorStop(0,inner);g.addColorStop(.45,mid);g.addColorStop(1,tip);c.fillStyle=g;c.beginPath();c.moveTo(6,h);c.bezierCurveTo(-4,h*.65,w*.32,h*.38,w/2,0);c.bezierCurveTo(w*.68,h*.42,w+4,h*.7,w-6,h);c.closePath();c.fill();});
   const glowSprite=(name,rgb,alpha)=>sprite(name,128,128,c=>{const g=c.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,`rgba(${rgb},${alpha})`);g.addColorStop(1,`rgba(${rgb},0)`);c.fillStyle=g;c.fillRect(0,0,128,128);});
-  function stampTongue(image,x,base,w,h,lean){ctx.setTransform(view.a,0,-lean/h*view.a,view.a,view.a*x+view.e,view.a*base+view.f);ctx.drawImage(image,-w,-h,w*2,h);}
-  const view={a:1,e:0,f:0}; // the world transform (uniform scale + offset), kept so sprites can be placed without save/restore
-  function drawFlames(b){const p=b.plugin,t=sim.time,left=b.bounds.min.x,wide=b.bounds.max.x-left,base=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.55,power=clamp((p.heat-150)/380,.45,1.25),count=clamp(Math.round(wide/12),2,6);
-    const outer=flameSprite('flameOuter','rgba(255,120,30,.6)','rgba(240,70,20,.45)','rgba(160,20,5,0)'),inner=flameSprite('flameInner','rgba(255,245,200,.9)','rgba(255,190,70,.6)','rgba(255,120,20,0)'),reach=wide*.7+46*power;
-    ctx.globalAlpha=clamp(wide/80,.1,1);ctx.drawImage(glowSprite('fireGlow','255,130,40',.22),b.position.x-reach,base-reach,reach*2,reach*2);ctx.globalAlpha=1; // small parts glow faintly, or a burning ragdoll's 17 glows add up to white
-    for(let i=0;i<count;i++){const seed=b.id*7.3+i*13.7,x=left+(i+.5)/count*wide+(smooth(t*2.3+seed)-.5)*6,edge=1-Math.abs((i+.5)/count-.5)*.9,h=(20+34*smooth(t*5.5+seed)+10*smooth(t*13+seed*2))*power*edge+1,lean=(smooth(t*3.1+seed*.7)-.5)*16-b.velocity.x*2.5,w=wide/count*.62+2;
-      stampTongue(outer,x,base,w,h,lean);stampTongue(inner,x,base,w*.5,h*.62,lean*.6);}
-    ctx.setTransform(view.a,0,0,view.a,view.e,view.f);}
+  const view={a:1,e:0,f:0}; // the world transform (uniform scale + offset)
+  function fireGlow(b){const wide=b.bounds.max.x-b.bounds.min.x,reach=wide*.8+55;ctx.globalAlpha=clamp(wide/80,.1,1);ctx.drawImage(glowSprite('fireGlow','255,130,40',.2),b.position.x-reach,b.position.y-reach,reach*2,reach*2);ctx.globalAlpha=1;}
   // Lightning. A channel is a midpoint-displaced path that forks on the way down. The channel keeps its shape for the whole strike;
   // what changes is the light: a first return stroke, then one or two dimmer restrikes down the same path, each decaying fast. Forks only show on the first.
   function jagged(from,to,roughness,depth,seed){let points=[from,to];for(let d=0;d<depth;d++){const next=[points[0]];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],len=Math.hypot(b.x-a.x,b.y-a.y),nx=-(b.y-a.y)/(len||1),ny=(b.x-a.x)/(len||1),offset=(hash(seed+=1.7)-.5)*len*roughness;next.push({x:(a.x+b.x)/2+nx*offset,y:(a.y+b.y)/2+ny*offset},b);}points=next;}return points;}
@@ -255,7 +274,7 @@
       if(p.charge>.05){ctx.strokeStyle='#a7d9e8';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-8,-15);ctx.lineTo(4,-4);ctx.lineTo(-4,4);ctx.lineTo(7,17);ctx.stroke();}
       ctx.restore();
     }
-    ctx.globalCompositeOperation='lighter';for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left&&b.bounds.min.x<right)drawFlames(b);ctx.globalCompositeOperation='source-over';
+    ctx.globalCompositeOperation='lighter';for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left&&b.bounds.min.x<right)fireGlow(b);drawFire(state.paused?0:frameDt*state.speed,left,right);ctx.globalCompositeOperation='source-over';
     if(set.particles!=='Off')for(let i=0;i<sim.particles.length;i++){const p=sim.particles[i];if((set.particles==='Low'&&i%2)||(set.noGore&&p.type==='blood'))continue;const age=1-clamp(p.life/p.maxLife,0,1);
       if(p.type==='smoke'){const r=p.size*(1+2.2*age);ctx.globalAlpha=1-age;ctx.drawImage(glowSprite('smoke','38,38,40',.36),p.x-r,p.y-r,r*2,r*2);ctx.globalAlpha=1;continue;}
       if(p.type==='ember'){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=1-age*age;ctx.fillStyle=age<.5?'#ffd98a':'#ff8a3c';ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;continue;}
@@ -282,7 +301,8 @@
     switch(state.tool){case'grab':if(!continuous){select(body);if(body){sim.beginDrag(body,point);canvas.style.cursor='grabbing';}}break;
       case'rope':if(!continuous){if(!state.ropeStart){state.ropeStart={body,point:{...point}};toast('Choose the other end of the rope.');}else{const a=state.ropeStart;if(!a.body&&!body){toast('At least one end must attach to an object.');}else{sim.rope(a.body,body,a.point,point);toast('Rope connected');}state.ropeStart=null;}}break;
       case'freeze':if(!continuous&&body){select(body);toast(sim.freeze(body)?'Body frozen':'Body released');}break;
-      case'shoot':if(performance.now()-lastShot>120){sim.shoot({x:point.x-600,y:point.y-35},point);lastShot=performance.now();}break;
+      // Point blank: the shot starts just outside whatever is under the cursor, so it hits that and not the first thing on a long line from the left.
+      case'shoot':if(performance.now()-lastShot>120){const from={x:(body?body.bounds.min.x:point.x)-8,y:point.y-1};sim.shoot(from,{x:from.x+100,y:point.y+.5});lastShot=performance.now();}break;
       case'fire':if(body)sim.ignite(body);break;
       case'shock':if(body&&performance.now()-lastAction>180){sim.shock(body);lastAction=performance.now();}break;
       case'blast':if(!continuous)sim.explode(point.x,point.y);break;
@@ -390,7 +410,8 @@
     if(turn){const amount=turn*seconds*Math.min(6,1.2+rotateTime*3)*(state.shift?2.5:1);if(sim.drag)sim.rotate(sim.drag.bodyB,amount,state.paused);else if(state.spawn)state.rotation+=amount;else if(state.selected)sim.rotate(state.selected,amount,state.paused);}
     const px=(held.has('ArrowRight')?1:0)-(held.has('ArrowLeft')?1:0),py=(held.has('ArrowDown')?1:0)-(held.has('ArrowUp')?1:0),pace=700*seconds/camera.zoom*(state.shift?2.5:1)*sim.settings.panSpeed;camera.x+=px*pace;camera.y+=py*pace;
   }
-  function frame(now){const elapsed=Math.min(50,now-(lastTime||now));lastTime=now;heldKeys(elapsed/1000);
+  let frameDt=0;
+  function frame(now){const elapsed=Math.min(50,now-(lastTime||now));lastTime=now;frameDt=elapsed/1000;heldKeys(elapsed/1000);
     if(!state.paused&&!document.hidden){accumulator+=elapsed*state.speed;let steps=0;while(accumulator>=1000/60&&steps<8){sim.step();accumulator-=1000/60;steps++;}}else accumulator=0;
     if(state.down&&!state.pan&&['shoot','fire','shock'].includes(state.tool))perform(state.worldPointer,true);
     render();frameCount++;if(now-fpsTime>=1000){$('#fps').textContent=Math.min(240,Math.round(frameCount*1000/(now-fpsTime)))+' fps';frameCount=0;fpsTime=now;}

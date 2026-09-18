@@ -245,3 +245,49 @@ test('bullets are local: the first stops in the limb it hits, the next goes thro
 test('electric shocks hurt without leaving wounds, weaker with each hop',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);s.shock(e.bodies[2]);assert.ok(e.bodies.every(b=>b.plugin.wounds.length===0&&!b.plugin.bleed));const hurt=e.bodies.map(b=>100-b.plugin.hp).filter(Boolean);assert.ok(Math.max(...hurt)>Math.min(...hurt)*3,'far parts take much less');
 });
+// ---- gore spec, section 1: damage model
+const fresh=(set={})=>{const s=new Simulation();s.configure({stunScale:0,...set});const e=s.spawn('human',1000,555);return {s,e,part:n=>e.bodies.find(b=>b.plugin.part===n)};};
+test('each damage type is its own kind of injury',()=>{
+  const hurt=type=>{const {s,part}=fresh();const thigh=part('thigh');s.damage(thigh,30,thigh.position,type);return thigh.plugin;};
+  const blunt=hurt('impact'),cut=hurt('cut'),stab=hurt('stab'),burn=hurt('burn');for(const p of [blunt,cut,stab,burn])assert.equal(p.hp,70,'hp loss is the same for every type');
+  assert.ok(blunt.bone<cut.bone&&blunt.bleed<cut.bleed&&cut.bleed<stab.bleed,'blunt breaks bone, cuts bleed, stabs bleed most');assert.equal(burn.bleed,0);assert.equal(blunt.wounds[0].type,'impact');assert.equal(stab.wounds[0].type,'stab');
+  const {s,part}=fresh();const arm=part('upper arm');s.damage(arm,40,arm.position,'stab');const bleeding=arm.plugin.bleed;s.damage(arm,20,arm.position,'burn');assert.ok(arm.plugin.bleed<bleeding,'a burn cauterises');
+  s.ignite(arm);const before=arm.plugin.bleed;advance(s,30);assert.ok(arm.plugin.bleed<before,'so does being on fire');
+});
+test('a powerful round goes straight through a fresh body part: entry, exit, and the body behind is hit',()=>{
+  const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,bulletDamage:120,organDamage:false});const front=s.spawn('human',1000,400),back=s.spawn('human',1150,400),y=front.bodies[0].position.y; // head height: nothing hangs in front of it
+  s.shoot({x:700,y},{x:1500,y});const belly=front.bodies[0].plugin;assert.ok(belly.wounds.some(w=>w.type==='bullet')&&belly.wounds.some(w=>w.type==='exit'));assert.ok(back.bodies.some(b=>b.plugin.hp<100),'the body behind should be hit');
+  const entry=belly.wounds.find(w=>w.type==='bullet'),exit=belly.wounds.find(w=>w.type==='exit');assert.ok(exit.x>entry.x&&exit.radius>entry.radius,'exit wound is on the far side and larger');
+});
+test('a heart shot kills without severing anything, and says why',()=>{
+  const {s,e,part}=fresh();const chest=part('chest');s.damage(chest,55,{x:chest.position.x-3,y:chest.position.y-3},'bullet');
+  assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(s.joints.filter(c=>c.plugin.joint).length,16);assert.ok(chest.plugin.hp>30,'the chest itself is far from destroyed');
+  const off=fresh({organDamage:false});const c=off.part('chest');off.s.damage(c,55,{x:c.position.x-3,y:c.position.y-3},'bullet');assert.equal(off.e.alive,true,'with organ damage off it is just a chest wound');
+  const bot=new Simulation();const a=bot.spawn('android',1000,555),ac=a.bodies[2];bot.damage(ac,55,{x:ac.position.x-3,y:ac.position.y-3},'bullet');assert.equal(a.alive,true);assert.equal(a.organs,undefined);assert.ok(!a.pain,'androids feel nothing');
+});
+test('brain, lungs and gut each fail in their own way',()=>{
+  const b=fresh({stunScale:1});const head=b.part('head');b.s.damage(head,55,{x:head.position.x,y:head.position.y-8},'bullet');assert.ok(b.e.alive&&b.e.stun>5,'one head shot: a long blackout');b.s.step();assert.equal(b.e.consciousness,'unconscious');
+  b.s.damage(head,55,{x:head.position.x,y:head.position.y-8},'bullet');assert.equal(b.e.causeOfDeath,'brain destroyed');
+  const l=fresh();const chest=l.part('chest');for(let i=0;i<4;i++){l.s.damage(chest,25,{x:chest.position.x+12,y:chest.position.y-14},'stab');chest.plugin.hp=100;} /* keep the chest itself whole: this is about the lungs */ assert.equal(l.e.organs.lungs,0);assert.equal(l.e.organs.heart,100);l.e.blood=100;l.e.pain=0;chest.plugin.bleed=0; // isolate suffocation from blood loss and pain
+  const seen=new Set();for(let i=0;i<1800&&l.e.alive;i++){chest.plugin.bleed=0;l.s.step();seen.add(l.e.consciousness);}assert.equal(l.e.causeOfDeath,'suffocation');assert.deepEqual([...seen],['awake','dazed','unconscious','dead']);
+  const g=fresh();const belly=g.part('abdomen');g.s.damage(belly,50,belly.position,'stab');belly.plugin.bleed=0;const blood=g.e.blood,drops=g.s.particles.length;g.s.particles.length=0;advance(g.s,300);
+  assert.ok(g.e.blood<blood-1,'internal bleeding drains blood');assert.equal(g.s.particles.filter(p=>p.type==='blood').length,0,'with nothing to see');assert.ok(belly.plugin.bruise>0,'except a spreading bruise');
+});
+test('fractures: a broken leg carries no weight, two broken legs cannot stand, and healing mends them',()=>{
+  const {s,e,part}=fresh();advance(s,30);const shin=e.bodies[12],foot=e.bodies[13],other=e.bodies[16];s.damage(shin,60,shin.position,'impact');assert.ok(s.fractured(shin));assert.ok(!s.bears(foot)&&s.bears(other));assert.ok(s.canStand(e),'one good leg is enough');
+  assert.equal(s.joints.filter(c=>c.plugin.joint).length,16,'fractured is not severed');s.damage(e.bodies[15],60,e.bodies[15].position,'impact');assert.ok(!s.canStand(e));advance(s,600);assert.ok(part('chest').position.y>540,'it should be down and stay down');
+  s.heal(shin);assert.ok(!s.fractured(shin)&&s.canStand(e));
+});
+test('pain rises with injury and ebbs; blood loss passes through dazed and unconscious before death',()=>{
+  const {s,e,part}=fresh();const hand=part('hand'),head=part('head');s.damage(hand,20,hand.position,'impact');const small=e.pain;assert.ok(small>0);advance(s,300);assert.ok(e.pain<small,'pain ebbs');
+  const a=fresh(),b=fresh();a.s.damage(a.part('thigh'),20,a.part('thigh').position,'impact');b.s.damage(b.part('head'),20,b.part('head').position,'impact');assert.ok(b.e.pain>a.e.pain,'the head hurts more');
+  const d=fresh({organDamage:false});d.s.sever(d.s.joints.find(c=>c.plugin.name==='hip'));const seen=[];for(let i=0;i<6000&&d.e.alive;i++){d.s.step();if(seen[seen.length-1]!==d.e.consciousness)seen.push(d.e.consciousness);}
+  assert.deepEqual(seen,['awake','dazed','unconscious','dead']);assert.equal(d.e.causeOfDeath,'blood loss');
+});
+test('injuries survive save and load, heal clears them, and old saves still load',()=>{
+  const {s,e,part}=fresh();const belly=part('abdomen');s.damage(belly,40,belly.position,'stab');s.step();const data=JSON.parse(JSON.stringify(s.serialize()));
+  const r=new Simulation();r.restore(data);const re=r.entities[0];assert.deepEqual(re.organs,e.organs);assert.ok(Math.abs(re.pain-e.pain)<1e-9);assert.equal(r.bodies.find(b=>b.plugin.part==='abdomen').plugin.internal,belly.plugin.internal);
+  r.heal(r.bodies[0]);assert.equal(re.organs,undefined);assert.equal(re.pain,0);assert.ok(r.bodies.every(b=>!b.plugin.internal&&!b.plugin.bruise&&!(b.plugin.wounds||[]).length));
+  for(const x of data.entities){delete x.pain;delete x.organs;delete x.oxygen;delete x.consciousness;delete x.causeOfDeath;}const old=new Simulation();old.restore(data);advance(old,60);assert.ok(old.entities[0].alive&&Number.isFinite(old.entities[0].oxygen));
+  const dead=fresh();dead.s.kill(dead.e,'testing');dead.s.revive(dead.e.bodies[0]);assert.equal(dead.e.causeOfDeath,undefined);assert.equal(dead.e.consciousness,'awake');
+});
