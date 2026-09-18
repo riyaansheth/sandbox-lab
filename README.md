@@ -17,8 +17,10 @@ npm run dev
 
 - 17-part human and android ragdolls with neck, segmented spine, hands and feet
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
+- Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; pull hard to draw it out
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
-- Active standing balance, damage-driven collapse, and breakable joints
+- Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
+- Revive tool, damage-driven collapse, and breakable joints
 - 16 spawnable objects with material properties
 - Dragging and throwing, rotation, fixed objects, and ropes
 - Hitscan shooting, fire and heat transfer, conductive shocks, explosions and chain reactions
@@ -30,18 +32,24 @@ npm run dev
 
 ## Controls
 
-Click an object in the library, then click the chamber to spawn it. Press Escape to return to grab mode. Drag objects to move or throw them; right-drag or Shift-drag to pan. Scroll to zoom.
+Keys follow People Playground's defaults. Click an object in the library, point at the chamber and press Q / E to spawn it; clicking the chamber never spawns, it always belongs to the active tool. Drag objects to move or throw them; right-drag, middle-drag or the arrow keys pan. Scroll to zoom.
 
 | Key | Action |
 | --- | --- |
-| 1–9 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, delete |
+| Q / E | Spawn the chosen object at the cursor, facing left / right. While you are holding something, they rotate it instead |
+| A / D | Rotate the held or selected body (or the spawn preview). Speeds up while held, faster with Shift. A held body keeps the angle after you let go of the key |
+| F | Activate the object under the cursor (or the held / selected one) |
+| S | Detail view of the object under the cursor |
+| G | Toggle slow motion |
 | Space | Pause/play |
-| Q / E | Rotate selected body or spawn preview |
-| F | Activate selected device |
-| Delete / Backspace | Delete selected object |
-| ? | Help |
+| Z | Undo the last spawn |
+| Backspace / Delete | Delete selected object |
+| Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
+| Tab | Hide / show the interface |
+| Arrow keys | Pan the camera (Shift = faster) |
+| 1–9, 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, delete |
 
-Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores integrity and extinguishes fire, but does not recreate severed joints. Saves use one device-local browser slot; loading pauses simulation.
+Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores tissue and extinguishes fire, but does not bring anyone back or recreate severed joints. Revive brings a dead or collapsed ragdoll back to life; it stands up again if it still has a spine and at least one whole leg. Saves use one device-local browser slot; loading pauses simulation.
 
 ## Validation
 
