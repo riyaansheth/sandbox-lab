@@ -476,9 +476,9 @@ test('a conscious ragdoll looks at what hurt it, at fire, and at something fast;
   const off=standing('human',{awareness:false});off.s.ignite(off.s.spawn('crate',1180,622).bodies[0]);advance(off.s,30);assert.ok(!off.e.gaze);
 });
 test('something flying at its head: the arms go up before it lands',()=>{
-  const {s,e}=standing();s.gravity=0;s.configure({gravity:0});const head=e.bodies[0],brick=s.spawn('brick',head.position.x-260,head.position.y).bodies[0];Body.setVelocity(brick,{x:9,y:0});let guarded=null,hit=null;
-  for(let i=0;i<60;i++){s.step();if(guarded===null&&e.guardT>0)guarded=i;if(hit===null&&e.hitTime>1.9)hit=i;}assert.ok(guarded!==null,'it should see it coming');assert.ok(hit===null||guarded<hit,'and guard before the impact');
-  const hands=[7,10].map(k=>Math.hypot(e.bodies[k].position.x-head.position.x,e.bodies[k].position.y-head.position.y));assert.ok(Math.min(...hands)<56,`a hand should be up by the head, nearest is ${Math.min(...hands).toFixed(0)}px`);
+  const {s,e}=standing();s.gravity=0;s.configure({gravity:0});const head=e.bodies[0],brick=s.spawn('brick',head.position.x-260,head.position.y).bodies[0];Body.setVelocity(brick,{x:9,y:0});let guarded=null,hit=null,reach=1e9;
+  for(let i=0;i<60;i++){s.step();if(guarded===null&&e.guardT>0)guarded=i;if(hit===null&&e.hitTime>1.9)hit=i;reach=Math.min(reach,...[7,10].map(k=>Math.hypot(e.bodies[k].position.x-head.position.x,e.bodies[k].position.y-head.position.y)));}assert.ok(guarded!==null,'it should see it coming');assert.ok(hit===null||guarded<hit,'and guard before the impact');
+  assert.ok(reach<48,`a hand should get up by the head, nearest it came was ${reach.toFixed(0)}px`);
   const miss=standing();miss.s.configure({gravity:0});const far=miss.s.spawn('brick',740,200).bodies[0];Body.setVelocity(far,{x:9,y:0});advance(miss.s,40);assert.ok(!(miss.e.guardT>0),'something that is going to miss is only watched');
 });
 test('heat close by makes it shrink away; a neighbour being hurt makes it start and look',()=>{
@@ -515,4 +515,18 @@ test('powered blades only cut while they are on: the energy sword sears, the cha
 test('the power hammer fires its ram at what is in front of the head',()=>{
   const s=new Simulation();s.gravity=0;s.configure({gravity:0});const h=s.spawn('phammer',1000,400).bodies[0],front=s.spawn('crate',1000,400-45-40).bodies[0],behind=s.spawn('crate',1000,400+45+60).bodies[0];
   assert.match(s.activate(h),/1 hit/);assert.ok(front.velocity.y<-10);assert.ok(front.plugin.hp<80);assert.equal(behind.plugin.hp,80);assert.ok(h.velocity.y>2,'and the hammer kicks back');
+});
+test('prolonged burning leaves a dead, bare skeleton that has stopped burning',()=>{
+  const s=new Simulation().seed(2);s.configure({organDamage:false});const e=s.spawn('human',1000,555);for(const b of e.bodies)s.ignite(b);let skinGone=null;for(let i=0;i<60*16;i++){s.step();if(skinGone===null&&e.bodies.every(b=>b.plugin.char>.5))skinGone=i/60;}
+  assert.ok(skinGone>3&&skinGone<9,`skin should be gone in a few seconds, took ${skinGone}`);assert.ok(e.bodies.every(b=>b.plugin.char>=1),'fully charred');assert.ok(e.bodies.every(b=>!b.plugin.burning),'nothing left to burn');assert.equal(e.alive,false);
+  assert.ok(e.bodies.every(b=>!b.plugin.bleed&&b.plugin.wounds.length===0));assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id).length>0,true,'the skeleton holds together');
+});
+test('guns wound but never dismember, and only a contact shot destroys the part it hits',()=>{
+  const volley=(gap,shots)=>{const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,bleedRate:0});const e=s.spawn('human',1000,400),shin=e.bodies[15],y=shin.position.y;
+    for(let i=0;i<shots;i++)s.shoot({x:shin.bounds.min.x-gap,y},{x:1600,y});return {s,e,shin};};
+  const far=volley(300,12);assert.ok(far.shin.plugin.hp>0,`twelve distant bullets left the shin at ${far.shin.plugin.hp}`);assert.equal(far.s.joints.filter(c=>c.plugin.joint).length,16,'and took nothing off');
+  const close=volley(10,12);assert.ok(close.shin.plugin.hp>0,'ten pixels is still not a contact shot');assert.equal(close.s.joints.filter(c=>c.plugin.joint).length,16);
+  const contact=volley(1.5,4);assert.equal(contact.shin.plugin.hp,0,'a muzzle against the limb destroys it');assert.equal(contact.s.joints.filter(c=>c.plugin.joint).length,16,'but even that does not dismember');
+  const inside=volley(-3,4);assert.equal(inside.shin.plugin.hp,0,'a muzzle pushed into the limb counts as contact');
+  const head=new Simulation();const h=head.spawn('human',1000,555),skull=h.bodies[0];for(let i=0;i<3;i++)head.shoot({x:skull.bounds.min.x-300,y:skull.position.y},{x:1600,y:skull.position.y});assert.equal(h.alive,false,'bullets still kill');assert.ok(skull.plugin.hp>0);
 });

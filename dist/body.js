@@ -44,8 +44,8 @@
   }
 
   // ---- layer 1: the skeleton, in a dark cavity
-  function drawBone(c, part, w, h, broken) {
-    const x = w / 2, y = h / 2; c.fillStyle = BONE.cavity; c.fill();
+  function drawBone(c, part, w, h, broken, flesh = 1) {
+    const x = w / 2, y = h / 2; if (flesh > 0) { c.globalAlpha = flesh; c.fillStyle = BONE.cavity; c.fill(); c.globalAlpha = 1; }   // the dark of the body cavity is the last of the flesh to go
     c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.lineWidth = .5; c.lineCap = 'round';
     const shaft = (x0, y0, x1, y1, width) => { c.strokeStyle = BONE.shade; c.lineWidth = width + .9; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.strokeStyle = BONE.base; c.lineWidth = width; c.stroke(); };
     const knob = (kx, ky, r) => { c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.lineWidth = .5; c.beginPath(); c.arc(kx, ky, r, 0, 7); c.fill(); c.stroke(); };
@@ -57,7 +57,7 @@
         c.beginPath(); c.moveTo(x * .68, y * .5); c.lineTo(x * .72, y * .72); c.quadraticCurveTo(x * .5, y * .92, x * .15, y * .82); c.lineTo(-x * .2, y * .5); c.lineTo(x * .1, y * .5); c.closePath(); c.fill(); c.stroke();   // mandible
         c.fillStyle = BONE.cavity; c.beginPath(); c.ellipse(x * .42, -y * .08, x * .2, y * .15, 0, 0, 7); c.fill(); c.beginPath(); c.moveTo(x * .66, y * .08); c.lineTo(x * .78, y * .26); c.lineTo(x * .6, y * .26); c.closePath(); c.fill();
         c.strokeStyle = BONE.cavity; c.lineWidth = .45; c.beginPath(); c.moveTo(x * .2, y * .47); c.lineTo(x * .7, y * .47); for (let t = 0; t < 5; t++) { c.moveTo(x * (.26 + t * .1), y * .42); c.lineTo(x * (.26 + t * .1), y * .54); } c.stroke(); break;
-      case 'neck': c.save(); c.translate(-x * .35, 0); for (let i = 0; i < 3; i++) vertebra(-y + 2.6 + i * 4.4); c.restore(); break;
+      case 'neck': c.save(); c.translate(-x * .35, 0); for (let vy = -y + 2.2; vy < y - 1; vy += 4.4) vertebra(vy); c.restore(); break;
       case 'chest':                                                                // spine up the back, ribs curving forward and down to the sternum
         c.save(); c.translate(-x * .62, 0); for (let i = 0; i < 7; i++) vertebra(-y + 3 + i * 4.8); c.restore();
         for (let i = 0; i < 6; i++) { const ry = -y * .7 + i * 4.9, reach = x * (.78 - Math.abs(i - 2) * .06); c.strokeStyle = BONE.shade; c.lineWidth = 2.4; c.beginPath(); c.moveTo(-x * .5, ry); c.bezierCurveTo(-x * .1, ry - 2.5, reach, ry - .5, reach * .95, ry + 4.2); c.stroke(); c.strokeStyle = BONE.base; c.lineWidth = 1.6; c.stroke(); }
@@ -188,11 +188,11 @@
       for (let i = 0; i < skinLoss; i++) torn.push({ x: (hash(slot * 9.1 + i) - .5) * w * .8, y: (hash(slot * 5.3 + i * 2.7) - .5) * h * .8, r: 3 + hash(i + slot) * 3.5, seed: slot + i, deep: i < deep }); }
     // Fire eats the body from the outside in. char runs 0..1 over about sixteen seconds of burning: the skin is gone by the middle of that, the muscle by the end, and the bone is left, blackened.
     const burn = state.noGore ? 0 : state.char || 0, reach = Math.max(w, h), burnSkin = [], burnMuscle = [];
-    if (burn > .04) for (let i = 0; i < 12; i++) { const bx = (hash(slot * 3.7 + i * 1.9) - .5) * w * .9, by = (hash(slot * 7.1 + i * 4.3) - .5) * h * .9, rs = clamp(burn * 1.2 - i * .035, 0, 1) * reach * .62, rm = clamp((burn - .45) * 2 - i * .04, 0, 1) * reach * .6; if (rs > .6) burnSkin.push([bx, by, rs, i]); if (rm > .6) burnMuscle.push([bx, by, rm, i]); }
+    if (burn > .04) for (let i = 0; i < 12; i++) { const bx = (hash(slot * 3.7 + i * 1.9) - .5) * w * .9, by = (hash(slot * 7.1 + i * 4.3) - .5) * h * .9, rs = clamp(burn * 1.2 - i * .035, 0, 1) * reach * (burn > .8 ? 1.6 : .62), rm = clamp((burn - .45) * 2 - i * .04, 0, 1) * reach * (burn > .92 ? 1.6 : .6); if (rs > .6) burnSkin.push([bx, by, rs, i]); if (rm > .6) burnMuscle.push([bx, by, rm, i]); }
     const intact = !wounds.length && !torn.length && !broken && !burnSkin.length;
-    if (!intact) { c.save(); outline(c, part, w, h); c.clip(); outline(c, part, w, h); drawBone(c, part, w, h, broken); c.restore();
+    if (!intact) { c.save(); outline(c, part, w, h); c.clip(); outline(c, part, w, h); drawBone(c, part, w, h, broken, clamp((1 - burn) / .22, 0, 1)); c.restore();
       layer(c, 0, size, m => { outline(m, part, w, h); drawMuscle(m, part, w, h); }, m => { for (const wd of wounds) if (hole(m, wd, 1)) m.fill(); for (const t of torn) if (t.deep) { m.beginPath(); ragged(m, t.x, t.y, t.r * .6, t.seed); m.fill(); } if (broken) { m.beginPath(); m.ellipse(0, h * .04, w * .34, h * .07, .25, 0, 7); m.fill(); } for (const [bx, by, r, i] of burnMuscle) { m.beginPath(); ragged(m, bx, by, r, slot + i, 12); m.fill(); } });
-      if (burn > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${(burn - .5) * 1.3})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
+      if (burn > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${Math.min(.5, (burn - .5) * 1.1)})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
     layer(c, 1, size, s => { outline(s, part, w, h); drawSkin(s, part, w, h, slot, state);
       // bruises, burns and charring are changes to the skin itself, so they are painted before the holes are cut
       if (!state.noGore) { for (const wd of wounds) { if (wd.type === 'impact') { const fade = clamp(1 - (state.time - (wd.t ?? state.time)) / 150, .25, 1), r = (wd.radius || 3) * 1.7, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, `rgba(88,40,96,${.62 * fade})`); g.addColorStop(.6, `rgba(120,70,60,${.4 * fade})`); g.addColorStop(1, 'rgba(150,130,60,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
@@ -205,11 +205,13 @@
     }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } for (const [bx, by, r, i] of burnSkin) { s.beginPath(); ragged(s, bx, by, r, slot * 2 + i, 12); s.fill(); } });
     if (state.noGore) return;
     // finishing: the dark bore of a bullet hole, torn edges round the big wounds, the shard of a broken bone
+    c.save(); outline(c, part, w, h); c.clip();   // a wound's rim never shows outside the body it is on
     for (const wd of wounds) { if (wd.type === 'bullet') { c.fillStyle = '#16060a'; c.beginPath(); c.arc(wd.x, wd.y, 1, 0, 7); c.fill(); c.strokeStyle = '#5d1820'; c.lineWidth = .6; c.beginPath(); c.arc(wd.x, wd.y, 2.3, 0, 7); c.stroke(); }
       else if (wd.type === 'exit' || wd.type === 'blast') { c.strokeStyle = '#6b1b24'; c.lineWidth = .7; c.beginPath(); ragged(c, wd.x, wd.y, Math.max(3.2, (wd.radius || 3) * (wd.type === 'exit' ? 1 : .95)), wd.seed, wd.type === 'exit' ? 11 : 13); c.stroke(); } }
+    c.restore();
     if (broken) { c.fillStyle = BONE.base; c.strokeStyle = '#6b1b24'; c.lineWidth = .5; c.beginPath(); c.moveTo(-w * .08, h * .08); c.lineTo(w * .5, -h * .06); c.lineTo(w * .36, h * .05); c.lineTo(w * .05, h * .14); c.closePath(); c.fill(); c.stroke(); }
     // stumps: a ragged cap of muscle round a nub of bone, wherever a joint was torn away
-    for (const end of p.severed || []) { const r = Math.min(w * .52, 8); c.fillStyle = MUSCLE.dark; c.beginPath(); ragged(c, end.x, end.y, r, end.x + end.y, 12); c.fill(); c.fillStyle = MUSCLE.base; c.beginPath(); ragged(c, end.x, end.y, r * .72, end.x * 2 + end.y, 10); c.fill();
+    if (burn < .9) for (const end of p.severed || []) { const r = Math.min(w * .52, 8); c.fillStyle = MUSCLE.dark; c.beginPath(); ragged(c, end.x, end.y, r, end.x + end.y, 12); c.fill(); c.fillStyle = MUSCLE.base; c.beginPath(); ragged(c, end.x, end.y, r * .72, end.x * 2 + end.y, 10); c.fill();
       c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.lineWidth = .5; c.beginPath(); c.arc(end.x, end.y, r * .34, 0, 7); c.fill(); c.stroke(); c.fillStyle = BONE.marrow; c.beginPath(); c.arc(end.x, end.y, r * .13, 0, 7); c.fill(); }
   }
 
@@ -229,10 +231,14 @@
   }
   // Draw order for a profile body: the far arm and leg behind the trunk, the near ones in front. Objects go between (1), unless a hand holds them.
   const FAR = new Set([5, 6, 7, 11, 12, 13]);
-  function depth(p) { if (p.stuck !== undefined) return -1; if (p.slot !== undefined && p.part) return FAR.has(p.slot) ? 0 : p.slot <= 4 ? 2 : 3; if (p.heldSlot !== undefined) return FAR.has(p.heldSlot) ? .5 : 3.5; return 1; }
+  function depth(p) { if (p.stuck !== undefined) return -1; if (p.slot !== undefined && p.part) return FAR.has(p.slot) ? 0 : p.slot === 1 ? 1.9 : p.slot === 0 ? 2.1 : p.slot <= 4 ? 2 : 3; /* neck under the trunk, head over it: the head and chest each hide one end of the neck */ if (p.heldSlot !== undefined) return FAR.has(p.heldSlot) ? .5 : 3.5; return 1; }
   const FACES = ['neutral', 'tense', 'dazed', 'closed', 'dead', 'shout'];
   root.BodyArt = {
     SCALE, PAD, FACES, layer: depth,
+    // The strip that closes the gap at a joint, drawn just before the outer part so it sits in that limb's layer.
+    filler(ctx, c, a, b) { const pa = c.bodyA.plugin, pb = c.bodyB.plugin, organic = pb.material === 'flesh', burnt = Math.min(pa.char || 0, pb.char || 0); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      if (!organic) { ctx.strokeStyle = '#596d67'; ctx.lineWidth = 6; } else if (burnt > .8) { ctx.strokeStyle = burnt > .95 ? '#b9ad92' : '#7a2429'; ctx.lineWidth = 2.2; } else { ctx.strokeStyle = burnt > .45 ? '#8e3034' : depth(pb) === 0 ? '#b48d6e' : '#d6ab88'; ctx.lineWidth = Math.min(pa.w, pb.w) * .72; }
+      ctx.stroke(); ctx.lineCap = 'butt'; },
     // Draw a human part at the origin of the current transform (already translated, rotated and mirrored by the caller).
     draw(ctx, body, state) { const canvas = sprite(body, state); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); },
     // For previews (library card, spawn ghost): a pristine part from its dimensions alone.

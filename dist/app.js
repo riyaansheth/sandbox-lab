@@ -11,7 +11,7 @@
     {id:'grab',name:'Grab',symbol:'↖',key:'1',title:'Grab & move',desc:'Drag anything. See what happens.'},
     {id:'rope',name:'Rope',symbol:'⌁',key:'2',title:'Connect objects',desc:'Click two objects, or an object and empty space.'},
     {id:'freeze',name:'Freeze',symbol:'❄',key:'3',title:'Freeze in place',desc:'Click a body to freeze it. Click again to release.'},
-    {id:'shoot',name:'Shoot',symbol:'⌖',key:'4',title:'Take your shot',desc:'Click or hold. Fires point-blank, left to right, into whatever is under the cursor.'},
+    {id:'shoot',name:'Shoot',symbol:'⌖',key:'4',title:'Take your shot',desc:'Click or hold. Fires from close range, left to right, into whatever is under the cursor. Bullets wound; they never take a limb off.'},
     {id:'fire',name:'Fire',symbol:'♨',key:'5',title:'Turn up the heat',desc:'Click or hold on an object to ignite it.'},
     {id:'shock',name:'Shock',symbol:'ϟ',key:'6',title:'A little electricity',desc:'Click a conductor. Electricity spreads to nearby objects.'},
     {id:'blast',name:'Blast',symbol:'✳',key:'7',title:'Make an impact',desc:'Click anywhere to create an explosion.'},
@@ -172,7 +172,7 @@
     for(const b of drawList){const p=b.plugin;if(b.bounds.max.x<left||b.bounds.min.x>right||b.bounds.max.y<top||b.bounds.min.y>bottom)continue;
       // Contact shadow anchors objects in the chamber.
       if(set.shadows&&b.position.y>520){ctx.fillStyle='#10191d30';ctx.beginPath();ctx.ellipse(b.position.x,sim.groundY-1,Math.max(5,(p.w||p.r*2||20)*.5),3,0,0,7);ctx.fill();}
-      {const c=fillers.get(b);if(c){const a=Constraint.pointAWorld(c),e=Constraint.pointBWorld(c),organic=p.material==='flesh',far=organic&&BodyArt.layer(p)===0;ctx.strokeStyle=organic?(far?'#b48d6e':'#d6ab88'):'#596d67';ctx.lineWidth=organic?Math.min(c.bodyA.plugin.w,p.w)*.72:6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(e.x,e.y);ctx.stroke();ctx.lineCap='butt';}}
+      {const c=fillers.get(b);if(c)BodyArt.filler(ctx,c,Constraint.pointAWorld(c),Constraint.pointBWorld(c));}
       ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);const growing=p.grow!==undefined;
       if(growing){const g=1-Math.pow(1-clamp(p.grow,.02,1),3),ax=p.flip?-p.growFrom.x:p.growFrom.x;ctx.translate(ax,p.growFrom.y);ctx.scale(g,g);ctx.translate(-ax,-p.growFrom.y);}
       if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=p.char||0;if(look.breath&&(p.slot===2||p.slot===3)){ctx.save();ctx.scale(1+look.breath,1+look.breath*.5);BodyArt.draw(ctx,b,look);ctx.restore();}else BodyArt.draw(ctx,b,look);

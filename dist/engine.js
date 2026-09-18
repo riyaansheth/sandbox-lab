@@ -16,7 +16,9 @@
   // Slots 5-7 and 11-13 are the far arm and leg (drawn behind the torso), 8-10 and 14-16 the near ones (drawn in front). [part, x, y, width, height] from the spawn point.
   const ANATOMY=[
     // The foot's physics box sits exactly centred under the ankle: loaded even one pixel off-centre it rocks onto its heel and skates (7 px/s); the drawing extends the toes forward of the box instead.
-    ['head',2,-105,24,30],['neck',0,-84,11,14],['chest',0,-60,26,36],['abdomen',0,-32,22,23],['pelvis',0,-11,24,23],
+    // The neck shows half the length it has: the head sits 7 px down over its top half (parts of one body do not collide), and pivots about a point inside the jaw.
+    // A neck body that was really 7 px long had too little inertia and too short a lever between its two joints to hold any pose.
+    ['head',2,-98,24,30],['neck',0,-84,11,14],['chest',0,-60,26,36],['abdomen',0,-32,22,23],['pelvis',0,-11,24,23],
     ['upper arm',0,-54,12,35],['forearm',0,-21,10,31],['hand',0,1,10,15],
     ['upper arm',0,-54,12,35],['forearm',0,-21,10,31],['hand',0,1,10,15],
     ['thigh',0,22,16,45],['shin',0,64,12,41],['foot',0,88,22,12],
@@ -130,12 +132,14 @@
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
   // Bullets: x1.4 at the muzzle, full damage out to RANGE_NEAR px, then falling by one for every RANGE_FALLOFF px down to RANGE_MIN. A round that still carries THROUGH damage goes clean through fresh flesh.
+  const CONTACT_SHOT=2,BULLET_FLOOR=8;
   const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
   const WRENCH_PULL=70,WRENCH_BLOW=45,VITAL_JOINT={atlas:4,neck:4,spine:3,waist:3}; // px the cursor must be hauling from the body; damage a blow must do; how much longer the neck and spine hold out than a limb
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
   // Balance and landing. STEP_*: how far ahead of its feet (px, with velocity looked ahead) the chest may get before a recovery step, and the pause between steps.
   // LAND_*: a fall speed (px/frame) that counts as a full-depth landing, and how long the legs take to straighten again. STRUGGLE_*: tone and kick rate of a body held off the ground.
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
+  const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -148,7 +152,7 @@
   // arms and thighs swing forward negative, elbows only flex forward, knees only fold back, the trunk bends forward further than it arches.
   // Joint template: [parent slot, child slot, anchor on parent, anchor on child, min, max, name]. Slots index ANATOMY. Regeneration regrows from the same table.
   const JOINTS=[
-    [1,0,{x:0,y:-7},{x:-2,y:14},-.5,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.3,.45,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.55,.2,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.55,.2,'waist'],
+    [1,0,{x:0,y:-7},{x:-2,y:7},-.5,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.3,.45,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.55,.2,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.55,.2,'waist'],
     [2,5,{x:0,y:-10},{x:0,y:-16},-2.9,.9,'shoulder'],[5,6,{x:0,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
     [2,8,{x:0,y:-10},{x:0,y:-16},-2.9,.9,'shoulder'],[8,9,{x:0,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
     [4,11,{x:0,y:11},{x:0,y:-22},-1.9,.6,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle'],
@@ -239,7 +243,7 @@
       const reach=b=>{const dx=Math.max(b.bounds.min.x-hand.position.x,0,hand.position.x-b.bounds.max.x),dy=Math.max(b.bounds.min.y-hand.position.y,0,hand.position.y-b.bounds.max.y);return Math.hypot(dx,dy);};
       const item=this.bodies.filter(b=>!b.plugin.part&&!b.isStatic&&!b.plugin.debris&&b.plugin.heldBy===undefined&&b.plugin.stuck===undefined&&reach(b)<=HAND_REACH).sort((a,b)=>reach(a)-reach(b))[0];if(!item)return '';
       // Where and how each thing is held, in the item's own frame: grip point, and its angle relative to the hand.
-      const flip=!!hand.plugin.flip,side=flip?-1:1,def=defs[item.plugin.kind]||{},grip=def.grip||(def.firearm?{x:-14,y:9}:def.sharp?{x:0,y:item.plugin.h*.37}:{x:0,y:0}),tilt=def.firearm?side*Math.PI/2:def.sharp?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
+      const flip=!!hand.plugin.flip,side=flip?-1:1,def=defs[item.plugin.kind]||{},grip=def.grip||(def.sharp?{x:0,y:item.plugin.h*.37}:{x:0,y:0}),tilt=def.firearm?side*Math.PI/2:def.sharp?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
       if(flip)item.plugin.flip=true;else delete item.plugin.flip;Body.setAngle(item,hand.angle+tilt);const local=Vector.rotate({x:grip.x*side,y:grip.y},item.angle);
       Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;item.plugin.heldSlot=hand.plugin.slot;
       // The second pin sits at the item's centre of mass: a long lever, so the weight of a pistol cannot twist it in the hand.
@@ -395,7 +399,7 @@
       // Landing: knees and hips fold to take the fall, the trunk tips forward over them, the arms come forward for balance; then it straightens up.
       if(e.crouch>0){const cr=e.crouch;A[11]+=-.95*cr;A[14]+=-.95*cr;A[12]+=1.7*cr;A[15]+=1.7*cr;A[13]+=-.5*cr;A[16]+=-.5*cr;A[3]+=-.3*cr;A[5]+=-.7*cr;A[8]+=-.7*cr;P[11]=P[14]=P[12]=P[15]=1.6;}
       // Falling feet first: legs a little bent ready for the ground, arms out in front.
-      const tiltNow=wrap(chest.angle);if(awake&&e.airTime>.1&&Math.abs(tiltNow)<BRACE_TILT&&!e.carried){A[11]+=-.35;A[14]+=-.2;A[12]+=.6;A[15]+=.45;A[5]=-1.0;A[8]=-.8;A[6]=A[9]=-.4;P[5]=P[8]=3;want.armsFree=true;}
+      const tiltNow=wrap(chest.angle);if(awake&&e.airTime>.1&&Math.abs(tiltNow)<BRACE_TILT&&!e.carried){A[11]+=-.35;A[14]+=-.2;A[12]+=.6;A[15]+=.45;if(!(e.guardT>0)){A[5]=-1.0;A[8]=-.8;A[6]=A[9]=-.4;P[5]=P[8]=3;want.armsFree=true;}} /* arms out in front, unless they are busy guarding the head */
       // Held off the ground and awake: it does not hang like a coat. The legs kick, and the arms go for whatever has hold of it.
       if(e.carried&&awake&&this.drag){const t=this.time*STRUGGLE_RATE,k=this.settings.reactionIntensity,grip=this.drag.pointA,heldSlot=this.drag.bodyB.plugin.slot;
         A[11]=-.45+Math.sin(t)*.6*k;A[14]=-.45-Math.sin(t)*.6*k;A[12]=.75+Math.cos(t)*.5*k;A[15]=.75-Math.cos(t)*.5*k;A[3]+=Math.sin(t*.5)*.12*k;P[11]=P[14]=P[12]=P[15]=1.5;
@@ -630,7 +634,9 @@
     damage(body,amount,point=body?.position,type='impact',direction=null) {
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
       const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
-      p.hp=Math.max(0,p.hp-amount);
+      // A bullet wounds. It never takes a limb off, and it only destroys the part it hits when the muzzle is pressed against it (a contact shot, within CONTACT_SHOT px).
+      const gunshot=type==='bullet'||type==='exit',spared=gunshot&&!!p.part&&!this.contactShot;
+      p.hp=spared?Math.max(Math.min(p.hp,BULLET_FLOOR),p.hp-amount):Math.max(0,p.hp-amount);
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
       if(e){e.hitTime=this.time;e.hitHard=amount;}
@@ -657,10 +663,10 @@
         if(defs[p.kind]?.explosive?.onBreak){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
         else if(p.material==='flesh'||p.kind==='android'){
           // A bullet can incapacitate without automatically detaching the whole limb.
-          if(type==='blast'||amount>85*set.jointStrength||p.bone<=0)for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
+          if(!gunshot&&(type==='blast'||amount>85*set.jointStrength||p.bone<=0))for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
           // Limb crushing: a limb that was already destroyed and takes another heavy blow is pulped.
           if(type==='blast'&&p.part&&!p.gibbed){p.gibbed=true;const at={...body.position},v={...body.velocity},m=p.material;this.damageQueue.push(()=>this.gibs(at.x,at.y,m,v,.6));}
-          if(set.limbCrush&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
+          if(set.limbCrush&&!gunshot&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
         }
         else if(!p.debris&&!p.destroying&&!defs[p.kind]?.indestructible){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
       }
@@ -748,16 +754,16 @@
       for(const body of [...this.bodies,...this.boundaries]){if(body===ignore||(ignore?.plugin.heldBy!==undefined&&body.collisionFilter.group===ignore.collisionFilter.group))continue; // a held pistol never shoots its own holder
         let near=Infinity,far=-Infinity;const v=body.vertices;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],sx=b.x-a.x,sy=b.y-a.y,den=rx*sy-ry*sx;
           if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
-        if(near<Infinity)hits.push({body,near,far});}
-      hits.sort((a,b)=>a.near-b.near);const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=t=>clamp(RANGE_POINT_BLANK-(t*2500-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let first=null,stop=end,power=1;
+        if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
+      hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */ const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=t=>clamp(RANGE_POINT_BLANK-(t*2500-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let first=null,stop=end,power=1;
       for(const {body,near,far} of hits){first??=body;stop=at(near);if(body.plugin.boundary)break;
-        const damage=this.settings.bulletDamage*power*range(near),through=this.passes(body,damage)&&far>near;
+        this.contactShot=first===body&&near*2500<=CONTACT_SHOT;const damage=this.settings.bulletDamage*power*range(near),through=this.passes(body,damage)&&far>near;
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
         const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
         const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
         stop=exit;power*=1-absorb;if(power<.2)break;}
-      this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
+      this.contactShot=false;this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
       this.onEffect('shot',.3);return first;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
@@ -777,7 +783,10 @@
     }
     heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
-      if(!body)return '';if(body.plugin.part==='hand'&&this.held(body))return this.activate(this.held(body));const p=body.plugin;
+      if(!body)return '';
+      // Activating any part of a ragdoll works whatever it is holding: that hand first, then the near hand, then the far one.
+      if(body.plugin.part){const e=this.getEntity(body),hands=[body,...(e?e.bodies.filter(b=>b.plugin.part==='hand').sort((a,b)=>b.plugin.slot-a.plugin.slot):[])];for(const hand of hands){const item=hand.plugin.part==='hand'&&this.held(hand);if(item)return this.activate(item);}return 'Empty-handed: select a hand next to something to pick it up';}
+      const p=body.plugin;
       const def=defs[p.kind]||{},name=def.name||'Object';
       if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
       if(def.firearm){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,def.firearm.muzzle)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-def.firearm.recoil));return `${name} fired`;}
@@ -878,7 +887,8 @@
         // Blood on a surface runs: while it is wet, a stain lets go of the odd drop.
         if(p.stains?.length&&random()<seconds*.5){const st=p.stains[(random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
         if(p.heat>matOf(p).burnAt)p.burning=true;
-        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
+        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*CHAR_RATE);if(p.part&&p.char>=1){p.burning=false;p.heat=Math.min(p.heat,160);p.bleed=0;p.wounds=[];p.stains=[];const owner=this.getEntity(b);if(owner?.alive&&(p.slot===0||p.slot===2))this.kill(owner,'burned to death');} // burnt down to the bone: nothing left to burn, to bleed, or to live
+          if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
           // Embers and smoke come off the top of the body, more of both the hotter it burns.
           const hot=clamp((p.heat-150)/400,.3,1.2),wide=b.bounds.max.x-b.bounds.min.x,top=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.4;
           if(random()<seconds*9*hot)this.emit(b.position.x+rnd(-.5,.5)*wide,top,rnd(-.6,.6),rnd(-2.6,-1.2),rnd(.5,1.4),1.4,'#ffcf7a',rnd(.7,1.8),'ember');

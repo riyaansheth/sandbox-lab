@@ -2,6 +2,7 @@
  *
  * Every item is painted once, at three times world scale, into its own small canvas and stamped from there; the per-frame cost of an
  * object is one drawImage however much shading went into it. A painter is { pad, state?, paint, live? }:
+ *   scale  optional: the painter draws on a grid this many times smaller than it looks
  *   pad    world pixels the drawing may extend beyond the physics shape (a pistol's grip hangs below its box)
  *   state  a short string of whatever changes the picture (on/off, bloodied); each state gets its own sprite
  *   paint  (c, p) draws the item centred on the origin, in world units
@@ -84,7 +85,8 @@
     platform: { pad: 1, paint(c, p) { const x = p.w / 2, y = p.h / 2; c.strokeStyle = OUTLINE; c.lineWidth = 1; c.fillStyle = steel(c, -y, y); c.fillRect(-x, -y, p.w, p.h); c.strokeRect(-x, -y, p.w, p.h);
       c.save(); c.beginPath(); c.rect(-x, y - 6, p.w, 6); c.clip(); c.fillStyle = '#d9b23a'; c.fillRect(-x, y - 6, p.w, 6); c.fillStyle = '#1b2023'; for (let sx = -x - 8; sx < x; sx += 14) { poly(c, [[sx, y], [sx + 7, y], [sx + 13, y - 6], [sx + 6, y - 6]]); c.fill(); } c.restore();
       c.strokeStyle = '#1d2529'; c.lineWidth = .6; c.beginPath(); c.moveTo(-x, y - 6); c.lineTo(x, y - 6); c.stroke(); for (let rx = -x + 8; rx < x; rx += 20) rivet(c, rx, -y + 4.5, 1.1); c.fillStyle = '#ffffff30'; c.fillRect(-x, -y, p.w, 1.4); } },
-    gun: { pad: 12, paint(c) { c.lineJoin = 'round'; c.lineWidth = .8; c.strokeStyle = '#0e1316';
+    gun: { pad: 7, scale: .5, paint(c) {   // drawn on a 48 x 18 grid and scaled to the item's 24 x 9: about 20 cm against a 214 px body
+      c.lineJoin = 'round'; c.lineWidth = .8; c.strokeStyle = '#0e1316';
       // grip: raked back, stippled panel, magazine baseplate
       c.fillStyle = grad(c, -26, 0, -6, 0, [[0, '#1c2023'], [.55, '#2e3438'], [1, '#202528']]); poly(c, [[-21, 1], [-5, 1], [-7.5, 9], [-9.5, 22], [-11, 25], [-24.5, 25.5], [-26, 22.5], [-23.5, 9]]); c.fill(); c.stroke();
       c.save(); poly(c, [[-20.5, 6], [-9, 6], [-11.5, 21], [-23.5, 21]]); c.clip(); c.fillStyle = '#0f131588'; for (let y = 6; y < 22; y += 2.2) for (let x = -25 + (Math.round(y / 2.2) % 2) * 1.1; x < -8; x += 2.2) c.fillRect(x, y, 1, 1); c.restore();
@@ -117,7 +119,7 @@
   function sprite(kind, p) {
     const painter = painters[kind], key = kind + '|' + (painter.state ? painter.state(p) : ''); let canvas = cache.get(key); if (canvas) return canvas;
     const w = p.w || p.r * 2, h = p.h || p.r * 2, pad = painter.pad; canvas = document.createElement('canvas'); canvas.width = Math.ceil((w + pad * 2) * SCALE); canvas.height = Math.ceil((h + pad * 2) * SCALE);
-    const c = canvas.getContext('2d'); c.setTransform(SCALE, 0, 0, SCALE, canvas.width / 2, canvas.height / 2); painter.paint(c, p); cache.set(key, canvas); return canvas;
+    const c = canvas.getContext('2d'); c.setTransform(SCALE, 0, 0, SCALE, canvas.width / 2, canvas.height / 2); if (painter.scale) c.scale(painter.scale, painter.scale); painter.paint(c, p); cache.set(key, canvas); return canvas;
   }
   root.ItemArt = {
     has: kind => kind in painters,
