@@ -17,15 +17,22 @@ npm run dev
 
 - 17-part human and android ragdolls with neck, segmented spine, hands and feet
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
-- Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; pull hard to draw it out
+- Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
-- Revive tool, damage-driven collapse, and breakable joints
+- Revive, Regrow (grows back every missing limb; the torn-off pieces stay as remains) and Reattach (returns a severed limb to its own body) tools
+- Damage-driven collapse and breakable joints
 - 16 spawnable objects with material properties
 - Dragging and throwing, rotation, fixed objects, and ropes
 - Hitscan shooting, fire and heat transfer, conductive shocks, explosions and chain reactions
 - Physical debris, blood particles, glass shattering and synthesized sound
 - Activate pistols, timed bombs, fuel barrels, batteries, wheels and thrusters
+- Settings page (⚙): 45 options in eight sections, generated from one table in `engine.js`, saved on the device, with presets, search, per-setting and per-section reset, and JSON import/export. Imported and stored values are validated against the table before use
+  - World: gravity −40…40 m/s², ambient temperature (hot rooms ignite, frozen flesh is brittle), lightning chance, rain (puts fires out), snow (slippery floor), fog, floodlights (off = dark chamber lit by fire, arcs and lightning)
+  - Ragdolls: auto-balance, leg strength, get-up time, knockdown length, brain damage, slow injury healing
+  - Gore: fragility multiplier, joint strength, bleeding rate, limb crushing + sensitivity, procedural fragments, extra gunshot particles, no gore
+  - Weapons, Physics, Visuals, Interface, Audio: bullet damage and knockback, explosion power, piercing speed, blade grip, solver iterations, air resistance, grab strength, object limit, slow-motion speed, decals, tracers, particles, screen shake, grid, shadows, vignette, temperature unit, FPS, hints, zoom and pan speed, sound and volume
+- Lightning: forked, glowing channels with restrikes, sky flash, thunder, scorch marks; strikes hit the highest thing under them, shock through conductors, burn and ignite
 - Four starter scenes, pause, frame stepping, slow motion, and adjustable gravity
 - Pan and zoom, object inspection, search and categories
 - Save/load a complete scene locally, including body poses, health, constraints and active devices
@@ -47,7 +54,7 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
-| 1–9, 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, delete |
+| 1–9, -, =, 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, regrow, reattach, delete |
 
 Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores tissue and extinguishes fire, but does not bring anyone back or recreate severed joints. Revive brings a dead or collapsed ragdoll back to life; it stands up again if it still has a spine and at least one whole leg. Saves use one device-local browser slot; loading pauses simulation.
 

@@ -42,21 +42,90 @@
     ['thigh',10,22,16,45],['shin',10,64,12,41],['foot',10,88,22,12]
   ];
   const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
-  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,PIERCE_SPEED=5,PIERCE_GRIP=14,STAND_HEIGHT=148,LEG_STRENGTH=2,GETUP_TORQUE=3,GETUP_TIME=1.2; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
+  // Every tunable lives in this one table: the engine reads the values, the settings page is generated from it, and saved values are validated against it.
+  // Names and ranges follow People Playground's Environment, Gore and General menus where it has the option; the rest are this sandbox's own.
+  const SETTINGS=[
+    {id:'gravity',section:'World',label:'Gravity',help:'Strength of gravity. Negative values make everything fall upward.',type:'range',min:-40,max:40,step:.01,def:9.81,unit:' m/s²'},
+    {id:'ambient',section:'World',label:'Ambient temperature',help:'Everything drifts toward this temperature. Above 170° wood and flesh catch fire; below zero flesh turns brittle.',type:'range',min:-100,max:1000,step:1,def:20,unit:'°'},
+    {id:'lightning',section:'World',label:'Lightning chance',help:'How often the sky strikes. A bolt shocks, burns and ignites what it hits, and jumps through conductors.',type:'range',min:0,max:100,step:1,def:0,unit:'%'},
+    {id:'rain',section:'World',label:'Rain',help:'Rain puts out fires and cools hot objects.',type:'toggle',def:false},
+    {id:'snow',section:'World',label:'Snow',help:'Snow makes the floor slippery.',type:'toggle',def:false},
+    {id:'fog',section:'World',label:'Fog',help:'A low mist over the chamber.',type:'toggle',def:false},
+    {id:'floodlights',section:'World',label:'Floodlights',help:'Ceiling lights. Switched off, the chamber goes dark and fire, explosions and lightning become the light.',type:'toggle',def:true},
+    {id:'autoBalance',section:'Ragdolls',label:'Auto-balance',help:'Living ragdolls stand, keep their balance and get back up. Off, they are limp.',type:'toggle',def:true},
+    {id:'legStrength',section:'Ragdolls',label:'Leg strength',help:'How hard the legs can push, in multiples of body weight.',type:'range',min:.5,max:4,step:.1,def:2,unit:'×'},
+    {id:'getUpTime',section:'Ragdolls',label:'Get-up time',help:'Seconds for strength to return after a knockdown. Lower is snappier.',type:'range',min:.3,max:5,step:.1,def:1.2,unit:' s'},
+    {id:'stunScale',section:'Ragdolls',label:'Knockdown length',help:'Multiplier on how long a hard hit leaves a ragdoll stunned. Zero means hits never knock anyone down.',type:'range',min:0,max:4,step:.1,def:1,unit:'×'},
+    {id:'brainDamage',section:'Ragdolls',label:'Brain damage',help:'A damaged head causes blackouts: the ragdoll collapses now and then.',type:'toggle',def:false},
+    {id:'slowHealing',section:'Ragdolls',label:'Slow injury healing',help:'Wounds of the living slowly close, bones knit and blood is replaced.',type:'toggle',def:false},
+    {id:'fragility',section:'Gore',label:'Fragility multiplier',help:'Multiplies all damage to ragdolls. Higher is more fragile.',type:'range',min:.1,max:10,step:.1,def:1,unit:'×'},
+    {id:'jointStrength',section:'Gore',label:'Joint strength',help:'How much force or damage it takes to tear a limb off.',type:'range',min:.25,max:5,step:.05,def:1,unit:'×'},
+    {id:'bleedRate',section:'Gore',label:'Bleeding rate',help:'How fast wounds drain blood. Zero means nobody bleeds out.',type:'range',min:0,max:5,step:.1,def:1,unit:'×'},
+    {id:'limbCrush',section:'Gore',label:'Limb crushing',help:'A destroyed limb that takes another heavy blow is crushed out of existence.',type:'toggle',def:false},
+    {id:'crushSensitivity',section:'Gore',label:'Limb crush sensitivity',help:'How little force it takes to crush a destroyed limb.',type:'range',min:25,max:400,step:5,def:100,unit:'%'},
+    {id:'fragments',section:'Gore',label:'Procedural fragments',help:'Crushed limbs leave physical fragments behind.',type:'toggle',def:true},
+    {id:'extraGunshot',section:'Gore',label:'Extra gunshot particles',help:'Bullet hits throw out more debris.',type:'toggle',def:false},
+    {id:'noGore',section:'Gore',label:'No gore',help:'Hides blood, stains and wounds. Injuries still happen, they are just not drawn.',type:'toggle',def:false},
+    {id:'bulletDamage',section:'Weapons',label:'Bullet damage',help:'Damage of one bullet, from the shoot tool or a pistol.',type:'range',min:5,max:300,step:5,def:55,unit:''},
+    {id:'bulletForce',section:'Weapons',label:'Bullet knockback',help:'How hard a bullet shoves what it hits.',type:'range',min:0,max:6,step:.1,def:1,unit:'×'},
+    {id:'explosionPower',section:'Weapons',label:'Explosion power',help:'Multiplies the blast force and damage of every explosion.',type:'range',min:.25,max:4,step:.05,def:1,unit:'×'},
+    {id:'pierceSpeed',section:'Weapons',label:'Piercing speed',help:'How fast a blade must travel point-first to run a body through. Lower pierces more easily.',type:'range',min:1,max:20,step:.5,def:5,unit:''},
+    {id:'bladeGrip',section:'Weapons',label:'Blade grip',help:'How firmly flesh holds a lodged blade. Low values let it slide out with a light pull, or under the body\'s own weight.',type:'range',min:1,max:30,step:1,def:5,unit:''},
+    {id:'iterations',section:'Physics',label:'Physics iterations',help:'Solver passes per step. Higher is more accurate and slower.',type:'range',min:4,max:64,step:1,def:10,unit:''},
+    {id:'airDrag',section:'Physics',label:'Air resistance',help:'Multiplier on air drag. Zero is a vacuum.',type:'range',min:0,max:5,step:.1,def:1,unit:'×'},
+    {id:'grabStrength',section:'Physics',label:'Grab strength',help:'How firmly the cursor holds what it drags. Higher also throws harder.',type:'range',min:.04,max:.6,step:.01,def:.16,unit:''},
+    {id:'maxObjects',section:'Physics',label:'Object limit',help:'Spawning stops at this many bodies. A ragdoll is 17.',type:'range',min:100,max:1000,step:50,def:500,unit:''},
+    {id:'slowMotion',section:'Physics',label:'Slow-motion speed',help:'How fast time runs while slow motion (G) is on.',type:'range',min:5,max:90,step:5,def:20,unit:'%'},
+    {id:'decals',section:'Visuals',label:'Decals',help:'Blood stains and scorch marks on the floor.',type:'toggle',def:true},
+    {id:'tracers',section:'Visuals',label:'Bullet tracers',help:'Draws the path of each shot.',type:'toggle',def:true},
+    {id:'particles',section:'Visuals',label:'Particle effects',help:'Sparks, smoke, fire and spray.',type:'select',options:['Off','Low','High'],def:'High'},
+    {id:'shake',section:'Visuals',label:'Screen shake intensity',help:'Camera shake from explosions and thunder.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
+    {id:'grid',section:'Visuals',label:'Background grid',help:'The measurement grid on the chamber wall.',type:'toggle',def:true},
+    {id:'shadows',section:'Visuals',label:'Contact shadows',help:'Soft shadows where objects are near the floor.',type:'toggle',def:true},
+    {id:'vignette',section:'Visuals',label:'Vignette',help:'Darkened screen edges.',type:'toggle',def:true},
+    {id:'tempUnit',section:'Interface',label:'Temperature unit',help:'Unit used in the detail view.',type:'select',options:['Celsius','Fahrenheit','Kelvin'],def:'Celsius'},
+    {id:'showFps',section:'Interface',label:'Show framerate',help:'Frames per second, top right of the chamber.',type:'toggle',def:true},
+    {id:'hints',section:'Interface',label:'Tool hints',help:'The caption describing the active tool.',type:'toggle',def:true},
+    {id:'zoomSensitivity',section:'Interface',label:'Zoom scroll sensitivity',help:'How fast the scroll wheel zooms.',type:'range',min:.25,max:3,step:.05,def:1,unit:'×'},
+    {id:'panSpeed',section:'Interface',label:'Camera pan speed',help:'How fast the arrow keys move the camera.',type:'range',min:.25,max:3,step:.05,def:1,unit:'×'},
+    {id:'sound',section:'Audio',label:'Sound',help:'Synthesized impacts, shots, explosions and thunder.',type:'toggle',def:false},
+    {id:'volume',section:'Audio',label:'Volume',help:'Master volume.',type:'range',min:0,max:100,step:5,def:60,unit:'%'}
+  ];
+  const defaults=()=>Object.fromEntries(SETTINGS.map(s=>[s.id,s.def]));
+  // Saved settings come from localStorage or an imported file, so every value is checked against the table before it is used.
+  const sanitize=(input={})=>{const out={};for(const s of SETTINGS){const v=input?.[s.id];
+    if(s.type==='toggle'&&typeof v==='boolean')out[s.id]=v;else if(s.type==='select'&&s.options.includes(v))out[s.id]=v;else if(s.type==='range'&&typeof v==='number'&&Number.isFinite(v))out[s.id]=clamp(v,s.min,s.max);}return out;};
+  // Joint template: [parent slot, child slot, anchor on parent, anchor on child, min, max, name]. Slots index ANATOMY. Regeneration regrows from the same table.
+  const JOINTS=[
+    [1,0,{x:0,y:-7},{x:0,y:14},-.6,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.35,.35,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.4,.4,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.4,.4,'waist'],
+    [2,5,{x:-21,y:-12},{x:3,y:-16},-2.6,1.4,'shoulder'],[5,6,{x:-1,y:17},{x:0,y:-16},-2.5,.08,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist'],
+    [2,8,{x:21,y:-12},{x:-3,y:-16},-1.4,2.6,'shoulder'],[8,9,{x:1,y:17},{x:0,y:-16},-.08,2.5,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist'],
+    [4,11,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle'],
+    [4,14,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle']
+  ];
+  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
       Events.on(this.engine,'collisionStart',e=>this.collisions(e.pairs));Events.on(this.engine,'collisionActive',e=>this.disturb(e.pairs));
     }
+    // Change settings. Values are validated against the table; things that live on the engine or on bodies are pushed out here.
+    configure(values){
+      Object.assign(this.settings,sanitize(values));const s=this.settings;this.gravity=s.gravity/EARTH;
+      this.engine.positionIterations=this.engine.velocityIterations=this.engine.constraintIterations=s.iterations;
+      this.boundaries[0].friction=s.snow?.12:.85;this.boundaries[0].frictionStatic=s.snow?.2:1;
+      for(const b of this.bodies)b.frictionAir=this.drag_(b);for(const e of this.entities)e.restTime=0;return s;
+    }
+    drag_(body){return (body.plugin.part?.015:.006)*this.settings.airDrag;}
     get bodies(){return Composite.allBodies(this.world).filter(b=>!b.plugin.boundary);}
     get joints(){return Composite.allConstraints(this.world).filter(c=>c!==this.drag);}
     meta(body,kind,extra={}) {
-      const d=defs[kind]||{};body.plugin={kind,material:d.material||'flesh',hp:d.hp||100,maxHp:d.hp||100,heat:20,burning:false,charge:0,active:false,w:d.w,h:d.h,r:d.r,...extra};
+      const d=defs[kind]||{};body.plugin={kind,material:d.material||'flesh',hp:d.hp||100,maxHp:d.hp||100,heat:this.settings.ambient,burning:false,charge:0,active:false,w:d.w,h:d.h,r:d.r,...extra};
       return body;
     }
     entity(kind,bodies,joints=[]) {
@@ -65,45 +134,76 @@
       this.entities.push(entity);Composite.add(this.world,[...bodies,...joints]);return entity;
     }
     spawn(kind,x,y,flip=false) {
-      if(this.bodies.length>500)return null;
+      if(this.bodies.length>=this.settings.maxObjects)return null;
       if(kind==='human'||kind==='android')return this.ragdoll(kind,x,y,flip);
       const d=defs[kind];if(!d)return null;
-      const opts={density:d.density,friction:.65,frictionStatic:.9,restitution:d.restitution||.1,frictionAir:.006,isStatic:!!d.static,label:kind};
+      const opts={density:d.density,friction:.65,frictionStatic:.9,restitution:d.restitution||.1,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
       const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:kind==='sword'?1:3}});
       this.meta(b,kind,flip?{flip:true}:{});return this.entity(kind,[b]);
     }
+    makePart(kind,slot,x,y,angle,group,flip) {
+      const robot=kind==='android',[name,,,w,h]=ANATOMY[slot],density=(robot?.0036:.0018)*(name==='head'?1.15:name==='chest'?1.3:1);
+      const b=Bodies.rectangle(x,y,w,h,{collisionFilter:{group},density,friction:.8,frictionStatic:1,restitution:0,frictionAir:.015*this.settings.airDrag,chamfer:{radius:Math.min(w/2-1,name==='head'?8:4)}});
+      this.meta(b,kind,{part:name,slot,w,h,r:0,material:robot?'metal':'flesh',hp:robot?230:100,maxHp:robot?230:100,wounds:[],severed:[],bleed:0,bone:100,...(flip?{flip:true}:{})});
+      if(angle)Body.setAngle(b,angle);return b;
+    }
+    makeJoint(kind,flip,a,b,[,,pa,pb,min,max,name]) {
+      // Anchors are stored unrotated; a regrown limb hangs off a body that may be at any angle.
+      const c=Constraint.create({bodyA:a,bodyB:b,pointA:Vector.rotate(pa,a.angle),pointB:Vector.rotate(pb,b.angle),length:0,stiffness:.97,damping:.2});
+      c.plugin={joint:true,breakForce:kind==='android'?45:29,min:flip?-max:min,max:flip?-min:max,name};return c;
+    }
     ragdoll(kind,x,y,flip=false) {
-      const robot=kind==='android',group=Body.nextGroup(true),parts=[];
-      const opts={collisionFilter:{group},density:robot?.0036:.0018,friction:.8,frictionStatic:1,restitution:0,frictionAir:.015};
-      for(const [name,dx,dy,w,h] of ANATOMY){
-        const b=Bodies.rectangle(x+dx,y+dy,w,h,{...opts,density:opts.density*(name==='head'?1.15:name==='chest'?1.3:1),chamfer:{radius:Math.min(w/2-1,name==='head'?8:4)}});
-        this.meta(b,kind,{part:name,w,h,r:0,material:robot?'metal':'flesh',hp:robot?230:100,maxHp:robot?230:100,wounds:[],severed:[],bleed:0,bone:100,...(flip?{flip:true}:{})});parts.push(b);
-      }
-      const [head,neck,chest,abdomen,hip,ua,la,handA,ub,lb,handB,tl,ll,footA,tr,lr,footB]=parts;
-      const joints=[];
-      const join=(a,b,pa,pb,min,max,name)=>{
-        const c=Constraint.create({bodyA:a,bodyB:b,pointA:pa,pointB:pb,length:0,stiffness:.97,damping:.2});
-        c.plugin={joint:true,breakForce:robot?45:29,min:flip?-max:min,max:flip?-min:max,name};joints.push(c);
-      };
-      join(neck,head,{x:0,y:-7},{x:0,y:14},-.6,.6,'atlas');
-      join(chest,neck,{x:0,y:-18},{x:0,y:6},-.35,.35,'neck');
-      join(chest,abdomen,{x:0,y:17},{x:0,y:-11},-.4,.4,'spine');
-      join(abdomen,hip,{x:0,y:10},{x:0,y:-11},-.4,.4,'waist');
-      join(chest,ua,{x:-21,y:-12},{x:3,y:-16},-2.6,1.4,'shoulder');
-      join(ua,la,{x:-1,y:17},{x:0,y:-16},-2.5,.08,'elbow');
-      join(la,handA,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist');
-      join(chest,ub,{x:21,y:-12},{x:-3,y:-16},-1.4,2.6,'shoulder');
-      join(ub,lb,{x:1,y:17},{x:0,y:-16},-.08,2.5,'elbow');
-      join(lb,handB,{x:0,y:15},{x:0,y:-7},-.65,.65,'wrist');
-      join(hip,tl,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip');
-      join(tl,ll,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee');
-      join(ll,footA,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle');
-      join(hip,tr,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip');
-      join(tr,lr,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee');
-      join(lr,footB,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle');
+      const group=Body.nextGroup(true),parts=ANATOMY.map(([,dx,dy],slot)=>this.makePart(kind,slot,x+dx,y+dy,0,group,flip));
+      const joints=JOINTS.map(t=>this.makeJoint(kind,flip,parts[t[0]],parts[t[1]],t));
       const e=this.entity(kind,parts,joints);e.upright=true;e.blood=100;e.alive=true;return e;
     }
     getEntity(body){return body&&this.entities.find(e=>e.id===body.plugin.entityId);}
+    // Every part still joined to this one, through living joints.
+    connected(body,links=this.joints.filter(c=>c.plugin.joint)){
+      const whole=new Set([body]),queue=[body];
+      while(queue.length){const current=queue.shift();for(const c of links){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!whole.has(other)){whole.add(other);queue.push(other);}}}
+      return whole;
+    }
+    // Put torn-off pieces back where they came from. Parts of one ragdoll share a collision group, which is how a loose limb finds its owner.
+    // Click the loose piece to reattach just that; click the body to collect everything that still fits.
+    reattach(body) {
+      if(body?.plugin.slot===undefined)return 0;const group=body.collisionFilter.group,parts=this.bodies.filter(b=>b.collisionFilter.group===group&&b.plugin.slot!==undefined);
+      const links=this.joints.filter(c=>c.plugin.joint),clicked=this.connected(body,links),chest=parts.find(b=>b.plugin.slot===2&&this.getEntity(b)?.blood!==undefined&&this.getEntity(b).blood>0)||parts.find(b=>b.plugin.slot===2);
+      const main=chest&&!clicked.has(chest)?this.connected(chest,links):clicked,owner=this.getEntity([...main][0]);if(!owner)return 0;
+      const loose=[];for(const b of parts)if(!main.has(b)&&!loose.some(set=>set.has(b)))loose.push(this.connected(b,links));
+      let attached=0;for(let progress=true;progress;){progress=false;for(const piece of main===clicked?loose:loose.filter(set=>set.has(body))){
+        if(piece.done||[...piece].some(b=>[...main].some(m=>m.plugin.slot===b.plugin.slot)))continue; // that place is already taken, e.g. by a regrown limb
+        const slotOf=set=>new Map([...set].map(b=>[b.plugin.slot,b])),have=slotOf(main),bring=slotOf(piece),t=JOINTS.find(([pa,pb])=>(have.has(pa)&&bring.has(pb))||(have.has(pb)&&bring.has(pa)));if(!t)continue;
+        const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip;
+        // Swing the whole piece to the stump's angle about its own anchor, then slide it until the two anchors meet.
+        const turn=stump.angle-limb.angle,pivot=Vector.add(limb.position,Vector.rotate(limb===a?t[2]:t[3],limb.angle));for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
+        const from=Vector.add(limb.position,Vector.rotate(limb===a?t[2]:t[3],limb.angle)),to=Vector.add(stump.position,Vector.rotate(stump===a?t[2]:t[3],stump.angle)),move=Vector.sub(to,from);
+        for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
+        const joint=this.makeJoint(owner.kind,flip,a,b,t);Composite.add(this.world,joint);links.push(joint);
+        for(const x of [a,b]){x.plugin.severed=[];x.plugin.bleed=Math.min(x.plugin.bleed||0,.3);}
+        for(const x of piece){const old=this.getEntity(x);if(old&&old!==owner){old.bodies=old.bodies.filter(o=>o!==x);old.joints=old.joints.filter(c=>c.bodyA!==x&&c.bodyB!==x);}if(!owner.bodies.includes(x))owner.bodies.push(x);x.plugin.entityId=owner.id;main.add(x);}
+        owner.joints=links.filter(c=>main.has(c.bodyA));piece.done=true;attached++;progress=true;this.burst(to.x,to.y,8,'#9fcbb1',2);}}
+      this.entities=this.entities.filter(e=>e.bodies.length);owner.restTime=0;return attached;
+    }
+    // Regrow whatever is missing from the body the clicked part belongs to. Torn-off pieces stay where they fell, as remains.
+    regenerate(body) {
+      const e=this.getEntity(body);if(!e||e.blood===undefined||body.plugin.slot===undefined)return 0;
+      const links=this.joints.filter(c=>c.plugin.joint),whole=this.connected(body,links);
+      const slots=new Map([...whole].map(b=>[b.plugin.slot,b])),flip=!!body.plugin.flip,group=body.collisionFilter.group,grown=[],joints=[];
+      for(let changed=true;changed;){changed=false;for(const t of JOINTS){const [pa,pb]=t;if(slots.has(pa)===slots.has(pb))continue;
+        const have=slots.has(pa)?pa:pb,need=have===pa?pb:pa,stump=slots.get(have),offset=Vector.rotate({x:ANATOMY[need][1]-ANATOMY[have][1],y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
+        const part=this.makePart(e.kind,need,stump.position.x+offset.x,stump.position.y+offset.y,stump.angle,group,flip);Body.setVelocity(part,stump.velocity);
+        slots.set(need,part);grown.push(part);joints.push(this.makeJoint(e.kind,flip,slots.get(pa),slots.get(pb),t));changed=true;}}
+      if(!grown.length)return 0;
+      for(const b of whole){b.plugin.severed=[];b.plugin.bleed=Math.min(b.plugin.bleed||0,.2);}
+      // The clicked body keeps the identity only if it still has its chest; a regrown stray limb becomes a new person, and what is left behind is remains.
+      const remains=e.bodies.filter(b=>!whole.has(b)),keeps=[...whole].some(b=>b.plugin.slot===2),owner=keeps?e:{id:this.nextId++,kind:e.kind,bodies:[],joints:[],upright:true,blood:100,alive:true};
+      if(!keeps){this.entities.push(owner);e.bodies=remains;e.joints=e.joints.filter(c=>remains.includes(c.bodyA));e.alive=false;e.upright=false;}
+      else if(remains.length){const left={id:this.nextId++,kind:e.kind,bodies:remains,joints:e.joints.filter(c=>remains.includes(c.bodyA)),upright:false,blood:0,alive:false};this.entities.push(left);for(const b of remains)b.plugin.entityId=left.id;}
+      owner.bodies=[...whole,...grown].sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints=[...links.filter(c=>whole.has(c.bodyA)),...joints];for(const b of owner.bodies)b.plugin.entityId=owner.id;
+      this.entities=this.entities.filter(x=>x.bodies.length);Composite.add(this.world,[...grown,...joints]);owner.restTime=0;owner.effort=0;
+      for(const b of grown)this.burst(b.position.x,b.position.y,6,'#9fcbb1',2);return grown.length;
+    }
     // upright = wants to stand. Whether it can is derived from what is left of the body, so losing an arm never drops it but losing the spine does.
     canStand(e){
       if(!e.alive||!e.upright)return false;const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],head=part('head')[0];
@@ -112,8 +212,14 @@
       if(!has('atlas')||!has('neck')||!has('spine')||!has('waist'))return false;
       return part('foot').some(foot=>{const ankle=live.find(c=>c.bodyB===foot),knee=ankle&&live.find(c=>c.bodyB===ankle.bodyA),hip=knee&&live.find(c=>c.bodyB===knee.bodyA);return !!hip&&foot.plugin.hp>0;});
     }
-    balancing(e){return !(e.stun>0)&&this.canStand(e);}
+    balancing(e){return this.settings.autoBalance&&!(e.stun>0)&&this.canStand(e);}
     revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;e.stun=0;e.effort=0;e.restTime=0;return true;}
+    vitals(e,seconds) {
+      const set=this.settings,head=e.bodies.find(b=>b.plugin.part==='head');
+      // Brain damage: the worse the head, the more often it blacks out.
+      if(set.brainDamage&&head&&head.plugin.hp<60&&!(e.stun>0)&&Math.random()<seconds*.25*(1-head.plugin.hp/60))e.stun=rnd(1,3.5);
+      if(set.slowHealing){if(e.kind==='human')e.blood=Math.min(100,e.blood+seconds*.8);for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);p.bleed=Math.max(0,(p.bleed||0)-seconds*.05);if(p.wounds?.length&&Math.random()<seconds*.06)p.wounds.shift();}}
+    }
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
     // Feet that are not on something produce no lift, so a ragdoll can never fly or hover its way upright.
     balance(e){
@@ -124,7 +230,7 @@
         b.torque+=clamp(wrap(-b.angle),-.5,.5)*b.inertia*strength-b.angularVelocity*b.inertia*(foot?.003:.002);}
       if(!feet.length||!pelvis||!free(chest))return;
       const mass=e.bodies.reduce((n,b)=>n+b.mass,0),weight=mass*.001*Math.max(this.gravity,.2),footX=feet.reduce((n,f)=>n+f.position.x,0)/feet.length,footY=Math.max(...feet.map(f=>f.position.y));
-      const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,LEG_STRENGTH)*weight*e.effort;
+      const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength)*weight*e.effort;
       const lean=clamp((footX-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort;
       for(const [b,share] of [[chest,.6],[pelvis,.4]])if(free(b))b.force={x:b.force.x+lean*share,y:b.force.y-lift*share};
       for(const f of feet)if(free(f))f.force={x:f.force.x-lean/feet.length,y:f.force.y+lift/feet.length};
@@ -143,7 +249,7 @@
     freeze(body){if(!body)return;Body.setStatic(body,!body.isStatic);return body.isStatic;}
     beginDrag(body,point) {
       this.endDrag();if(!body)return;
-      this.drag=Constraint.create({pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),length:0,stiffness:.16,damping:.15});
+      this.drag=Constraint.create({pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),length:0,stiffness:this.settings.grabStrength,damping:.15});
       this.drag.plugin={drag:true};Composite.add(this.world,this.drag);
     }
     moveDrag(point){if(this.drag)this.drag.pointA={...point};}
@@ -179,15 +285,16 @@
     }
     damage(body,amount,point=body?.position,type='impact') {
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
-      const p=body.plugin;p.hp=Math.max(0,p.hp-amount);
-      const e=this.getEntity(body);if(e&&amount>12)e.stun=Math.max(e.stun||0,clamp(amount/20,.6,5));if(e)e.restTime=0;
+      const p=body.plugin,set=this.settings,gone=p.hp<=0;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
+      p.hp=Math.max(0,p.hp-amount);
+      const e=this.getEntity(body);if(e&&amount>12&&set.stunScale>0)e.stun=Math.max(e.stun||0,clamp(amount/20,.6,5)*set.stunScale);if(e)e.restTime=0;
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle);
         const wound={x:clamp(p.flip?-local.x:local.x,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(type==='bullet'||type==='stab'?13:10),1.5,11),type,seed:Math.random()*6.28};
         p.wounds??=[];p.wounds.push(wound);p.wounds=p.wounds.slice(-14);
         p.bone=Math.max(0,(p.bone??100)-amount*(type==='bullet'||type==='stab'?.55:1));
         p.bleed=Math.min(7,(p.bleed||0)+amount/(type==='bullet'||type==='stab'?45:150));
-        this.burst(point.x,point.y,Math.min(24,Math.ceil(amount/3)),'#a4373c',type==='bullet'?6:3,'blood');
+        this.burst(point.x,point.y,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),'#a4373c',type==='bullet'?6:3,'blood');
         if(e&&(p.part==='head'||p.part==='chest')&&p.hp<12){e.alive=false;e.upright=false;}
       }
       else this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);
@@ -195,21 +302,32 @@
         if(p.kind==='bomb'||p.kind==='barrel'){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
         else if(p.material==='flesh'||p.kind==='android'){
           // A bullet can incapacitate without automatically detaching the whole limb.
-          if(type==='blast'||amount>85||p.bone<=0)for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
+          if(type==='blast'||amount>85*set.jointStrength||p.bone<=0)for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
+          // Limb crushing: a limb that was already destroyed and takes another heavy blow is pulped.
+          if(set.limbCrush&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
         }
         else if(!p.debris&&!p.destroying&&p.kind!=='platform'){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
       }
     }
+    crush(body) {
+      if(!this.bodies.includes(body))return;const p=body.plugin,{x,y}=body.position,e=this.getEntity(body),flesh=p.material==='flesh';
+      this.burst(x,y,flesh?45:20,flesh?'#8d2a31':'#e1bc7b',7,flesh?'blood':'spark');if(flesh)this.burst(x,y,14,'#7a2a30',3,'smoke');
+      if(e&&(p.part==='head'||p.part==='chest')){e.alive=false;e.upright=false;}this.removeBody(body);
+      if(this.settings.fragments&&this.bodies.length<this.settings.maxObjects-3){const bits=[];for(let i=0;i<3;i++){const w=rnd(4,9),h=rnd(4,8),b=Bodies.rectangle(x+rnd(-8,8),y+rnd(-8,8),w,h,{density:.0015,friction:.8,frictionAir:.01*this.settings.airDrag});
+        this.meta(b,p.kind,{material:p.material,w,h,hp:10,maxHp:10,debris:true});Body.setVelocity(b,{x:rnd(-4,4),y:rnd(-5,0)});Body.setAngularVelocity(b,rnd(-.3,.3));bits.push(b);}this.entity('debris',bits);}
+      this.onEffect('break',.4);
+    }
     shatter(body) {
       if(!this.bodies.includes(body))return;
       const p=body.plugin,{x,y}=body.position,vel={...body.velocity};this.removeBody(body);
-      if(this.bodies.length>480)return;
+      if(this.bodies.length>this.settings.maxObjects-20)return;
       const fragments=[];for(let i=0;i<5;i++){
         const w=rnd(6,16),h=rnd(5,14),b=Bodies.rectangle(x+rnd(-15,15),y+rnd(-15,15),w,h,{density:.001,friction:.6});
         this.meta(b,p.kind,{material:p.material,w,h,hp:10,maxHp:10,debris:true});Body.setVelocity(b,{x:vel.x+rnd(-3,3),y:vel.y+rnd(-4,1)});Body.setAngularVelocity(b,rnd(-.15,.15));fragments.push(b);
       }this.entity('debris',fragments);this.onEffect('break',.3);
     }
     explode(x,y,radius=175,power=1) {
+      power*=this.settings.explosionPower;
       this.flashes.push({x,y,radius,life:.6,maxLife:.6});this.burst(x,y,70,'#eabb69',13*power);this.burst(x,y,30,'#cd7050',9*power,'smoke');
       for(const b of this.bodies){const dx=b.position.x-x,dy=b.position.y-y,d=Math.hypot(dx,dy);if(d>radius)continue;const f=1-d/radius;
         if(!b.isStatic){Body.setVelocity(b,{x:b.velocity.x+(dx/(d||1))*f*20*power,y:b.velocity.y+(dy/(d||1))*f*20*power-3*f});Body.setAngularVelocity(b,rnd(-.2,.2)*f);}
@@ -228,8 +346,16 @@
         }
       }
       this.traces.push({from:{...from},to:hit,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
-      if(nearest&&!nearest.plugin.boundary){Body.applyForce(nearest,hit,Vector.mult(direction,.018));this.damage(nearest,55,hit,'bullet');}
+      if(nearest&&!nearest.plugin.boundary){Body.applyForce(nearest,hit,Vector.mult(direction,.018*this.settings.bulletForce));this.damage(nearest,this.settings.bulletDamage,hit,'bullet');}
       this.onEffect('shot',.3);return nearest;
+    }
+    // A strike takes the highest thing under it. It is a massive shock: current jumps through conductors, flesh burns, flammables catch.
+    lightning(x) {
+      const under=this.bodies.filter(b=>b.bounds.min.x<=x&&b.bounds.max.x>=x).sort((a,b)=>a.bounds.min.y-b.bounds.min.y)[0],y=under?under.bounds.min.y:this.groundY,top=-370;
+      this.traces.push({from:{x:x+rnd(-140,140),y:top},to:{x,y},life:.55,maxLife:.55,electric:true,bolt:true});this.flashes.push({x,y,radius:90,life:.35,maxLife:.35,sky:true});
+      this.burst(x,y,26,'#dff3ff',9);this.burst(x,y,10,'#8f9aa0',3,'smoke');if(this.settings.decals&&!under)this.stains.push({x,y:this.groundY-1,r:rnd(14,24),scorch:true});
+      if(under){this.shock(under);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
+      this.onEffect('thunder',1);return under||null;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(['flesh','wood','rubber'].includes(body.plugin.material))body.plugin.burning=true;if(body.plugin.kind==='barrel'||body.plugin.kind==='bomb')body.plugin.fuse=.35;this.onEffect('fire',.1);}
     shock(body) {
@@ -238,7 +364,7 @@
         for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined)e.blood=100;for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=20;b.plugin.burning=false;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined)e.blood=100;for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';const p=body.plugin;
       if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
@@ -253,7 +379,7 @@
       const p=sword.plugin;if(!defs[p.kind]?.sharp||p.stuck||part.plugin.material!=='flesh'||part.isStatic)return false;
       const {axis,tip}=this.blade(sword),contact=pair.collision.supports[0]||part.position;if(Vector.magnitude(Vector.sub(contact,tip))>26)return false;
       const arm=Vector.sub(tip,sword.position),tipVelocity={x:sword.velocity.x-sword.angularVelocity*arm.y,y:sword.velocity.y+sword.angularVelocity*arm.x};
-      const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<PIERCE_SPEED)return false;
+      const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed)return false;
       // ponytail: the blade joins the victim's no-collide group, so one sword skewers one ragdoll at a time. Per-pair filtering if kebabs matter.
       pair.isSensor=true;p.stuck=part.plugin.entityId;p.bloody=true;sword.collisionFilter.group=part.collisionFilter.group;
       this.piercing.set(sword,{part,steps:40});
@@ -269,14 +395,16 @@
         Body.setAngularVelocity(sword,lodged?part.angularVelocity:(sword.angularVelocity+part.angularVelocity)/2);
         if(!lodged)continue;this.piercing.delete(sword);
         const along=clamp(Vector.dot(Vector.sub(part.position,tip),Vector.neg(axis)),4,length-16);
-        for(const offset of [0,14]){const point=Vector.add(tip,Vector.mult(axis,-(along+offset)));const c=Constraint.create({bodyA:part,bodyB:sword,pointA:Vector.sub(point,part.position),pointB:Vector.sub(point,sword.position),length:0,stiffness:.5,damping:.1});c.plugin={pierce:true};Composite.add(this.world,c);}
+        for(const offset of [0,14]){const point=Vector.add(tip,Vector.mult(axis,-(along+offset)));const c=Constraint.create({bodyA:part,bodyB:sword,pointA:Vector.sub(point,part.position),pointB:Vector.sub(point,sword.position),length:0,stiffness:.3,damping:.1});c.plugin={pierce:true};Composite.add(this.world,c);}
         // Anything else of the same body that the blade now passes through is wounded too, including the far side.
         const e=this.getEntity(part);for(let d=2;d<length;d+=10){const point=Vector.add(tip,Vector.mult(axis,-d)),other=e&&Query.point(e.bodies,point)[0];if(other&&other!==part&&!other.plugin.run){other.plugin.run=true;this.damage(other,22,point,'stab');}}
         if(e)for(const b of e.bodies)delete b.plugin.run;if(along>part.plugin.w)this.damage(part,12,tip,'stab');
       }
       for(const sword of this.bodies){const p=sword.plugin;if(p.stuck===undefined||this.piercing.has(sword))continue;
         const pins=this.joints.filter(c=>c.plugin.pierce&&c.bodyB===sword);
-        if(pins.length&&pins.every(c=>Constraint.currentLength(c)<PIERCE_GRIP))continue;
+        // Matter's pins barely stretch, so a hand pull is measured on the grab itself: how far the cursor has drawn away from the hilt.
+        const pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4;
+        if(pins.length&&!pulled&&pins.every(c=>Constraint.currentLength(c)<this.settings.bladeGrip))continue;
         for(const c of pins){Composite.remove(this.world,c);c.bodyA.plugin.bleed=Math.min(7,(c.bodyA.plugin.bleed||0)+.8);const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
         // Collisions come back only once the blade is clear, otherwise the solver would fire it out of the body.
         const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;}
@@ -291,11 +419,12 @@
     step(dt=1000/60) {
       if(dt>1000/120+.001){this.step(dt/2);this.step(dt/2);return;}
       const seconds=dt/1000;this.time+=seconds;this.engine.gravity.y=this.gravity;
-      const bodies=this.bodies;
+      const bodies=this.bodies;if(Math.random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
-        if(e.kind==='human'){const bleeding=e.bodies.reduce((n,b)=>n+(b.plugin.bleed||0),0);e.blood=Math.max(0,(e.blood??100)-bleeding*seconds*.5);if(e.blood<25){e.alive=false;e.upright=false;}}
+        if(e.kind==='human'){const bleeding=e.bodies.reduce((n,b)=>n+(b.plugin.bleed||0),0);e.blood=Math.max(0,(e.blood??100)-bleeding*seconds*.5*this.settings.bleedRate);if(e.blood<25){e.alive=false;e.upright=false;}}
+        if(e.alive)this.vitals(e,seconds);
         e.stun=Math.max(0,(e.stun||0)-seconds);if(!this.balancing(e)){e.effort=0;continue;}
-        e.effort=Math.min(1,(e.effort??1)+seconds/GETUP_TIME); // strength returns gradually, so getting up is a push rather than a snap
+        e.effort=Math.min(1,(e.effort??1)+seconds/this.settings.getUpTime); // strength returns gradually, so getting up is a push rather than a snap
         this.balance(e);
       }
       for(const b of bodies){const p=b.plugin;
@@ -303,7 +432,7 @@
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
         p.charge=Math.max(0,p.charge-seconds*1.5);
         if(p.material==='flesh'&&p.bleed>.02){
-          const e=this.getEntity(b);if((e?.blood??100)>0&&Math.random()<p.bleed*seconds*5){
+          const e=this.getEntity(b);if((e?.blood??100)>0&&Math.random()<p.bleed*seconds*5*Math.min(2,this.settings.bleedRate)){
             const source=p.severed?.[0]||p.wounds?.[p.wounds.length-1]||{x:0,y:0};const pos=Vector.add(b.position,Vector.rotate({x:p.flip?-source.x:source.x,y:source.y},b.angle));
             this.particles.push({x:pos.x,y:pos.y,vx:b.velocity.x*.4+rnd(-1.2,1.2),vy:b.velocity.y*.4+rnd(-.7,.8),life:3,maxLife:3,color:'#922c33',size:rnd(.8,2.6),type:'blood'});
           }p.bleed=Math.max(0,p.bleed-seconds*.009);
@@ -313,7 +442,9 @@
           if(Math.random()<dt/25){const x=b.position.x+rnd(-10,10),y=b.position.y;this.particles.push({x,y,vx:rnd(-.8,.8),vy:rnd(-3,-1),life:rnd(.25,.7),maxLife:.7,color:Math.random()>.4?'#e5b660':'#c86943',size:rnd(3,7),type:'fire'});}
           if(Math.random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
           if(p.hp<=0)this.damage(b,.1);
-        }else p.heat=Math.max(20,p.heat-seconds*8);
+        }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
+        // ponytail: rain reaches everything, roofs do not shelter. Ray test upward if that matters.
+        if(this.settings.rain&&p.heat>this.settings.ambient){p.heat-=seconds*(p.burning?140:25);if(p.burning&&p.heat<150)p.burning=false;}
         if(p.heat>180&&(p.kind==='barrel'||p.kind==='bomb')&&p.fuse===undefined)p.fuse=.5;
         if(p.active&&!b.isStatic){if(p.kind==='thruster'){const force=Vector.rotate({x:0,y:-.0025*b.mass},b.angle);Body.applyForce(b,b.position,force);const jet=Vector.add(b.position,Vector.rotate({x:0,y:30},b.angle));this.burst(jet.x,jet.y,2,'#f3c885',2,'fire');}
           if(p.kind==='wheel')Body.setAngularVelocity(b,.18);
@@ -343,7 +474,7 @@
         if(contacts<e.pin.contacts*.6||this.gravity!==e.pin.gravity){e.restTime=0;e.pin=null;continue;}
         for(const {b,x,y,angle} of e.pin.pose){if(b.isStatic)continue;Body.setPosition(b,{x,y});Body.setAngle(b,angle);Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}
       }
-      for(const c of [...this.joints])if(c.plugin.joint&&Constraint.currentLength(c)>c.plugin.breakForce)this.sever(c);
+      for(const c of [...this.joints])if(c.plugin.joint&&Constraint.currentLength(c)>c.plugin.breakForce*this.settings.jointStrength)this.sever(c);
       this.blades();
       const pending=this.damageQueue.splice(0);for(const fn of pending)fn();
       for(const p of this.particles){p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;
@@ -354,7 +485,7 @@
       for(const list of [this.flashes,this.traces]){for(const f of list)f.life-=seconds;while(list.length&&list[0].life<=0)list.shift();}
     }
     loadPreset(name) {
-      this.clear();this.scene=name;this.gravity=1;
+      this.clear();this.scene=name;
       if(name==='workshop'){
         this.spawn('human',900,555);this.spawn('android',1050,555);
         this.spawn('crate',1350,622);this.spawn('crate',1405,622);this.spawn('crate',1377,568);this.spawn('barrel',1530,619);
@@ -377,7 +508,7 @@
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');
       for(const b of data.bodies){const p=b.plugin;if(!p||![b.x,b.y,b.angle].every(Number.isFinite)||(!p.r&&(!Number.isFinite(p.w)||!Number.isFinite(p.h))))throw new Error('Invalid body');}
       for(const c of data.joints)if((c.a!==null&&!data.bodies[c.a])||(c.b!==null&&!data.bodies[c.b]))throw new Error('Invalid joint');
-      this.clear();this.scene=data.scene||'empty';this.gravity=Number.isFinite(data.gravity)?data.gravity:1;
+      this.clear();this.scene=data.scene||'empty';this.gravity=Number.isFinite(data.gravity)?data.gravity:1;this.settings.gravity=clamp(this.gravity*EARTH,-40,40);
       const bodies=data.bodies.map(d=>{const p=d.plugin,opts={density:d.density||.002,friction:d.friction,restitution:d.restitution,collisionFilter:{group:d.group||0}};
         const b=p.r?Bodies.circle(d.x,d.y,p.r,opts):Bodies.rectangle(d.x,d.y,p.w,p.h,{...opts,chamfer:{radius:Math.min(3,p.w/3,p.h/3)}});
         b.plugin={...p};Body.setAngle(b,d.angle);Body.setVelocity(b,d.velocity||{x:0,y:0});Body.setAngularVelocity(b,d.angularVelocity||0);if(d.isStatic)Body.setStatic(b,true);return b;
@@ -385,10 +516,11 @@
       // Constraint.create discards a plugin passed in its options, so it is assigned afterwards.
       const joints=data.joints.map(d=>{const a=d.a===null?null:bodies[d.a],b=d.b===null?null:bodies[d.b];const c=Constraint.create({bodyA:a,bodyB:b,angleA:a?.angle||0,angleB:b?.angle||0,pointA:{...d.pointA},pointB:{...d.pointB},length:d.length,stiffness:d.stiffness,damping:d.damping});c.plugin={...d.plugin};return c;});Composite.add(this.world,joints);
       this.entities=data.entities.map(e=>({...e,bodies:bodies.filter(b=>b.plugin.entityId===e.id),joints:joints.filter(c=>c.plugin.joint&&c.bodyA?.plugin.entityId===e.id)}));
+      for(const b of bodies)b.frictionAir=this.drag_(b); // bodies are rebuilt without their drag, so give it back
       this.nextId=Math.max(0,...this.entities.map(e=>e.id))+1;this.stains=Array.isArray(data.stains)?data.stains.slice(-300):[];
       // Keep new ragdolls' collision groups distinct from restored groups.
       Body._nextNonCollidingGroup=Math.min(Body._nextNonCollidingGroup,...bodies.map(b=>b.collisionFilter.group-1));
     }
   }
-  return {Simulation,CATALOG,defs,clamp,ANATOMY};
+  return {Simulation,CATALOG,SETTINGS,defaults,sanitize,defs,clamp,ANATOMY};
 });
