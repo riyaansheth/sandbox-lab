@@ -174,7 +174,7 @@ test('limb crushing removes a destroyed limb and leaves fragments; healing and b
   s.damage(hand,60,hand.position);s.step();assert.ok(!s.bodies.includes(hand));assert.equal(s.bodies.filter(b=>b.plugin.gib&&b.plugin.material==='flesh').length,3);assert.equal(s.bodies.filter(b=>b.plugin.gib&&b.plugin.material==='bone').length,2);assert.equal(e.bodies.length,16);
   const off=new Simulation();const h=off.spawn('human',1000,555).bodies[7];off.damage(h,100,h.position);off.damage(h,60,h.position);off.step();assert.ok(off.bodies.includes(h));
   const heal=new Simulation();heal.configure({slowHealing:true,stunScale:0});const p=heal.spawn('human',1000,555),arm=p.bodies[5];heal.damage(arm,40,arm.position,'bullet');const hp=arm.plugin.hp;advance(heal,600);assert.ok(arm.plugin.hp>hp+10);
-  const brain=new Simulation();brain.configure({brainDamage:true,stunScale:0});const v=brain.spawn('human',1000,555);v.bodies[0].plugin.hp=20;let out=0;for(let i=0;i<1800;i++){brain.step();if(v.stun>0)out++;}assert.ok(out>60,'a badly hurt head should black out');
+  const brain=new Simulation().seed(7);brain.configure({brainDamage:true,stunScale:0});const v=brain.spawn('human',1000,555);v.bodies[0].plugin.hp=20;let out=0;for(let i=0;i<1800;i++){brain.step();if(v.stun>0)out++;}assert.ok(out>60,'a badly hurt head should black out');
 });
 test('regenerate regrows severed limbs on the clicked body and leaves the old pieces as remains',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);const cut=name=>s.sever(s.joints.find(c=>c.plugin.name===name));cut('elbow');cut('knee');
@@ -275,8 +275,9 @@ test('brain, lungs and gut each fail in their own way',()=>{
   assert.ok(g.e.blood<blood-1,'internal bleeding drains blood');assert.equal(g.s.particles.filter(p=>p.type==='blood').length,0,'with nothing to see');assert.ok(belly.plugin.bruise>0,'except a spreading bruise');
 });
 test('fractures: a broken leg carries no weight, two broken legs cannot stand, and healing mends them',()=>{
-  const {s,e,part}=fresh();advance(s,30);const shin=e.bodies[12],foot=e.bodies[13],other=e.bodies[16];s.damage(shin,60,shin.position,'impact');assert.ok(s.fractured(shin));assert.ok(!s.bears(foot)&&s.bears(other));assert.ok(s.canStand(e),'one good leg is enough');
-  assert.equal(s.joints.filter(c=>c.plugin.joint).length,16,'fractured is not severed');s.damage(e.bodies[15],60,e.bodies[15].position,'impact');assert.ok(!s.canStand(e));advance(s,600);assert.ok(part('chest').position.y>540,'it should be down and stay down');
+  const {s,e,part}=fresh();advance(s,30);const shin=e.bodies[12],foot=e.bodies[13],other=e.bodies[16];s.damage(shin,60,shin.position,'impact');assert.ok(s.fractured(shin));assert.ok(!s.bears(foot)&&s.bears(other));assert.ok(!s.canStand(e),'a broken leg cannot be stood around');assert.equal(s.capability(e),'crawl');
+  assert.equal(s.joints.filter(c=>c.plugin.joint).length,16,'fractured is not severed');advance(s,600);assert.ok(part('chest').position.y>540,'it should be down and stay down');
+  const amputee=fresh();amputee.s.sever(amputee.s.joints.find(c=>c.plugin.name==='hip'));amputee.e.bodies.forEach(b=>{for(const w of b.plugin.severed)w.bleed=0;});assert.ok(amputee.s.canStand(amputee.e),'a missing leg is different: one good leg is enough to stand on');
   s.heal(shin);assert.ok(!s.fractured(shin)&&s.canStand(e));
 });
 test('pain rises with injury and ebbs; blood loss passes through dazed and unconscious before death',()=>{
@@ -392,4 +393,24 @@ test('a falling, conscious ragdoll gets its arms out on the side it is falling t
 });
 test('androids stagger and brace too, but feel nothing',()=>{
   const {s,e,chest}=standing('android');s.damage(chest,24,chest.position,'impact',{x:-1,y:0});assert.ok(e.stagN>=1&&e.stagDir===-1);advance(s,240);assert.ok(chest.position.y<505);assert.ok(!e.pain);
+});
+// ---- reaction spec, section 4: the mobility ladder
+const sever=(s,e,names)=>{for(const n of names)for(const c of s.joints.filter(c=>c.plugin.name===n&&c.bodyA.plugin.entityId===e.id))s.sever(c);for(const b of e.bodies)for(const w of b.plugin.severed||[])w.bleed=0;};
+test('the mobility ladder picks the highest rung the remaining body allows',()=>{
+  const rung=(prepare)=>{const s=new Simulation();const e=s.spawn('human',1000,555);prepare(s,e);return s.capability(e);};
+  assert.equal(rung(()=>{}),'stand');assert.equal(rung((s,e)=>sever(s,e,['ankle'])),'kneel');assert.equal(rung((s,e)=>sever(s,e,['hip'])),'crawl');
+  assert.equal(rung((s,e)=>{sever(s,e,['hip']);s.sever(s.joints.find(c=>c.plugin.name==='shoulder'));}),'drag');assert.equal(rung((s,e)=>sever(s,e,['hip','shoulder'])),'curl');
+  assert.equal(rung((s,e)=>{e.pain=95;}),'curl','agony overrides everything');assert.equal(rung((s,e)=>{e.bodies[12].plugin.bone=20;e.bodies[6].plugin.bone=20;}),'drag','a broken leg and a broken arm leave one arm to drag with');
+  const bot=new Simulation();const a=bot.spawn('android',1000,555);a.pain=95;assert.equal(bot.capability(a),'stand','androids have no pain to curl up from');
+});
+test('without feet it kneels upright; without legs it crawls away from what hurt it, then lies still',()=>{
+  const k=new Simulation();k.configure({bleedRate:0,stunScale:0});const ke=k.spawn('human',1000,555);advance(k,60);sever(k,ke,['ankle']);advance(k,360);const kc=ke.bodies[2];assert.equal(ke.rung,'kneel');assert.ok(kc.position.y>520&&kc.position.y<575&&Math.abs(kc.angle)<.35,`kneeling chest at ${kc.position.y}, tilt ${kc.angle}`);
+  for(const dir of [1,-1]){const s=new Simulation();s.configure({bleedRate:0,stunScale:0,organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);sever(s,e,['hip']);const chest=e.bodies.find(b=>b.plugin.slot===2);advance(s,60);
+    s.damage(chest,8,chest.position,'impact',{x:dir,y:0});const x=chest.position.x;advance(s,300);assert.equal(e.rung,'crawl');assert.ok((chest.position.x-x)*dir>25,`crawled ${(chest.position.x-x)*dir}px away from a blow travelling ${dir}`);
+    assert.ok(chest.speed<6&&e.bodies.every(b=>Number.isFinite(b.position.x)));advance(s,420);assert.ok(e.idle,'after a few seconds it stops fleeing');const rest=chest.position.x;advance(s,300);assert.ok(Math.abs(chest.position.x-rest)<6,'and lies still');}
+});
+test('getting up is staged, and slower in pain',()=>{
+  const rise=(pain)=>{const s=new Simulation();s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);for(const b of e.bodies)Body.rotate(b,Math.PI/2,{x:1000,y:640});const chest=e.bodies[2],stages=[];let up=null;
+    for(let i=0;i<900&&up===null;i++){if(pain)e.pain=pain;s.step();const st=e.rise?e.rise.stage:-1;if(st>=0&&stages[stages.length-1]!==st)stages.push(st);if(chest.position.y<505&&Math.abs(chest.angle)<.3&&!e.rise)up=i/60;}return {stages,up};};
+  const fit=rise(0),hurt=rise(60);assert.deepEqual(fit.stages,[0,1,2,3],'gather, push up, knees under, stand');assert.ok(fit.up!==null&&fit.up>1.2,`a staged get-up takes more than a second, took ${fit.up}`);assert.ok(hurt.up===null||hurt.up>fit.up*1.4,`pain should slow it: ${hurt.up} vs ${fit.up}`);
 });

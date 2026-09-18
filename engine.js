@@ -31,8 +31,10 @@
     wheel:{r:30,material:'metal',hp:220,density:.003,restitution:.2}, thruster:{w:29,h:51,material:'metal',hp:160,density:.003},
     battery:{w:32,h:47,material:'metal',hp:120,density:.003}, platform:{w:180,h:17,material:'metal',hp:1000,density:.005,static:true}
   };
+  // Every random choice in the simulation goes through here, so a test (or a replay) can seed it: sim.seed(n). Unseeded, it is Math.random.
+  let random=Math.random;
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-  const rnd=(a,b)=>a+Math.random()*(b-a);
+  const rnd=(a,b)=>a+random()*(b-a);
   // Dimensions are shared by the physics bodies and the renderer, in world pixels.
   const ANATOMY=[
     ['head',0,-105,23,30],['neck',0,-84,11,14],['chest',0,-60,35,36],['abdomen',0,-32,26,23],['pelvis',0,-11,30,23],
@@ -124,11 +126,18 @@
   // Arms are mirror images of each other (the left elbow bends negative, the right positive), so arm entries come in pairs.
   const POSES={
     stand:{5:[.05,1],8:[-.05,1]},
+    kneel:{11:[.15,1.3],14:[.15,1.3],12:[1.9,1.3],15:[1.9,1.3],13:[.4,.6],16:[.4,.6]},                                  // on the knees, shins folded back
+    crouch:{11:[-1.05,1.5],14:[-1.05,1.5],12:[2.0,1.5],15:[2.0,1.5],3:[.15,1],5:[-.5,1.5],8:[.5,1.5]},               // knees under the body, ready to rise
+    gather:{11:[-.7,1.2],14:[-.7,1.2],12:[1.4,1.2],15:[1.4,1.2],5:[-.9,2],8:[.9,2],6:[-1.3,2],9:[1.3,2]},            // lying: limbs drawn in, hands under the shoulders
+    pushup:{11:[-.5,1.2],14:[-.5,1.2],12:[1.2,1.2],15:[1.2,1.2],5:[-1.4,5],8:[1.4,5],6:[-.15,5],9:[.15,5]},          // arms straighten against the floor
+    crawl:{11:[-.35,.8],14:[-.35,.8],12:[.9,.8],15:[.9,.8],0:[0,1.5]},                                               // belly down; the arm cycle is added on top
+    curl:{11:[-1.25,1],14:[-1.25,1],12:[2.2,1],15:[2.2,1],3:[.35,1],4:[.35,1],1:[.3,1],0:[.3,1],5:[-.7,1.5],8:[.7,1.5],6:[-2.1,1.5],9:[2.1,1.5]},
     limp:Object.fromEntries(Array.from({length:17},(_,slot)=>[slot,[0,0]]))        // every muscle off: unconscious or dead
   };
   // How strong each joint's muscles are next to each other, and how hard any of them can pull: the error a muscle "sees" is capped, which caps its torque.
   const MUSCLE={atlas:.5,neck:.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.6,POSE_BLEND=.25;
   // Reactions. FLINCH: seconds a flinch lasts. STEP: seconds per recovery step, and how far a stagger shifts the balance point (px per point of damage, capped).
+  const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -150,12 +159,13 @@
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.smears=new WeakMap();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.aimSet=new Set();this.random=Math.random;this.smears=new WeakMap();this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
       Events.on(this.engine,'collisionStart',e=>this.collisions(e.pairs));Events.on(this.engine,'collisionActive',e=>this.disturb(e.pairs));
     }
+    seed(n){let a=n>>>0;this.random=random=()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};return this;} // mulberry32
     // Change settings. Values are validated against the table; things that live on the engine or on bodies are pushed out here.
     configure(values){
       Object.assign(this.settings,sanitize(values));const s=this.settings;this.gravity=s.gravity/EARTH;
@@ -300,12 +310,22 @@
       if(!chest||!head||chest.plugin.hp<35||head.plugin.hp<35)return false;
       const live=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id),has=n=>live.filter(c=>c.plugin.name===n).length;
       if(!has('atlas')||!has('neck')||!has('spine')||!has('waist'))return false;
+      if(live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB)))return false; // a broken leg that is still attached cannot be stood around: it goes down and crawls. A missing one can: that is hopping.
       return part('foot').some(foot=>{const ankle=live.find(c=>c.bodyB===foot),knee=ankle&&live.find(c=>c.bodyB===ankle.bodyA),hip=knee&&live.find(c=>c.bodyB===knee.bodyA);return !!hip&&foot.plugin.hp>0&&this.bears(foot,live);});
     }
     // A leg carries weight only if none of its bones is fractured.
     fractured(b){return b.plugin.material==='flesh'&&b.plugin.slot>=5&&(b.plugin.bone??100)<=FRACTURE;} // limbs only: cracked ribs or a cracked skull hurt, but the trunk still holds itself up
     bears(foot,live=this.joints.filter(c=>c.plugin.joint)){for(let b=foot;b&&b.plugin.part!=='pelvis';b=live.find(c=>c.bodyB===b)?.bodyA)if(this.fractured(b))return false;return true;}
-    balancing(e){return this.settings.autoBalance&&!(e.stun>0)&&e.consciousness!=='unconscious'&&this.canStand(e);}
+    balancing(e){return this.active(e)&&this.canStand(e);}
+    active(e){return !!e.alive&&!!e.upright&&this.settings.autoBalance&&!(e.stun>0)&&e.consciousness!=='unconscious';}
+    // stand -> kneel -> crawl -> drag -> curl. Legs that bear weight stand; knees without feet kneel; two good arms crawl, one drags; nothing left, or too much pain, curls up.
+    capability(e) {
+      if(e.kind==='human'&&(e.pain||0)>=88)return 'curl';if(this.canStand(e))return 'stand';
+      const live=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id),joint=(slot)=>live.find(c=>c.bodyB.plugin.slot===slot),ok=slot=>{const c=joint(slot);return !!c&&!this.fractured(c.bodyB)&&c.bodyB.plugin.hp>0;};
+      const chest=e.bodies.find(b=>b.plugin.slot===2),head=e.bodies.find(b=>b.plugin.slot===0);if(!chest||!head||chest.plugin.hp<35||head.plugin.hp<35||!joint(0)||!joint(1))return 'curl';
+      const trunk=!!joint(3)&&!!joint(4),brokenLeg=live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB));if(trunk&&!brokenLeg&&((ok(11)&&ok(12))||(ok(14)&&ok(15))))return 'kneel'; // kneeling is for missing feet, not for broken legs
+      const arms=(ok(5)&&ok(6)?1:0)+(ok(8)&&ok(9)?1:0);return arms===2?'crawl':arms===1?'drag':'curl';
+    }
     revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
     // Once per step for every living ragdoll: what the injuries are doing to it. Humans only for blood, organs, oxygen and pain; androids have none of those.
     vitals(e,seconds) {
@@ -323,16 +343,16 @@
         if(!e.alive)return;
       }else e.consciousness='awake';
       // Brain damage setting: the worse the head, the more often it blacks out.
-      if(set.brainDamage&&head&&head.plugin.hp<60&&!(e.stun>0)&&Math.random()<seconds*.25*(1-head.plugin.hp/60))e.stun=rnd(1,3.5);
+      if(set.brainDamage&&head&&head.plugin.hp<60&&!(e.stun>0)&&random()<seconds*.25*(1-head.plugin.hp/60))e.stun=rnd(1,3.5);
       if(set.slowHealing){if(human){e.blood=Math.min(100,e.blood+seconds*.8);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*.4);}
-        for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&Math.random()<seconds*.06)p.wounds.shift();}}
+        for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&random()<seconds*.06)p.wounds.shift();}}
     }
     // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
     strengthOf(b){return this.fractured(b)?0:clamp((b.plugin.hp??100)/50,.2,1);}
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
     react(e,body,amount,direction,stun) {
       const slot=body.plugin.slot??2,dir=direction&&Math.abs(direction.x)>1e-6?Math.sign(direction.x):(e.bodies[2]&&body.position.x>e.bodies[2].position.x?-1:1);
-      e.flinch=FLINCH_TIME*clamp(amount/25,.8,1.6);e.flinchMag=clamp(amount/28,.12,1);e.flinchSlot=slot;e.flinchDir=dir;
+      e.fleeT=FLEE_TIME;e.flinch=FLINCH_TIME*clamp(amount/25,.8,1.6);e.flinchMag=clamp(amount/28,.12,1);e.flinchSlot=slot;e.flinchDir=dir;
       const standing=this.balancing(e)&&!(e.stagN>0)&&Math.abs(wrap(e.bodies[2]?.angle||0))<.4,torso=slot<=4;
       if(standing&&amount>10&&(torso||amount>25)){e.stagN=clamp(Math.round(amount/16),1,3);e.stagDir=dir;e.stagT=0;e.stagLeg=dir>0?0:1;e.stagPush=Math.min(STAGGER_MAX,amount*STAGGER_PUSH);}
       // A knockdown arrives through the stagger: the legs get a moment to try before they go.
@@ -353,44 +373,79 @@
       const tilt=wrap(chest.angle),falling=chest.velocity.y>BRACE_FALL,moving=chest.speed>1.2&&!this.touching.has(chest);if(awake&&moving&&(Math.abs(tilt)>BRACE_TILT||falling)&&!(e.stun>0)){ /* only on the way down: a body already on the ground gets up instead */ const f=Math.abs(tilt)>.15?Math.sign(tilt):Math.sign(chest.velocity.x)||1;e.bracing=.4;e.braceDir=f;}
       if(e.bracing>0){e.bracing-=seconds;const f=e.braceDir;A[5]=-f*1.25-tilt*.5;A[8]=-f*1.25-tilt*.5;A[6]=-.35;A[9]=.35;A[7]=A[10]=0;A[0]=-f*.45;P[5]=P[8]=6;P[6]=P[9]=4;P[0]=2;want.armsFree=true;}else want.armsFree=false;
     }
+    // The weight the muscles are working against: only what is still attached to the chest. Severed limbs stay in the entity but are no longer carried. Refreshed ten times a second.
+    carried(e,chest){if(!(this.time-(e.massAt??-1)<.1)){e.massAt=this.time;let m=0;for(const b of this.connected(chest))m+=b.mass;e.liveMass=m;}return e.liveMass;}
     // Blend toward the wanted pose. Layers are applied in order, later ones overriding the joints they mention; an armed hand's arm is aimed last of all.
-    pose(e,layers,aiming,chest,down,seconds) {
+    pose(e,base,aiming,chest,down,seconds,rung) {
       const now=e.poseNow??={angle:new Array(17).fill(0),power:new Array(17).fill(1)},want=this.poseWant,k=1-Math.exp(-seconds/(e.flinch>0?.05:POSE_BLEND));want.angle.fill(0);want.power.fill(1); // a flinch is quick: the blend tightens while it lasts
-      for(const layer of layers)for(const slot in layer){want.angle[slot]=layer[slot][0];want.power[slot]=layer[slot][1];}
+      for(const slot in base){want.angle[slot]=base[slot][0];want.power[slot]=base[slot][1];}
+      const crawlDir=(rung==='crawl'||rung==='drag')?this.crawl(e,want,chest,rung,seconds):0;
       this.reactions(e,want,chest,down,seconds);
       if(!down)for(const b of aiming){const slot=b.plugin.slot,shoulder=slot===5||slot===8;want.angle[slot]=shoulder?-1.45-chest.angle*(b.plugin.flip?-1:1):0;want.power[slot]=shoulder?7:4;} // point the armed arm forward, whatever the chest is doing
-      for(let i=0;i<17;i++){now.angle[i]+=(want.angle[i]-now.angle[i])*k;now.power[i]+=(want.power[i]-now.power[i])*k;}
+      for(let i=0;i<17;i++){now.angle[i]+=(want.angle[i]-now.angle[i])*k;now.power[i]+=(want.power[i]-now.power[i])*k;}return crawlDir;
+    }
+    // Crawling: belly down, head the way it is going. Each good arm reaches past the head, plants, and pulls; the pull on the body is reacted on the planted hand,
+    // which is pressed into the floor for grip, so it is all internal. It crawls away from what last hurt it for a few seconds, then lies still.
+    crawl(e,want,chest,rung,seconds) {
+      e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=e.flinchDir||(chest.plugin.flip?-1:1);if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);return 0;}e.idle=false; // nothing to flee: it lies there slack, and the rest logic can let it sleep
+      const A=want.angle,P=want.power,period=rung==='drag'?CRAWL_PERIOD*1.4:CRAWL_PERIOD,mass=this.carried(e,chest),weight=mass*.001*Math.max(this.gravity,.2)*e.effort;
+      for(let k=0;k<2;k++){const upper=e.bodies.find(b=>b.plugin.slot===(k?8:5)),fore=upper&&e.bodies.find(b=>b.plugin.slot===(k?9:6));if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||!this.joints.some(c=>c.plugin.joint&&c.bodyB===fore))continue;
+        // Arm targets are world directions (forward-and-down to reach, back-and-down to finish the pull), turned into shoulder angles against the chest. The rig is a front view laid on its side,
+        // so one arm is on the floor side and its shoulder limit stops it short of a full reach; it still paddles, and the far arm does the long strokes.
+        const side=k?1:-1,phase=((this.time/period)+(k?.5:0))%1,sh=k?8:5,mirror=upper.plugin.flip?-1:1,shoulder=world=>wrap(world-chest.angle)*mirror;
+        const hand=e.bodies.find(b=>b.plugin.slot===sh+2);
+        if(phase<.45){A[sh]=shoulder(-d*1.15);A[sh+1]=side*.15;P[sh]=P[sh+1]=4;const tip=hand||fore;if(!tip.isStatic&&!chest.isStatic){tip.force.y-=CRAWL_LIFT*weight;chest.force.y+=CRAWL_LIFT*weight;}} // reach out past the head, hand lifted clear so it does not scrape the body backwards
+        else{const pull=(phase-.45)/.55;A[sh]=shoulder(-d*1.15+d*1.9*pull);A[sh+1]=side*(.15+.6*pull);P[sh]=6;P[sh+1]=4;         // plant and drag the body up to the hand
+          const grip=hand&&this.touching.has(hand)?hand:this.touching.has(fore)?fore:null;
+          if(grip&&!grip.isStatic&&!chest.isStatic&&chest.velocity.x*d<CRAWL_SPEED){ /* no faster than a crawl, however light the body has become */ grip.force.y+=CRAWL_PRESS*weight;chest.force.y-=CRAWL_PRESS*weight;grip.force.x-=d*CRAWL_PULL*weight;chest.force.x+=d*CRAWL_PULL*weight;}}}
+      return d;
     }
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
     // Feet that are not on something produce no lift, so a ragdoll can never fly or hover its way upright.
-    balance(e){
-      const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],pelvis=part('pelvis')[0],feet=part('foot').filter(f=>this.touching.has(f)&&this.bears(f));
-      const free=b=>!b.isStatic&&this.drag?.bodyB!==b,down=Math.abs(wrap(chest.angle))>.6||feet.length===0;
+    balance(e,rung='stand'){
+      const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],pelvis=part('pelvis')[0];if(!chest)return;
+      const free=b=>!b.isStatic&&this.drag?.bodyB!==b,tilt=wrap(chest.angle),human=e.kind==='human',seconds=1/120;
       // Muscles need something to push against. Off the ground (carried, thrown, falling) the body only keeps a little tone, so it dangles from the hand that holds it;
       // after a moment in the air its strength is gone too, so it crumples on landing and then gets up.
-      const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);e.airTime=supported?0:(e.airTime||0)+1/120;if(e.airTime>AIR_LIMP)e.effort=0;const tone=supported?1:AIR_TONE;
+      const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);e.airTime=supported?0:(e.airTime||0)+seconds;if(e.airTime>AIR_LIMP)e.effort=0;const tone=supported?1:AIR_TONE;
+      // What is holding the body up on this rung, how high it should hold the chest, and whether it is down and has to get up first.
+      let support=this.support,height=0,uprightness=1,liftScale=1,base=POSES[rung]||POSES.stand;support.length=0;
+      if(rung==='stand'){for(const f of e.bodies)if(f.plugin.part==='foot'&&this.touching.has(f)&&this.bears(f))support.push(f);height=STAND_HEIGHT;}
+      else if(rung==='kneel'){for(const b of e.bodies)if((b.plugin.part==='shin'||b.plugin.part==='thigh')&&this.touching.has(b)&&!this.fractured(b))support.push(b);height=KNEEL_HEIGHT;}
+      else{uprightness=0;liftScale=0;}
+      const down=rung==='stand'&&(Math.abs(tilt)>.6||!support.length);
+      // Getting up is staged: gather the limbs, push up on the arms, get the knees under, and only then stand. Pain and blood loss slow every stage.
+      // If it is still down a while after the last stage, the attempt has failed: it sags, rests, and tries again.
+      if(rung==='stand'){const slow=human?1+(e.pain||0)/70+Math.max(0,75-e.blood)/60:1;
+        if(down&&!e.rise&&supported&&!(e.stagN>0))e.rise={stage:0,t:0,tries:(e.rise?.tries||0)};
+        if(e.rise){e.rise.t+=seconds;if(e.rise.stage<GETUP_STAGES.length){const [name,time]=GETUP_STAGES[e.rise.stage];base=POSES[name];uprightness=e.rise.stage===0?0:e.rise.stage===1?.5*GETUP_TORQUE:GETUP_TORQUE;liftScale=e.rise.stage===2?1:0;height=STAND_HEIGHT*.62;
+            if(e.rise.stage===2)for(const f of e.bodies)if((f.plugin.part==='shin'||f.plugin.part==='foot')&&this.touching.has(f)&&!support.includes(f))support.push(f);
+            if(e.rise.t>time*slow){e.rise.stage++;e.rise.t=0;}}
+          else{uprightness=down?GETUP_TORQUE:1;if(!down&&e.rise.t>.4)e.rise=null;else if(e.rise.t>1.6*slow){e.effort=0;e.stun=Math.max(e.stun||0,.8+(e.pain||0)/50);e.rise=null;}}}}
+      else e.rise=null;
       // The pistol is levelled directly as well: a hand is far too light to hold a pistol's weight level by its own torque.
-      const aiming=new Set();for(const hand of part('hand')){const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
-        if(!down&&free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
+      const aiming=this.aimSet;aiming.clear();if(rung==='stand'&&!down)for(const hand of e.bodies){if(hand.plugin.part!=='hand')continue;const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
+        if(free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
       // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
-      const human=e.kind==='human',vigour=e.effort*tone*(human?clamp((e.blood-25)/50,.25,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.75:1):1);
-      this.pose(e,[POSES.stand],aiming,chest,down,1/120);
+      const vigour=e.effort*tone*(human?clamp((e.blood-25)/50,.25,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.75:1):1);
+      const crawlDir=this.pose(e,base,aiming,chest,down,seconds,rung);
       // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
       const live=this.joints;for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
-        if(c.plugin.name==='ankle'&&this.touching.has(b))continue; // a planted foot lies flat on the ground whatever the shin does; the ankle gives. Holding it to the shin makes the foot rock on its edge and walk.
+        if(c.plugin.name==='ankle'&&this.touching.has(b)&&rung==='stand')continue; // a planted foot lies flat on the ground whatever the shin does; the ankle gives. Holding it to the shin makes the foot rock on its edge and walk.
         const arm=slot>=5&&slot<=10,limb=Math.min(this.strengthOf(a),this.strengthOf(b)),power=e.poseNow.power[slot]*limb*(arm&&this.poseWant.armsFree?vigour/tone:vigour)*(MUSCLE[c.plugin.name]||1);if(power<=0)continue; // arms need no ground to reach out
         const target=e.poseNow.angle[slot]*(b.plugin.flip?-1:1),error=clamp(wrap(target-(b.angle-a.angle)),-MUSCLE_REACH,MUSCLE_REACH),ia=free(a)?a.inverseInertia:0,ib=free(b)?b.inverseInertia:0;if(!ia&&!ib)continue;
         // Damping grows with the root of the strength: scaled linearly, the strong leg joints end up over-damped for a 120 Hz explicit step and chatter.
         const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
-      // Two parts answer to the world rather than to a parent: the chest holds itself upright, and planted feet hold themselves flat. Both push against the ground through the legs.
-      if(free(chest)&&!this.fractured(chest))chest.torque+=(clamp(wrap(-chest.angle),-.5,.5)*.0011*(down?GETUP_TORQUE:1)-chest.angularVelocity*.0022)*chest.inertia*vigour;
-      for(const f of feet)if(free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
-      if(!feet.length||!pelvis||!free(chest))return;
-      const mass=e.bodies.reduce((n,b)=>n+b.mass,0),weight=mass*.001*Math.max(this.gravity,.2),footX=feet.reduce((n,f)=>n+f.position.x,0)/feet.length,footY=Math.max(...feet.map(f=>f.position.y));
-      const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort;
-      const lean=clamp((footX+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
-      for(const [b,share] of [[chest,.6],[pelvis,.4]])if(free(b))b.force={x:b.force.x+lean*share,y:b.force.y-lift*share};
-      for(const f of feet)if(free(f))f.force={x:f.force.x-lean/feet.length,y:f.force.y+lift/feet.length};
+      // Two parts answer to the world rather than to a parent: the chest holds itself upright (or, crawling, level with the ground), and planted feet hold themselves flat. Both push against the ground through the limbs.
+      const lean=crawlDir?crawlDir*1.35:0;if(free(chest)&&(uprightness>0||crawlDir))chest.torque+=(clamp(wrap(lean-chest.angle),-.5,.5)*.0011*(crawlDir?1.5:uprightness)-chest.angularVelocity*.0022)*chest.inertia*vigour;
+      if(rung==='stand')for(const f of support)if(f.plugin.part==='foot'&&free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
+      if(!support.length||!pelvis||!free(chest)||!liftScale)return;
+      // The leg push: lift on the torso, reacted on whatever is planted, so it is an internal force. Nothing planted, no lift: a ragdoll can never fly or hover its way upright.
+      let mass=this.carried(e,chest),footX=0,footY=-1e9;for(const f of support){footX+=f.position.x/support.length;footY=Math.max(footY,f.bounds.max.y-6);}
+      const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
+      const sway=clamp((footX+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
+      chest.force.x+=sway*.6;chest.force.y-=lift*.6;if(free(pelvis)){pelvis.force.x+=sway*.4;pelvis.force.y-=lift*.4;}
+      for(const f of support)if(free(f)){f.force.x-=sway/support.length;f.force.y+=lift/support.length;}
     }
     bodyAt(point){return Query.point(this.bodies,point).reverse()[0]||null;}
     removeBody(body) {
@@ -432,11 +487,11 @@
     spray(point,direction,count,speed,forward) {
       if(!direction||(!direction.x&&!direction.y)){this.burst(point.x,point.y,count,'#a4373c',speed,'blood');return;}
       const d=Vector.normalise(direction);count=Math.round(count*Math.max(1,this.settings.bloodAmount));
-      for(let i=0;i<count;i++){const along=(Math.random()<Math.abs(forward)?Math.sign(forward):-Math.sign(forward)*.4)*rnd(.4,1)*speed,side=rnd(-.45,.45)*speed;this.emit(point.x,point.y,d.x*along-d.y*side,d.y*along+d.x*side-rnd(0,1),rnd(.3,1),1,'#a4373c',rnd(1,3.2),'blood');}
+      for(let i=0;i<count;i++){const along=(random()<Math.abs(forward)?Math.sign(forward):-Math.sign(forward)*.4)*rnd(.4,1)*speed,side=rnd(-.45,.45)*speed;this.emit(point.x,point.y,d.x*along-d.y*side,d.y*along+d.x*side-rnd(0,1),rnd(.3,1),1,'#a4373c',rnd(1,3.2),'blood');}
     }
     // Particles are recycled: dead ones go to a free list and come back, and the live array is compacted in place, so a long bleed allocates nothing.
     emit(x,y,vx,vy,life,maxLife,color,size,type) {
-      if(type==='blood'||type==='oil'){if(this.settings.bloodAmount<1&&Math.random()>this.settings.bloodAmount)return null;}
+      if(type==='blood'||type==='oil'){if(this.settings.bloodAmount<1&&random()>this.settings.bloodAmount)return null;}
       const list=this.particles,p=list.length>=900?list.shift():(this.spare.pop()||{});p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.maxLife=maxLife;p.color=color;p.size=size;p.type=type;p.owner=0;list.push(p);return p;
     }
     burst(x,y,count,color,speed=5,type='spark') {
@@ -468,8 +523,8 @@
         const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9)w.bleed=Math.min(4,(w.bleed||0)+rate*.3);
-        if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:Math.random()*6.28;
-          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:Math.random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
+        if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
+          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
@@ -534,7 +589,7 @@
       const set=this.settings,count=Math.round(set.gibCount*scale);if(!set.fragments||!count||this.bodies.length>set.maxObjects-12)return;
       const old=this.bodies.filter(b=>b.plugin.gib);for(const b of old.slice(0,Math.max(0,old.length+count*1.5-GIB_MAX)))this.removeBody(b);
       const bits=[],total=count+(material==='flesh'?Math.ceil(count/2):0);for(let i=0;i<total;i++){const bone=i>=count,w=bone?rnd(3,6):rnd(4,9),h=bone?rnd(2,3):rnd(4,8),b=Bodies.rectangle(x+rnd(-8,8),y+rnd(-8,8),w,h,{density:bone?.002:.0015,friction:.8,restitution:.15,frictionAir:.01*set.airDrag});
-        this.meta(b,'gib',{material:bone?'bone':material,w,h,hp:10,maxHp:10,debris:true,gib:true,life:GIB_LIFE*rnd(.7,1.2),trail:material==='flesh'&&!bone?rnd(.8,1.8):0,seed:Math.random()*100});
+        this.meta(b,'gib',{material:bone?'bone':material,w,h,hp:10,maxHp:10,debris:true,gib:true,life:GIB_LIFE*rnd(.7,1.2),trail:material==='flesh'&&!bone?rnd(.8,1.8):0,seed:random()*100});
         Body.setVelocity(b,{x:velocity.x*.5+rnd(-5,5),y:velocity.y*.5+rnd(-7,-1)});Body.setAngularVelocity(b,rnd(-.4,.4));bits.push(b);}
       this.entity('debris',bits);
     }
@@ -657,24 +712,24 @@
     }}
     step(dt=1000/60) {
       if(dt>1000/120+.001){this.step(dt/2);this.step(dt/2);return;}
-      const seconds=dt/1000;this.time+=seconds;this.engine.gravity.y=this.gravity;
-      const bodies=this.bodies;if(Math.random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
+      const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
+      const bodies=this.bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.alive)this.vitals(e,seconds);
-        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}if(!this.balancing(e)){e.effort=0;continue;}
+        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}if(!this.active(e)){e.effort=0;e.rung='limp';e.rise=null;continue;}
         e.effort=Math.min(e.consciousness==='dazed'?.7:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
-        this.balance(e);
+        this.balance(e,e.rung=this.capability(e));
       }
       for(const b of bodies){const p=b.plugin;
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
-        if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&Math.random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
+        if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
         p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
           const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate);let sum=0,drop=null;
           for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0))continue;w.bleed=Math.max(0,w.bleed-clot*(pass?.5:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);sum+=w.bleed;
-            if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(Math.random()>=chance)continue;
+            if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(random()>=chance)continue;
             const wx=p.flip?-w.x:w.x,cos=Math.cos(b.angle),sin=Math.sin(b.angle),px=b.position.x+wx*cos-w.y*sin,py=b.position.y+wx*sin+w.y*cos;
             // A spurt leaves along the line from the limb's centre through the wound, weaker as the blood runs out; anything else just drips.
             if(gush){const len=Math.hypot(wx,w.y)||1,ox=(wx*cos-w.y*sin)/len,oy=(wx*sin+w.y*cos)/len,force=(2+2.4*pulse)*(.35+.65*blood/100);drop=this.emit(px,py,b.velocity.x*.4+ox*force+rnd(-.5,.5),b.velocity.y*.4+oy*force-1+rnd(-.5,.5),2.5,2.5,BLOOD,rnd(1.2,2.8),'blood');}
@@ -682,16 +737,16 @@
           p.bleed=Math.min(7,sum);
         }
         // Androids do not bleed. A holed casing leaks coolant and throws the odd spark until it runs dry.
-        if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(Math.random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(Math.random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}
+        if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}
         // Blood on a surface runs: while it is wet, a stain lets go of the odd drop.
-        if(p.stains?.length&&Math.random()<seconds*.5){const st=p.stains[(Math.random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
+        if(p.stains?.length&&random()<seconds*.5){const st=p.stains[(random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
         if(p.heat>170&&['wood','flesh','rubber'].includes(p.material))p.burning=true;
         if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
           // Embers and smoke come off the top of the body, more of both the hotter it burns.
           const hot=clamp((p.heat-150)/400,.3,1.2),wide=b.bounds.max.x-b.bounds.min.x,top=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.4;
-          if(Math.random()<seconds*9*hot)this.emit(b.position.x+rnd(-.5,.5)*wide,top,rnd(-.6,.6),rnd(-2.6,-1.2),rnd(.5,1.4),1.4,'#ffcf7a',rnd(.7,1.8),'ember');
-          if(Math.random()<seconds*5*hot*clamp(wide/50,.2,1))this.emit(b.position.x+rnd(-.4,.4)*wide,top-rnd(55,95),rnd(-.3,.3),rnd(-1.5,-.8),rnd(1.4,2.6),2.6,'#1c1d1f',rnd(6,12),'smoke'); // smoke leaves from above the flame tips, and small parts make little
-          if(Math.random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
+          if(random()<seconds*9*hot)this.emit(b.position.x+rnd(-.5,.5)*wide,top,rnd(-.6,.6),rnd(-2.6,-1.2),rnd(.5,1.4),1.4,'#ffcf7a',rnd(.7,1.8),'ember');
+          if(random()<seconds*5*hot*clamp(wide/50,.2,1))this.emit(b.position.x+rnd(-.4,.4)*wide,top-rnd(55,95),rnd(-.3,.3),rnd(-1.5,-.8),rnd(1.4,2.6),2.6,'#1c1d1f',rnd(6,12),'smoke'); // smoke leaves from above the flame tips, and small parts make little
+          if(random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
           if(p.hp<=0)this.damage(b,.1);
         }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
         // ponytail: rain reaches everything, roofs do not shelter. Ray test upward if that matters.
@@ -714,7 +769,7 @@
       // Constraint solving leaves a limp pile jittering forever, and that residue crawls sideways; Matter's own sleeping never triggers on it.
       // So ragdolls sleep as a unit: fall at full speed, then once nearly still hold the whole pose. Holding every part adds no joint tension.
       for(const e of this.entities){if(e.blood===undefined)continue;
-        const held=this.gravity<=0||this.balancing(e)||e.bodies.includes(this.drag?.bodyB);
+        const held=this.gravity<=0||(this.active(e)&&e.rung!=='curl'&&!e.idle)||e.bodies.includes(this.drag?.bodyB);
         const peak=Math.max(...e.bodies.map(b=>Math.max(b.speed,b.angularSpeed*Math.max(b.plugin.w,b.plugin.h)/2)))/REST_SPEED; // spin counts as tip speed, so a small hand flicking is small
         // A single twitch only drains the timer; real motion (or anything 3x over) clears it at once.
         e.restTime=held||peak>3?0:peak<1?(e.restTime||0)+seconds:Math.max(0,(e.restTime||0)-seconds*10);
@@ -736,7 +791,7 @@
         else if(p.type==='ember'){p.vx+=Math.sin(this.time*9+p.y*.05)*seconds*5;p.vy-=seconds*.6;}else if(p.type==='smoke'){p.vx+=seconds*.35;p.vy*=1-seconds*.5;}
         if(wet&&p.life>0){if(p.y>=this.groundY){if(decals)this.pool(p.x,rnd(2,5),p.type==='oil');p.life=0;}
           else if(p.x<=2||p.x>=this.width-2){if(decals)this.addStain({x:p.x<=2?1:this.width-1,y:p.y,r:rnd(2,5),wet:1,age:0,wall:true,oil:p.type==='oil'||undefined});p.life=0;}
-          else if(land&&p.life<p.maxLife-.08){for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||(p.owner===b.plugin.entityId&&p.life>p.maxLife-.45)||!M.Vertices.contains(b.vertices,p))continue;if(decals&&Math.random()<.55)this.stain(b,p,rnd(.8,2),p.type==='oil');p.life=0;break;}}}
+          else if(land&&p.life<p.maxLife-.08){for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||(p.owner===b.plugin.entityId&&p.life>p.maxLife-.45)||!M.Vertices.contains(b.vertices,p))continue;if(decals&&random()<.55)this.stain(b,p,rnd(.8,2),p.type==='oil');p.life=0;break;}}}
         if(p.life>0)list[keep++]=p;else if(this.spare.length<900)this.spare.push(p);}
       list.length=keep;
       if(land)this.stainsTick(seconds*4,bodies);
