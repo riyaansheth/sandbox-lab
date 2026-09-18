@@ -52,53 +52,6 @@
   function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh'||!b.plugin.part)return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Dead':e?.consciousness==='unconscious'?'Unconscious':e?.stun>0?'Knocked down':e?.consciousness==='dazed'?'Dazed':p.bleed>.05?'Bleeding':'Stable'}</b></div>`+(p.bone<=50?`<div class="stat-row"><span>Limb</span><b>Fractured</b></div>`:'')+(p.internal>.02?`<div class="stat-row"><span>Internal bleeding</span><b>${p.internal>1?'Massive':p.internal>.3?'Heavy':'Slow'}</b></div>`:'')
     +(e&&e.kind==='human'?`<div class="stat-row"><span>Pain</span><b>${Math.round(e.pain||0)}%</b></div><div class="stat-row"><span>Oxygen</span><b>${Math.round(e.oxygen??100)}%</b></div>`+(e.organs?Object.entries(e.organs).filter(([,v])=>v<100).map(([k,v])=>`<div class="stat-row"><span>${k[0].toUpperCase()+k.slice(1)}</span><b>${v<=0?'Destroyed':Math.round(v)+'%'}</b></div>`).join(''):'')+(e.causeOfDeath?`<div class="stat-row"><span>Cause of death</span><b>${e.causeOfDeath}</b></div>`:''):''));}
   function roundRect(c,x,y,w,h,r=2){c.beginPath();c.roundRect(x,y,w,h,r);}
-  // Weapons are drawn as silhouettes rather than decorated boxes. Both fit the physics body: pistol 48x18 with the muzzle at +x, sword 12x100 with the point at -y.
-  function poly(c,points){c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();}
-  function drawPistol(c){
-    c.lineJoin='round';c.lineWidth=.8;c.strokeStyle='#0e1316';
-    // grip: raked back, stippled panel, magazine baseplate
-    const grip=c.createLinearGradient(-26,0,-6,0);grip.addColorStop(0,'#1c2023');grip.addColorStop(.55,'#2e3438');grip.addColorStop(1,'#202528');
-    poly(c,[[-21,1],[-5,1],[-7.5,9],[-9.5,22],[-11,25],[-24.5,25.5],[-26,22.5],[-23.5,9]]);c.fillStyle=grip;c.fill();c.stroke();
-    c.save();poly(c,[[-20.5,6],[-9,6],[-11.5,21],[-23.5,21]]);c.clip();c.fillStyle='#0f131588';for(let y=6;y<22;y+=2.2)for(let x=-25+(Math.round(y/2.2)%2)*1.1;x<-8;x+=2.2)c.fillRect(x,y,1,1);c.restore();
-    poly(c,[[-25,23.5],[-10.5,23],[-11,25],[-24.5,25.5],[-26,24.5]]);c.fillStyle='#3d4549';c.fill();c.stroke();
-    // trigger guard and trigger
-    c.strokeStyle='#15191c';c.lineWidth=1.7;c.beginPath();c.moveTo(-6,2.5);c.lineTo(-7,8);c.quadraticCurveTo(-6.5,12.5,-1,12.5);c.lineTo(5,12.5);c.quadraticCurveTo(9.5,12,9.5,7);c.lineTo(9.5,2.5);c.stroke();
-    c.lineWidth=1.3;c.strokeStyle='#5c666b';c.beginPath();c.moveTo(1.5,3);c.quadraticCurveTo(-.5,6.5,2.2,9.6);c.stroke();
-    // frame with dust cover, rail slots and takedown pin
-    c.lineWidth=.8;c.strokeStyle='#0e1316';poly(c,[[-23,-1.5],[23,-1.5],[23,1.2],[21.5,3.2],[9.5,3.2],[-6,3.2],[-21,3.2],[-25.5,1.5],[-26.5,-.5]]);c.fillStyle='#262b2f';c.fill();c.stroke();
-    c.fillStyle='#0d1113';for(const x of [12,15.2,18.4])c.fillRect(x,1.2,1.5,2);c.fillStyle='#596268';c.beginPath();c.arc(4.5,.9,1,0,7);c.fill();c.beginPath();c.arc(-9,.9,.8,0,7);c.fill();
-    // slide: blued steel with a top highlight, rear serrations, ejection port and sights
-    const slide=c.createLinearGradient(0,-9.5,0,-1.5);slide.addColorStop(0,'#69747b');slide.addColorStop(.18,'#454e55');slide.addColorStop(.75,'#2b3238');slide.addColorStop(1,'#1d2226');
-    poly(c,[[-24.5,-1.5],[-25.5,-7.5],[-23.5,-9.3],[22.2,-9.3],[24,-8],[24,-1.5]]);c.fillStyle=slide;c.fill();c.stroke();
-    c.strokeStyle='#ffffff26';c.lineWidth=.7;c.beginPath();c.moveTo(-23,-8.6);c.lineTo(22,-8.6);c.stroke();
-    c.strokeStyle='#11161a';c.lineWidth=.9;for(let x=-22.5;x<-13;x+=1.9){c.beginPath();c.moveTo(x+1.1,-8);c.lineTo(x,-2.6);c.stroke();}
-    c.fillStyle='#0c1012';c.beginPath();c.roundRect(-3,-8.4,12.5,3.6,.8);c.fill();c.fillStyle='#8d979c';c.fillRect(-2.2,-7.7,10.8,.9);
-    c.fillStyle='#14181b';c.fillRect(19.2,-11.2,2.6,2);c.fillRect(-23.2,-11.4,4.2,2.2);c.fillStyle='#d9dccb';c.fillRect(20,-10.8,1,1);c.fillRect(-22.6,-10.9,.9,.9);c.fillRect(-20.5,-10.9,.9,.9);
-    // muzzle: barrel crown inside the slide's front face
-    c.fillStyle='#0a0d0f';c.fillRect(24,-7.4,1.4,4.4);c.fillStyle='#7f8a90';c.fillRect(24,-6.6,.7,2.8);
-  }
-  function drawSword(c,p){
-    c.lineJoin='round';c.lineWidth=.7;c.strokeStyle='#1b2226';
-    // blade: two bevels meeting at a ridge, a fuller, and a bright true edge
-    const point=-50,shoulder=22;poly(c,[[0,point],[-3.1,point+13],[-4.4,shoulder],[0,shoulder]]);c.fillStyle='#eef2f1';c.fill();
-    poly(c,[[0,point],[3.1,point+13],[4.4,shoulder],[0,shoulder]]);c.fillStyle='#9aa7ac';c.fill();
-    const sheen=c.createLinearGradient(0,point,0,shoulder);sheen.addColorStop(0,'#ffffff00');sheen.addColorStop(.35,'#ffffff55');sheen.addColorStop(.5,'#ffffff00');sheen.addColorStop(.8,'#ffffff30');sheen.addColorStop(1,'#ffffff00');
-    poly(c,[[0,point],[-3.1,point+13],[-4.4,shoulder],[4.4,shoulder],[3.1,point+13]]);c.fillStyle=sheen;c.fill();c.stroke();
-    c.strokeStyle='#6f7c82';c.lineWidth=1.3;c.lineCap='round';c.beginPath();c.moveTo(0,point+20);c.lineTo(0,shoulder-3);c.stroke();c.strokeStyle='#f8fbfa';c.lineWidth=.5;c.beginPath();c.moveTo(-.9,point+21);c.lineTo(-.9,shoulder-4);c.stroke();c.lineCap='butt';
-    // blood stays on a blade that has been run through someone
-    if(p.bloody&&!sim.settings.noGore){const blood=c.createLinearGradient(0,point,0,shoulder);blood.addColorStop(0,'#7c1f26e6');blood.addColorStop(.45,'#7c1f26aa');blood.addColorStop(.7,'#7c1f2600');c.save();poly(c,[[0,point],[-3.1,point+13],[-4.4,shoulder],[4.4,shoulder],[3.1,point+13]]);c.clip();c.fillStyle=blood;c.fillRect(-6,point,12,72);c.fillStyle='#5a151b';for(const [x,y,r] of [[-1.5,-12,1.3],[1.8,-2,1],[-.6,6,.9]]){c.beginPath();c.ellipse(x,y,r,r*2.2,0,0,7);c.fill();}c.restore();}
-    // ricasso, then a brass crossguard with flared quillons
-    c.strokeStyle='#1b2226';c.lineWidth=.7;c.fillStyle='#5f6b70';c.fillRect(-4.4,shoulder,8.8,3);
-    const brass=c.createLinearGradient(0,24,0,30);brass.addColorStop(0,'#e6c777');brass.addColorStop(.5,'#b08a3c');brass.addColorStop(1,'#6e5322');
-    c.beginPath();c.moveTo(-17,24.2);c.quadraticCurveTo(-19.5,27,-17,30);c.lineTo(-6,29.2);c.lineTo(6,29.2);c.lineTo(17,30);c.quadraticCurveTo(19.5,27,17,24.2);c.lineTo(6,25.2);c.lineTo(-6,25.2);c.closePath();c.fillStyle=brass;c.fill();c.stroke();
-    c.fillStyle='#f3dc9a88';c.fillRect(-15,25,30,.8);
-    // grip: dark leather with a spiral wrap, brass pommel
-    const leather=c.createLinearGradient(-3.6,0,3.6,0);leather.addColorStop(0,'#2a1c14');leather.addColorStop(.45,'#5b3d29');leather.addColorStop(1,'#23170f');
-    c.beginPath();c.roundRect(-3.5,29.2,7,15.5,1.2);c.fillStyle=leather;c.fill();c.stroke();
-    c.save();c.beginPath();c.rect(-3.5,29.2,7,15.5);c.clip();c.strokeStyle='#1509058c';c.lineWidth=1;for(let y=28;y<48;y+=3){c.beginPath();c.moveTo(-4,y+2.4);c.lineTo(4,y);c.stroke();}c.restore();
-    const pommel=c.createRadialGradient(-1.2,45.5,.5,0,47,4.6);pommel.addColorStop(0,'#f1d78c');pommel.addColorStop(.6,'#a9843a');pommel.addColorStop(1,'#5f471c');
-    c.strokeStyle='#1b2226';c.lineWidth=.7;c.beginPath();c.arc(0,47,4.3,0,7);c.fillStyle=pommel;c.fill();c.stroke();
-  }
   const ANATOMY_SLOT=Object.fromEntries(Sandbox.ANATOMY.map(([part],slot)=>[part,slot]).reverse());
   function drawObject(c,kind,p={},time=0){
     const d=Sandbox.defs[kind]||{},w=p.w||d.w||25,h=p.h||d.h||35,r=p.r||d.r;
@@ -106,8 +59,7 @@
     if(p.gib){const bone=p.material==='bone',plain=sim.settings.noGore;c.fillStyle=bone?'#ece3cb':plain?'#8d8a84':p.material==='flesh'?'#8a2a31':'#8f9a9e';c.strokeStyle=bone?'#b8ab8a':plain?'#6f6c66':'#5a161c';c.lineWidth=.6;c.beginPath();
       for(let i=0;i<7;i++){const a=i/7*6.283,r=(i%2?.62:1)*(bone?.55:.5)*(.8+hash(p.seed+i)*.4);(i?c.lineTo:c.moveTo).call(c,Math.cos(a)*w*r,Math.sin(a)*h*r);}c.closePath();c.fill();c.stroke();if(!bone&&!plain){c.fillStyle='#c0565a';c.beginPath();c.arc(-w*.12,-h*.1,Math.min(w,h)*.16,0,7);c.fill();}return;}
     if(p.debris){if(p.material==='flesh')c.fillStyle=sim.settings.noGore?'#8d8a84':'#7d2f33';c.fillRect(-w/2,-h/2,w,h);return;}
-    if(kind==='gun'){drawPistol(c);return;}
-    if(kind==='sword'){drawSword(c,p);return;}
+    if(ItemArt.has(kind)){if(!p.w&&!p.r){p={...d,...p};}p.noGore=sim.settings.noGore;ItemArt.draw(c,kind,p,time);return;} // every catalogue item is a cached sprite from art.js; what follows is the fallback for things without a painter
     if(kind==='human'||kind==='android'){
       if(kind==='human'){BodyArt.preview(c,p.part,p.slot??ANATOMY_SLOT[p.part],p.w,p.h);return;} // previews only; live humans are drawn by BodyArt.draw with their damage state
       const robot=kind==='android';c.fillStyle=robot?'#8ba8a4':p.part==='chest'?'#99a9a0':p.part==='hip'?'#727f7b':'#c9c3b6';
@@ -117,18 +69,6 @@
       return;
     }
     if(r){c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.fill();c.stroke();}else{roundRect(c,-w/2,-h/2,w,h,2);c.fill();c.stroke();}
-    c.lineWidth=2;
-    if(kind==='crate'){c.strokeStyle='#725839';c.strokeRect(-w/2+5,-h/2+5,w-10,h-10);c.lineWidth=5;c.beginPath();c.moveTo(-w/2+6,-h/2+6);c.lineTo(w/2-6,h/2-6);c.moveTo(w/2-6,-h/2+6);c.lineTo(-w/2+6,h/2-6);c.stroke();c.fillStyle='#d8b477';for(const x of [-20,20])for(const y of [-20,20])c.fillRect(x-1,y-1,2,2);}
-    if(kind==='plank'){c.strokeStyle='#755d3e';c.lineWidth=1;c.beginPath();c.moveTo(-w/2+4,1);c.lineTo(w/2-5,2);c.stroke();for(const x of [-w/2+6,w/2-6]){c.fillStyle='#5a5347';c.fillRect(x,-2,2,3);}}
-    if(kind==='metal'||kind==='platform'){c.fillStyle='#586b73';c.fillRect(-w/2,-h/2+4,w,3);c.fillStyle='#bdc8c7';c.fillRect(-w/2,-h/2,w,2);for(let x=-w/2+8;x<w/2;x+=24){c.fillStyle='#43545c';c.fillRect(x,1,3,3);}if(kind==='platform'){c.fillStyle='#c9b176';for(let x=-w/2;x<w/2;x+=17)c.fillRect(x,h/2-4,8,3);}}
-    if(kind==='barrel'){c.fillStyle='#554f49';c.fillRect(-w/2,-h/2+9,w,5);c.fillRect(-w/2,h/2-14,w,5);c.fillStyle='#d4b078';c.fillRect(-10,-9,20,18);c.fillStyle='#6b4a36';c.font='bold 14px Arial';c.textAlign='center';c.fillText('!',0,5);}
-    if(kind==='ball'){c.strokeStyle='#637f70';c.lineWidth=2;c.beginPath();c.arc(0,0,r-4,-1.5,1.5);c.stroke();c.fillStyle='#d3dfc8';c.beginPath();c.arc(-7,-8,5,0,7);c.fill();}
-    if(kind==='brick'){c.fillStyle='#767f7b';c.fillRect(-w/2+5,-h/2+5,12,h-10);c.fillRect(w/2-17,-h/2+5,12,h-10);c.fillStyle='#bcc2b6';c.fillRect(-w/2,-h/2,w,3);}
-    if(kind==='glass'){c.fillStyle='#b9e6e644';c.fillRect(-w/2,-h/2,w,h);c.strokeStyle='#d1f5ebbb';c.lineWidth=1;c.beginPath();c.moveTo(-w/2+3,h/2-6);c.lineTo(w/2-3,-h/2+6);c.stroke();}
-    if(kind==='bomb'){c.fillStyle='#444a46';c.fillRect(-8,-r-3,16,8);c.strokeStyle=p.fuse!==undefined?'#ffd38a':'#b7b8a7';c.beginPath();c.moveTo(3,-r);c.quadraticCurveTo(8,-r-12,17,-r-7);c.stroke();c.fillStyle='#705d40';c.font='bold 11px Arial';c.textAlign='center';c.fillText(p.fuse!==undefined?Math.max(0,p.fuse).toFixed(1):'×',0,4);}
-    if(kind==='wheel'){c.fillStyle='#39484c';c.beginPath();c.arc(0,0,r-7,0,7);c.fill();c.strokeStyle='#94aca1';c.lineWidth=3;for(let i=0;i<6;i++){const a=i*Math.PI/3;c.beginPath();c.moveTo(Math.cos(a)*6,Math.sin(a)*6);c.lineTo(Math.cos(a)*(r-9),Math.sin(a)*(r-9));c.stroke();}c.fillStyle=p.active?'#e3c580':'#c4c8b4';c.beginPath();c.arc(0,0,6,0,7);c.fill();}
-    if(kind==='thruster'){c.fillStyle='#445961';c.fillRect(-w/2-3,h/2-12,w+6,12);c.fillStyle='#c4c6b0';c.fillRect(-6,-h/2+8,12,17);if(p.active){c.fillStyle='#ecc679';c.beginPath();c.moveTo(-10,h/2);c.lineTo(0,h/2+20+Math.sin(time*70)*7);c.lineTo(10,h/2);c.fill();}}
-    if(kind==='battery'){c.fillStyle='#d4d5b1';c.fillRect(-9,-h/2-5,18,5);c.fillStyle='#4a594b';c.fillRect(-w/2+3,-h/2+6,w-6,12);c.fillStyle=p.active?'#f4dc8d':'#d7d7ae';c.font='bold 19px Arial';c.textAlign='center';c.fillText('ϟ',0,13);}
   }
   function drawMini(c,kind){c.clearRect(0,0,160,114);c.save();c.translate(80,55);if(kind==='human'||kind==='android'){
     c.scale(.45,.45);c.translate(0,12);Sandbox.ANATOMY.forEach(([part,x,y,w,h],slot)=>{c.save();c.translate(x,y);drawObject(c,kind,{part,slot,w,h,r:0,hp:100});c.restore();});
@@ -355,7 +295,9 @@
   buildSettings();try{sim.configure(JSON.parse(localStorage.getItem(STORE)||'{}'));}catch{/* corrupt or unavailable storage: defaults */}reflectSettings();
   const help=$('#help-dialog');function showHelp(){if(!help.open)help.showModal();}$('#help-btn').onclick=showHelp;$('#more-help').onclick=showHelp;$('#close-help').onclick=()=>help.close();$('#start-btn').onclick=()=>help.close();help.addEventListener('click',e=>{if(e.target===help){const r=help.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)help.close();}});
   $('#deselect-btn').onclick=()=>select(null);$('#freeze-selection').onclick=()=>{sim.freeze(state.selected);updateSelection();};$('#activate-selection').onclick=()=>{toast(sim.activate(state.selected));updateSelection();};$('#delete-selection').onclick=()=>{sim.removeEntity(state.selected);select(null);};
-  $('#search').addEventListener('input',renderCatalog);document.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{state.category=b.dataset.category;document.querySelectorAll('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderCatalog();});
+  $('#search').addEventListener('input',renderCatalog);
+  // Category tabs come from the item table; one with nothing in it yet is left out.
+  for(const name of ['all',...Sandbox.CATEGORIES.filter(cat=>CATALOG.some(i=>i.category===cat))]){const b=document.createElement('button');b.dataset.category=name;b.textContent=name==='all'?'All':name;b.classList.toggle('active',name==='all');b.onclick=()=>{state.category=name;document.querySelectorAll('[data-category]').forEach(x=>x.classList.toggle('active',x===b));renderCatalog();};$('#categories').appendChild(b);}
   // Keys follow People Playground's defaults: A/D rotate (Q/E too while something is held), Q/E spawn facing left/right, F activate, G slow motion, S detail, Space pause, Backspace delete, Tab hides the UI, arrows pan, Z undoes a spawn.
   const held=new Set();let rotateTime=0;
   const target=()=>sim.drag?.bodyB||(state.inside&&sim.bodyAt(state.worldPointer))||state.selected;

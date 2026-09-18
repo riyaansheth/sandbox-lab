@@ -16,7 +16,7 @@
     <aside class="library">
       <div class="library-heading"><h1>Object library</h1><span id="catalog-count">16 objects</span></div>
       <label class="search"><span>⌕</span><input id="search" placeholder="Find an object…" aria-label="Find an object"></label>
-      <div class="categories" role="group" aria-label="Object categories"><button data-category="all" class="active">All</button><button data-category="living">Living</button><button data-category="props">Props</button><button data-category="devices">Devices</button></div>
+      <div id="categories" class="categories" role="group" aria-label="Object categories"></div>
       <div id="catalog" class="catalog"></div>
       <div class="spawn-note"><span class="note-cross">＋</span><div><strong>Make something happen.</strong><p>Select an object, point at the chamber, then press Q / E to place it facing left / right.</p></div></div>
       <div class="library-footer"><span class="version-dot"></span> Local sandbox <span>v1.0</span></div>
@@ -46,7 +46,9 @@
     <div class="settings-foot"><span id="settings-changed">All defaults</span><span class="settings-note">Saved on this device as you change them · double-click a slider to reset it</span><label class="file-button">Import<input id="settings-import" type="file" accept="application/json,.json" hidden></label><button id="settings-export">Export</button><button id="settings-reset">Reset all</button></div>
   </dialog>
   <script src="./vendor/matter.min.js"></script>
+  <script src="./items.js"></script>
   <script src="./engine.js"></script>
+  <script src="./art.js"></script>
   <script src="./body.js"></script>
   <script src="./app.js"></script>
 </body>

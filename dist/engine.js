@@ -1,36 +1,12 @@
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('matter-js'));
-  else root.Sandbox = factory(root.Matter);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (M) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('matter-js'), require('./items.js'));
+  else root.Sandbox = factory(root.Matter, root.Items);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (M, Items) {
   'use strict';
   const { Engine, Bodies, Body, Composite, Constraint, Events, Query, Vector } = M;
-  const CATALOG = [
-    { id:'human', name:'Human', category:'living', description:'An articulated, very breakable volunteer.', color:'#d5ccc0' },
-    { id:'android', name:'Android', category:'living', description:'Stronger joints. Conducts electricity.', color:'#91aaa7' },
-    { id:'crate', name:'Wooden crate', category:'props', description:'Stack it, smash it, set it on fire.', color:'#b08b59' },
-    { id:'barrel', name:'Fuel barrel', category:'devices', description:'Explodes when activated, heated, or damaged.', color:'#b36c5b' },
-    { id:'metal', name:'Steel beam', category:'props', description:'Heavy, conductive building material.', color:'#899398' },
-    { id:'plank', name:'Wooden plank', category:'props', description:'Build a bridge. Flammable and breakable.', color:'#a68b63' },
-    { id:'ball', name:'Bouncy ball', category:'props', description:'Rubber with an unreasonable amount of bounce.', color:'#a4b6a0' },
-    { id:'brick', name:'Concrete block', category:'props', description:'A hefty block for your next contraption.', color:'#a0a49d' },
-    { id:'glass', name:'Glass pane', category:'props', description:'Fragile. Shatters into physical fragments.', color:'#93c3c8' },
-    { id:'bomb', name:'Timed bomb', category:'devices', description:'Activate to start a three-second fuse.', color:'#c0ae7f' },
-    { id:'gun', name:'Pistol', category:'devices', description:'Activate to fire. A / D to aim.', color:'#8f989b' },
-    { id:'sword', name:'Sword', category:'props', description:'Slashes on impact. Thrown or thrust point-first, it runs a body through and stays in.', color:'#c7d2d2' },
-    { id:'wheel', name:'Motor wheel', category:'devices', description:'Activate to spin. Rope it to a contraption.', color:'#7d9991' },
-    { id:'thruster', name:'Thruster', category:'devices', description:'Activate for lift. Rotate to steer.', color:'#9caaa9' },
-    { id:'battery', name:'Battery', category:'devices', description:'Activate to electrify nearby conductors.', color:'#a5ac73' },
-    { id:'platform', name:'Fixed platform', category:'props', description:'A frozen platform. Unfreeze with the freeze tool.', color:'#788a94' }
-  ];
-  const defs = {
-    crate:{w:52,h:52,material:'wood',hp:80,density:.0015}, barrel:{w:35,h:58,material:'metal',hp:65,density:.002},
-    metal:{w:150,h:19,material:'metal',hp:500,density:.006}, plank:{w:145,h:13,material:'wood',hp:70,density:.001},
-    ball:{r:22,material:'rubber',hp:150,density:.001,restitution:.87}, brick:{w:60,h:30,material:'stone',hp:220,density:.005},
-    glass:{w:13,h:100,material:'glass',hp:22,density:.001}, bomb:{r:17,material:'metal',hp:40,density:.002},
-    gun:{w:48,h:18,material:'metal',hp:170,density:.003}, sword:{w:12,h:100,material:'metal',hp:200,density:.0025,sharp:true},
-    wheel:{r:30,material:'metal',hp:220,density:.003,restitution:.2}, thruster:{w:29,h:51,material:'metal',hp:160,density:.003},
-    battery:{w:32,h:47,material:'metal',hp:120,density:.003}, platform:{w:180,h:17,material:'metal',hp:1000,density:.005,static:true}
-  };
+  // Items and materials are data (items.js). defs is the item row by id, with its material's properties folded in as .mat; CATALOG is what the library shows.
+  const {MATERIALS,ITEMS,CATEGORIES}=Items,defs=Object.fromEntries(ITEMS.map(item=>[item.id,{...item,mat:MATERIALS[item.material]||MATERIALS.flesh}])),CATALOG=ITEMS;
+  const matOf=p=>MATERIALS[p.material]||MATERIALS.metal;
   // Every random choice in the simulation goes through here, so a test (or a replay) can seed it: sim.seed(n). Unseeded, it is Math.random.
   let random=Math.random;
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -119,8 +95,6 @@
     burn:  {bone:.1, bleed:0,    pain:1.2,stun:.5, deep:false,wound:'burn'},    // cauterises: see damage()
     shock: {bone:0,  bleed:0,    pain:.22,stun:0,  deep:false,wound:null}       // current cooks; it does not cut
   };
-  // How much of a bullet's power a material soaks up on the way through, for the materials that can be passed at all.
-  const ABSORB={flesh:.35,wood:.5,glass:.1};
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
   const ORGANS={head:[['brain',-1,-1,1,.35,1.5]],chest:[['heart',-.55,-.6,.2,.25,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
@@ -202,8 +176,8 @@
       if(this.bodies.length>=this.settings.maxObjects)return null;
       if(kind==='human'||kind==='android')return this.ragdoll(kind,x,y,flip);
       const d=defs[kind];if(!d)return null;
-      const opts={density:d.density,friction:.65,frictionStatic:.9,restitution:d.restitution||.1,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
-      const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:kind==='sword'?1:3}});
+      const opts={density:d.density??d.mat.density,friction:d.mat.friction,frictionStatic:.9,restitution:d.restitution??d.mat.restitution,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
+      const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:d.sharp?1:3}});
       this.meta(b,kind,flip?{flip:true}:{});return this.entity(kind,[b]);
     }
     makePart(kind,slot,x,y,angle,group,flip) {
@@ -249,7 +223,7 @@
       const reach=b=>{const dx=Math.max(b.bounds.min.x-hand.position.x,0,hand.position.x-b.bounds.max.x),dy=Math.max(b.bounds.min.y-hand.position.y,0,hand.position.y-b.bounds.max.y);return Math.hypot(dx,dy);};
       const item=this.bodies.filter(b=>!b.plugin.part&&!b.isStatic&&!b.plugin.debris&&b.plugin.heldBy===undefined&&b.plugin.stuck===undefined&&reach(b)<=HAND_REACH).sort((a,b)=>reach(a)-reach(b))[0];if(!item)return '';
       // Where and how each thing is held, in the item's own frame: grip point, and its angle relative to the hand.
-      const flip=!!hand.plugin.flip,side=flip?-1:1,grip=item.plugin.kind==='gun'?{x:-14,y:9}:item.plugin.kind==='sword'?{x:0,y:37}:{x:0,y:0},tilt=item.plugin.kind==='gun'?side*Math.PI/2:item.plugin.kind==='sword'?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
+      const flip=!!hand.plugin.flip,side=flip?-1:1,def=defs[item.plugin.kind]||{},grip=def.grip||(def.firearm?{x:-14,y:9}:def.sharp?{x:0,y:item.plugin.h*.37}:{x:0,y:0}),tilt=def.firearm?side*Math.PI/2:def.sharp?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
       if(flip)item.plugin.flip=true;else delete item.plugin.flip;Body.setAngle(item,hand.angle+tilt);const local=Vector.rotate({x:grip.x*side,y:grip.y},item.angle);
       Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;
       // The second pin sits at the item's centre of mass: a long lever, so the weight of a pistol cannot twist it in the hand.
@@ -462,7 +436,7 @@
         if(b.speed>SEE_FAST&&!p.part){note(2.5+b.speed/10,b.position.x);
           // on a course for the head within INCOMING seconds?
           const vx=b.velocity.x,vy=b.velocity.y,t=-(dx*vx+dy*vy)/(vx*vx+vy*vy);if(t>0&&t<INCOMING*60){const miss=Math.hypot(dx+vx*t,dy+vy*t);if(miss<38+Math.max(p.w||0,p.h||0,p.r||0)/2){e.guardT=.6;e.guardDir=Math.sign(-dx)||1;note(9,b.position.x);}}}
-        if(this.drag?.bodyB===b&&(p.kind==='gun'||defs[p.kind]?.sharp)&&far<220)note(4,b.position.x);}       // a weapon held near it by the cursor
+        if(this.drag?.bodyB===b&&(defs[p.kind]?.firearm||defs[p.kind]?.sharp)&&far<220)note(4,b.position.x);}       // a weapon held near it by the cursor
       for(const f of this.flashes)if(!f.grow&&Math.hypot(f.x-hx,f.y-hy)<SEE_RANGE*1.4)note(6,f.x);
       if(e.startleX!==undefined&&this.time-e.startleAt<1.5)note(3.5,e.startleX);
     }
@@ -509,7 +483,7 @@
           else{uprightness=down?GETUP_TORQUE:1;if(!down&&e.rise.t>.4)e.rise=null;else if(e.rise.t>1.6*slow){e.effort=0;e.stun=Math.max(e.stun||0,.8+(e.pain||0)/50);e.rise=null;}}}}
       else e.rise=null;
       // The pistol is levelled directly as well: a hand is far too light to hold a pistol's weight level by its own torque.
-      const aiming=this.aimSet;aiming.clear();if(rung==='stand'&&!down)for(const hand of e.bodies){if(hand.plugin.part!=='hand')continue;const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
+      const aiming=this.aimSet;aiming.clear();if(rung==='stand'&&!down)for(const hand of e.bodies){if(hand.plugin.part!=='hand')continue;const item=this.held(hand);if(!item||!defs[item.plugin.kind]?.firearm)continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
         if(free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
       // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
       const vigour=e.effort*tone*(human?clamp((e.blood-20)/45,.4,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.85:1):1);
@@ -626,7 +600,7 @@
       }
       else{this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);if(p.part&&profile.deep)p.leak=Math.min(3,(p.leak||0)+amount/70);}
       if(p.hp<=0) {
-        if(p.kind==='bomb'||p.kind==='barrel'){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
+        if(defs[p.kind]?.explosive?.onBreak){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
         else if(p.material==='flesh'||p.kind==='android'){
           // A bullet can incapacitate without automatically detaching the whole limb.
           if(type==='blast'||amount>85*set.jointStrength||p.bone<=0)for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
@@ -634,7 +608,7 @@
           if(type==='blast'&&p.part&&!p.gibbed){p.gibbed=true;const at={...body.position},v={...body.velocity},m=p.material;this.damageQueue.push(()=>this.gibs(at.x,at.y,m,v,.6));}
           if(set.limbCrush&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
         }
-        else if(!p.debris&&!p.destroying&&p.kind!=='platform'){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
+        else if(!p.debris&&!p.destroying&&!defs[p.kind]?.indestructible){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
       }
     }
     // Blood that lands on a body stays where it landed, in that body's own frame, so it turns with it. Oldest goes first.
@@ -711,11 +685,11 @@
         this.damage(b,f*f*170*power,b.position,'blast',{x:dx,y:dy});b.plugin.heat+=f*180;
       }this.onEffect('explosion',power);
     }
-    detonate(body){if(!this.bodies.includes(body))return;const {x,y}=body.position,barrel=body.plugin.kind==='barrel';this.removeBody(body);this.explode(x,y,barrel?220:170,barrel?1.2:1);}
+    detonate(body){if(!this.bodies.includes(body))return;const {x,y}=body.position,ex=defs[body.plugin.kind]?.explosive||{radius:170,power:1};this.removeBody(body);this.explode(x,y,ex.radius,ex.power);}
     // Bullets are rays. Each body the ray crosses is hit in order; whether the bullet stops there depends on what it is made of and the state it is in.
     // Flesh stops a first bullet. A limb that is already perforated or destroyed no longer does: the next bullet goes in one side and out the other
     // (entry and exit wound) and carries on, weaker, into whatever is behind it.
-    passes(body,damage){const p=body.plugin;if(p.boundary||body.isStatic||!(p.material in ABSORB))return false;if(p.material==='glass')return true;if(p.material==='wood')return p.hp-damage<=p.maxHp*.3;
+    passes(body,damage){const p=body.plugin,mat=matOf(p);if(p.boundary||body.isStatic||mat.absorb>=1)return false;if(mat.brittle)return true;if(p.material!=='flesh')return p.hp-damage<=p.maxHp*.3; // brittle things never stop a bullet; wood, plastic and rubber do until they are nearly destroyed
       return p.hp<=0||damage>=90||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');} // flesh: already holed, already destroyed, or a round too powerful to stop
     shoot(from,to,ignore=null) {
       const direction=Vector.normalise(Vector.sub(to,from));if(!direction.x&&!direction.y)return;
@@ -729,14 +703,14 @@
       for(const {body,near,far} of hits){first??=body;stop=at(near);if(body.plugin.boundary)break;
         const damage=this.settings.bulletDamage*power,through=this.passes(body,damage)&&far>near;
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
-        const absorb=ABSORB[body.plugin.material]??1;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
+        const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
         const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
         stop=exit;power*=1-absorb;if(power<.2)break;}
       this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
       this.onEffect('shot',.3);return first;
     }
-    ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(['flesh','wood','rubber'].includes(body.plugin.material))body.plugin.burning=true;if(body.plugin.kind==='barrel'||body.plugin.kind==='bomb')body.plugin.fuse=.35;this.onEffect('fire',.1);}
+    ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
     // A strike takes the highest thing under it. It is a massive shock: current jumps through conductors, flesh burns, flammables catch.
     lightning(x) {
       const under=this.bodies.filter(b=>b.bounds.min.x<=x&&b.bounds.max.x>=x).sort((a,b)=>a.bounds.min.y-b.bounds.min.y)[0],y=under?under.bounds.min.y:this.groundY,top=-370;
@@ -748,23 +722,23 @@
     shock(body) {
       if(!body)return;const touched=new Set(),queue=[body];
       while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
-        for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
+        for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
     heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';if(body.plugin.part==='hand'&&this.held(body))return this.activate(this.held(body));const p=body.plugin;
-      if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
-      if(p.kind==='bomb'){p.fuse=3;return 'Fuse lit — 3 seconds';}
-      if(p.kind==='gun'){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,28)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-.015));return 'Pistol fired';}
-      if(['thruster','wheel','battery'].includes(p.kind)){p.active=!p.active;return `${CATALOG.find(c=>c.id===p.kind).name} ${p.active?'on':'off'}`;}
+      const def=defs[p.kind]||{},name=def.name||'Object';
+      if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
+      if(def.firearm){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,def.firearm.muzzle)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-def.firearm.recoil));return `${name} fired`;}
+      if(def.device){p.active=!p.active;return `${name} ${p.active?'on':'off'}`;}
       return 'This object has no activation';
     }
     // ponytail: a blade in a hand shares that body's collision group, which piercing also needs, so held blades slash and do not pierce. Per-pair filtering would lift this.
     // Blades: the tip is the -y end of a sharp body. A fast, point-first hit on flesh runs it through instead of bouncing off.
     blade(sword){const h=sword.plugin.h,axis=Vector.rotate({x:0,y:-1},sword.angle);return {axis,tip:Vector.add(sword.position,Vector.mult(axis,h/2)),length:h*.76};}
     pierce(pair,sword,part) {
-      const p=sword.plugin;if(!defs[p.kind]?.sharp||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
+      const p=sword.plugin;if(!defs[p.kind]?.sharp?.tip||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
       const {axis,tip}=this.blade(sword),contact=pair.collision.supports[0]||part.position;if(Vector.magnitude(Vector.sub(contact,tip))>26)return false;
       const arm=Vector.sub(tip,sword.position),tipVelocity={x:sword.velocity.x-sword.angularVelocity*arm.y,y:sword.velocity.y+sword.angularVelocity*arm.x};
       const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed)return false;
@@ -802,7 +776,7 @@
     }
     disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
     collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;const speed=Vector.magnitude(Vector.sub(a.velocity,b.velocity));
-      if(speed>7){for(const [target,other] of [[a,b],[b,a]]){if(target.plugin.boundary)continue;const multiplier=other.plugin.kind==='sword'?6:target.plugin.material==='glass'?3:1;const point=Vector.mult(Vector.add(target.position,other.position),.5);const blade=other.plugin.kind==='sword';this.damage(target,blade?Math.min(60,(speed-7)*4.5):(speed-7)*multiplier*1.5,point,blade?'cut':'impact',other.plugin.boundary?Vector.neg(target.velocity):Vector.sub(other.velocity,target.velocity));}}
+      if(speed>7){for(const [target,other] of [[a,b],[b,a]]){if(target.plugin.boundary)continue;const multiplier=matOf(target.plugin).brittle?3:1;const point=Vector.mult(Vector.add(target.position,other.position),.5);const blade=!!defs[other.plugin.kind]?.sharp?.edge;this.damage(target,blade?Math.min(60,(speed-7)*4.5):(speed-7)*multiplier*1.5,point,blade?'cut':'impact',other.plugin.boundary?Vector.neg(target.velocity):Vector.sub(other.velocity,target.velocity));}}
       if(speed>3)this.onEffect('impact',Math.min(.5,speed/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
@@ -839,7 +813,7 @@
         if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}
         // Blood on a surface runs: while it is wet, a stain lets go of the odd drop.
         if(p.stains?.length&&random()<seconds*.5){const st=p.stains[(random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
-        if(p.heat>170&&['wood','flesh','rubber'].includes(p.material))p.burning=true;
+        if(p.heat>matOf(p).burnAt)p.burning=true;
         if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
           // Embers and smoke come off the top of the body, more of both the hotter it burns.
           const hot=clamp((p.heat-150)/400,.3,1.2),wide=b.bounds.max.x-b.bounds.min.x,top=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.4;
@@ -850,11 +824,11 @@
         }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
         // ponytail: rain reaches everything, roofs do not shelter. Ray test upward if that matters.
         if(this.settings.rain&&p.heat>this.settings.ambient){p.heat-=seconds*(p.burning?140:25);if(p.burning&&p.heat<150)p.burning=false;}
-        if(p.heat>180&&(p.kind==='barrel'||p.kind==='bomb')&&p.fuse===undefined)p.fuse=.5;
-        if(p.active&&!b.isStatic){if(p.kind==='thruster'){const force=Vector.rotate({x:0,y:-.0025*b.mass},b.angle);Body.applyForce(b,b.position,force);const jet=Vector.add(b.position,Vector.rotate({x:0,y:30},b.angle));this.burst(jet.x,jet.y,2,'#f3c885',2,'fire');}
-          if(p.kind==='wheel')Body.setAngularVelocity(b,.18);
+        {const hot=defs[p.kind]?.explosive?.onHeat;if(hot&&p.heat>hot&&p.fuse===undefined)p.fuse=.5;}
+        if(p.active&&!b.isStatic){const device=defs[p.kind]?.device;if(device==='thruster'){const force=Vector.rotate({x:0,y:-.0025*b.mass},b.angle);Body.applyForce(b,b.position,force);const jet=Vector.add(b.position,Vector.rotate({x:0,y:30},b.angle));this.burst(jet.x,jet.y,2,'#f3c885',2,'fire');}
+          if(device==='wheel')Body.setAngularVelocity(b,.18);
         }
-        if(p.active&&p.kind==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b);}
+        if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b);}
       }
       if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,clamp(wrap(this.dragAngle-this.drag.bodyB.angle)*.35,-.3,.3));
       // Limits are equal-and-opposite angular impulses: momentum-neutral, so a body pinned against the floor cannot walk itself sideways.
@@ -901,7 +875,7 @@
       if(name==='workshop'){
         this.spawn('human',900,555);this.spawn('android',1050,555);
         this.spawn('crate',1350,622);this.spawn('crate',1405,622);this.spawn('crate',1377,568);this.spawn('barrel',1530,619);
-        this.spawn('ball',1050,627);this.spawn('metal',1180,433).bodies.forEach(b=>Body.setStatic(b,true));this.spawn('battery',1180,399);
+        this.spawn('ball',1150,627);this.spawn('metal',1180,433).bodies.forEach(b=>Body.setStatic(b,true));this.spawn('battery',1180,399);
         this.spawn('gun',790,637);this.spawn('bomb',1630,631);
       }else if(name==='tower'){
         for(let row=0;row<6;row++)for(let col=0;col<3;col++)this.spawn('crate',1195+col*54,622-row*54);
@@ -934,5 +908,5 @@
       Body._nextNonCollidingGroup=Math.min(Body._nextNonCollidingGroup,...bodies.map(b=>b.collisionFilter.group-1));
     }
   }
-  return {Simulation,CATALOG,SETTINGS,defaults,sanitize,defs,clamp,ANATOMY};
+  return {Simulation,CATALOG,CATEGORIES,MATERIALS,SETTINGS,defaults,sanitize,defs,clamp,ANATOMY};
 });

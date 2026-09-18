@@ -46,7 +46,8 @@ npm run dev
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
 - Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
 - Damage-driven collapse and breakable joints
-- 16 spawnable objects with material properties
+- Items are data: every spawnable thing is one row in `items.js`, made of a material from the same file (density, flammability and ignition point, thermal and electrical conductivity, magnetism, bullet absorption, softness, brittleness, buoyancy, friction, bounce). The engine reads all behaviour from those rows — what burns, conducts, stops a bullet, explodes, fires or cuts — and contains no item names. The library is grouped like People Playground's: Entities, Melee, Firearms, Explosives, Vehicles, Machinery, Chemistry, Misc
+- Item art (`art.js`): each item is painted once at 3× into a cached sprite, with only the moving parts (a thruster flame, a bomb's countdown) drawn live, so detailed shading costs one drawImage per object
 - Dragging and throwing, rotation, fixed objects, and ropes
 - Hitscan shooting, fire and heat transfer, conductive shocks, explosions and chain reactions
 - Physical debris, blood particles, glass shattering and synthesized sound
