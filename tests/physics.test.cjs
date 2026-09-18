@@ -148,7 +148,7 @@ test('defaults leave behaviour unchanged, and each gameplay setting does what it
   const hit=(set,amount=30)=>{const s=new Simulation();s.configure(set);const arm=s.spawn('human',1000,555).bodies[5];s.damage(arm,amount,arm.position);return {s,arm};};
   assert.equal(hit({}).arm.plugin.hp,70);assert.equal(hit({fragility:2}).arm.plugin.hp,40);assert.equal(hit({fragility:.5}).arm.plugin.hp,85);
   assert.ok(hit({fragility:2}).s.spawn('crate',300,300).bodies[0].plugin.hp===80,'fragility is for ragdolls only');
-  const stunned=set=>{const {s,arm}=hit(set);return s.getEntity(arm).stun||0;};assert.ok(stunned({})>0);assert.equal(stunned({stunScale:0}),0);assert.ok(stunned({stunScale:3})>stunned({})*2.5);
+  const stunned=set=>{const s=new Simulation();s.configure(set);const chest=s.spawn('human',1000,555).bodies[2];s.damage(chest,30,chest.position);return s.getEntity(chest).stun||0;};assert.ok(stunned({})>0);assert.equal(stunned({stunScale:0}),0);assert.ok(stunned({stunScale:3})>stunned({})*2.5);
   const bullet=set=>{const s=new Simulation();s.configure(set);const b=s.spawn('metal',600,300).bodies[0];s.shoot({x:100,y:300},{x:1000,y:300});return 500-b.plugin.hp;};assert.equal(bullet({}),55);assert.equal(bullet({bulletDamage:200}),200);
   const g=new Simulation();g.configure({gravity:-9.81});const up=g.spawn('crate',1000,300).bodies[0];advance(g,60);assert.ok(up.position.y<290,'negative gravity should fall upward');
   const v=new Simulation();v.configure({airDrag:0});assert.equal(v.spawn('crate',1,1).bodies[0].frictionAir,0);v.configure({airDrag:2});assert.ok(Math.abs(v.bodies[0].frictionAir-.012)<1e-9);
@@ -218,4 +218,30 @@ test('graft puts an android arm on a human stump, mirrors a limb from the other 
   assert.equal(human.bodies.length,17);assert.equal(bot.bodies.length,15);assert.equal(metal.plugin.kind,'android','it stays a metal arm');assert.ok(metal.plugin.surge>0&&human.surge>0);
   const seam=s.joints.find(c=>c.bodyB===metal&&c.plugin.name==='elbow');assert.ok(seam&&Constraint.currentLength(seam)<1);advance(s,300);assert.ok(Constraint.currentLength(seam)<3);for(const b of s.bodies)assert.ok(Number.isFinite(b.position.x));
   assert.notEqual(s.graft(stump,metal),'','already attached');assert.notEqual(s.graft(human.bodies[2],bot.bodies.find(b=>b.plugin.slot===2)),'','a whole android is not a limb');assert.notEqual(s.graft(stump,s.spawn('crate',300,300).bodies[0]),'');
+});
+test('a selected hand equips the nearest object in reach, levels and fires it, and lets go when it is taken or the holder dies',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);const hand=e.bodies[10],far=s.spawn('gun',hand.position.x+120,hand.position.y).bodies[0];assert.equal(s.equip(hand),'','out of reach');
+  const gun=s.spawn('gun',hand.position.x+40,hand.position.y).bodies[0];assert.match(s.equip(hand),/pistol/);assert.equal(s.held(hand),gun);assert.equal(gun.collisionFilter.group,hand.collisionFilter.group);assert.equal(s.equip(hand),'','one thing per hand');
+  advance(s,240);assert.ok(Math.hypot(gun.position.x-hand.position.x,gun.position.y-hand.position.y)<30,'gun should stay in the hand');assert.ok(e.bodies[2].position.y<505,'holding a pistol should not topple anyone');assert.ok(Math.abs(gun.angle)<.25,`pistol should be held level, angle ${gun.angle}`);
+  const target=s.spawn('crate',hand.position.x+300,gun.position.y).bodies[0];s.freeze(target);Body.setPosition(target,{x:hand.position.x+300,y:gun.position.y});assert.equal(s.activate(hand),'Pistol fired');assert.ok(target.plugin.hp<80||far.plugin.hp<170,'the shot should hit something ahead');
+  const saved=new Simulation();saved.restore(JSON.parse(JSON.stringify(s.serialize())));assert.equal(saved.joints.filter(c=>c.plugin.hold).length,2);advance(saved,30);assert.equal(saved.joints.filter(c=>c.plugin.hold).length,2);
+  s.beginDrag(gun,{...gun.position});assert.equal(s.held(hand),null,'grabbing it takes it out of the hand');assert.equal(gun.collisionFilter.group,0);assert.equal(gun.plugin.heldBy,undefined);s.endDrag();
+  Body.setPosition(gun,{x:hand.position.x+10,y:hand.position.y});s.equip(hand);assert.equal(s.held(hand),gun);e.alive=false;s.step();assert.equal(s.held(hand),null,'dropped on death');
+});
+test('a lifted ragdoll dangles from where it is held, then lands, crumples and gets up',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,60);const foot=e.bodies[13],chest=e.bodies[2];s.beginDrag(foot,{...foot.position});
+  for(let i=0;i<360;i++){s.moveDrag({x:1000,y:Math.max(250,foot.position.y-6)});s.step();}
+  assert.ok(chest.position.y>foot.position.y+50,'held by a foot, the body should hang below it');assert.ok(Math.abs(Math.atan2(Math.sin(chest.angle),Math.cos(chest.angle)))>2,`the chest should hang upside down, angle ${chest.angle}`);
+  assert.equal(s.joints.filter(c=>c.plugin.joint).length,16,'carrying must not tear anyone apart');s.endDrag();advance(s,45);assert.ok(chest.position.y>540,'it should land in a heap, not on its feet');advance(s,600);assert.ok(chest.position.y<505&&Math.abs(chest.angle)<.3,'and then get back up');
+});
+test('bullets are local: the first stops in the limb it hits, the next goes through it into what is behind',()=>{
+  const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false});const e=s.spawn('human',1000,400),hand=e.bodies[7],y=hand.position.y,behind=()=>e.bodies.filter(b=>b!==hand&&b.plugin.hp<100).map(b=>b.plugin.part);
+  assert.equal(s.shoot({x:700,y},{x:1300,y}),hand);assert.ok(hand.plugin.hp<=45);assert.deepEqual(behind(),[],'one bullet to the hand hurts the hand and nothing else');assert.ok(!(e.stun>0),'a hand wound does not knock anyone down');
+  assert.equal(hand.plugin.wounds.filter(w=>w.type==='exit').length,0);s.shoot({x:700,y},{x:1300,y});assert.equal(hand.plugin.wounds.filter(w=>w.type==='exit').length,1,'the second bullet leaves an exit wound');
+  assert.ok(behind().length>=1,'and reaches what is behind the hand');const next=e.bodies.find(b=>b!==hand&&b.plugin.hp<100);assert.ok(100-next.plugin.hp<55,'at reduced power');
+  assert.ok(e.bodies.filter(b=>b.plugin.hp===100).length>=13,'most of the body is untouched');
+  const c=new Simulation();const head=c.spawn('human',1000,555).bodies[0];assert.equal(c.shoot({x:700,y:head.position.y},{x:1300,y:head.position.y}),head);assert.ok(c.getEntity(head).stun>0,'a head shot still knocks the body down');
+});
+test('electric shocks hurt without leaving wounds, weaker with each hop',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);s.shock(e.bodies[2]);assert.ok(e.bodies.every(b=>b.plugin.wounds.length===0&&!b.plugin.bleed));const hurt=e.bodies.map(b=>100-b.plugin.hp).filter(Boolean);assert.ok(Math.max(...hurt)>Math.min(...hurt)*3,'far parts take much less');
 });

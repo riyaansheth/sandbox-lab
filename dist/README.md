@@ -18,6 +18,9 @@ npm run dev
 - 17-part human and android ragdolls with neck, segmented spine, hands and feet
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
 - Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
+- Hands: select a ragdoll's hand (click it or press S over it) and it takes the nearest loose object within 30 px. A pistol is raised and held level, F fires it, and it never hits its own holder; grab the object with the cursor to take it back; it is dropped on death. Held blades slash but do not pierce
+- Carrying: off the ground a ragdoll's muscles go slack, so it dangles from wherever it is held, swings, lands in a heap and then gets up
+- Local damage: a first bullet stops in the limb it hits and hurts nothing else; a limb that is already perforated lets the next one through (entry and exit wound) into whatever is behind, at 65% power. Glass never stops a bullet, weakened wood stops fewer. Arm and hand hits do not knock the body down, leg hits partly do. Shocks hurt without wounds and weaken with each hop; blast damage falls off with the square of distance
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
 - Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools

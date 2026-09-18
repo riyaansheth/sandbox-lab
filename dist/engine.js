@@ -91,6 +91,7 @@
     {id:'sound',section:'Audio',label:'Sound',help:'Synthesized impacts, shots, explosions and thunder.',type:'toggle',def:false},
     {id:'volume',section:'Audio',label:'Volume',help:'Master volume.',type:'range',min:0,max:100,step:5,def:60,unit:'%'}
   ];
+  const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
   const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
   const defaults=()=>Object.fromEntries(SETTINGS.map(s=>[s.id,s.def]));
   // Saved settings come from localStorage or an imported file, so every value is checked against the table before it is used.
@@ -104,7 +105,7 @@
     [4,11,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle'],
     [4,14,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle']
   ];
-  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
+  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.1,AIR_LIMP=.35,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
@@ -178,6 +179,23 @@
         x.plugin.entityId=owner.id;x.collisionFilter.group=stump.collisionFilter.group;if(flip)x.plugin.flip=true;else delete x.plugin.flip;main.add(x);}
       owner.bodies.sort((x,y)=>x.plugin.slot-y.plugin.slot);owner.joints=links.filter(c=>main.has(c.bodyA));this.entities=this.entities.filter(e=>e.bodies.length);owner.restTime=0;this.burst(to.x,to.y,8,'#9fcbb1',2);return to;
     }
+    // Hands: an empty hand takes the nearest loose object within reach. The object is welded to the hand by two pins and joins the body's no-collide group, so it cannot fight the arm holding it.
+    held(hand){return this.joints.find(c=>c.plugin.hold&&c.bodyA===hand)?.bodyB||null;}
+    equip(hand) {
+      if(hand?.plugin.part!=='hand')return '';const e=this.getEntity(hand);if(!e||this.held(hand))return '';
+      const reach=b=>{const dx=Math.max(b.bounds.min.x-hand.position.x,0,hand.position.x-b.bounds.max.x),dy=Math.max(b.bounds.min.y-hand.position.y,0,hand.position.y-b.bounds.max.y);return Math.hypot(dx,dy);};
+      const item=this.bodies.filter(b=>!b.plugin.part&&!b.isStatic&&!b.plugin.debris&&b.plugin.heldBy===undefined&&b.plugin.stuck===undefined&&reach(b)<=HAND_REACH).sort((a,b)=>reach(a)-reach(b))[0];if(!item)return '';
+      // Where and how each thing is held, in the item's own frame: grip point, and its angle relative to the hand.
+      const flip=!!hand.plugin.flip,side=flip?-1:1,grip=item.plugin.kind==='gun'?{x:-14,y:9}:item.plugin.kind==='sword'?{x:0,y:37}:{x:0,y:0},tilt=item.plugin.kind==='gun'?side*Math.PI/2:item.plugin.kind==='sword'?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
+      if(flip)item.plugin.flip=true;else delete item.plugin.flip;Body.setAngle(item,hand.angle+tilt);const local=Vector.rotate({x:grip.x*side,y:grip.y},item.angle);
+      Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;
+      // The second pin sits at the item's centre of mass: a long lever, so the weight of a pistol cannot twist it in the hand.
+      const toCentre=Vector.sub(item.position,hand.position),axis=Vector.magnitude(toCentre)>6?toCentre:Vector.rotate({x:0,y:-12},item.angle);for(const offset of [{x:0,y:0},axis]){const point=Vector.add(hand.position,offset);const c=Constraint.create({bodyA:hand,bodyB:item,pointA:offset,pointB:Vector.sub(point,item.position),length:0,stiffness:.9,damping:.2});c.plugin={hold:true};Composite.add(this.world,c);}
+      e.restTime=0;this.onEffect('impact',.2);return `Picked up the ${(CATALOG.find(c=>c.id===item.plugin.kind)?.name||'object').toLowerCase()}`;
+    }
+    release(item){for(const c of this.joints.filter(c=>c.plugin.hold&&c.bodyB===item))Composite.remove(this.world,c);item.collisionFilter.group=0;delete item.plugin.heldBy;}
+    // Things leave a hand when the cursor takes them (see beginDrag), when the holder dies, or when the hand is gone. A tug cannot be the test: pulling a held pistol just drags its owner along.
+    hands(){for(const item of this.bodies){if(item.plugin.heldBy===undefined)continue;const pins=this.joints.filter(c=>c.plugin.hold&&c.bodyB===item),e=pins[0]&&this.getEntity(pins[0].bodyA);if(!pins.length||!e||!e.alive)this.release(item);}}
     // Dismember: cut the clicked part off at the joint that ties it to the rest of the body (the side nearer the chest). The chest has no such joint, so it loses everything attached to it.
     dismember(body) {
       if(body?.plugin.slot===undefined)return '';const joints=this.joints.filter(c=>c.plugin.joint&&(c.bodyA===body||c.bodyB===body)),inward=joints.filter(c=>c.bodyB===body),cut=inward.length?inward:joints;
@@ -257,9 +275,15 @@
     balance(e){
       const part=n=>e.bodies.filter(b=>b.plugin.part===n),chest=part('chest')[0],pelvis=part('pelvis')[0],feet=part('foot').filter(f=>this.touching.has(f));
       const free=b=>!b.isStatic&&this.drag?.bodyB!==b,down=Math.abs(wrap(chest.angle))>.6||feet.length===0;
-      for(const b of e.bodies){if(!free(b))continue;const kind=b.plugin.part,foot=kind==='foot',arm=['upper arm','forearm','hand'].includes(kind);
-        const strength=(foot?.0024:arm?.00015:.0009)*(down&&!arm?GETUP_TORQUE:1)*e.effort;
-        b.torque+=clamp(wrap(-b.angle),-.5,.5)*b.inertia*strength-b.angularVelocity*b.inertia*(foot?.003:.002);}
+      // Muscles need something to push against. Off the ground (carried, thrown, falling) the body only keeps a little tone, so it dangles from the hand that holds it;
+      // after a moment in the air its strength is gone too, so it crumples on landing and then gets up.
+      const supported=e.bodies.some(b=>this.touching.has(b)&&this.drag?.bodyB!==b);e.airTime=supported?0:(e.airTime||0)+1/120;if(e.airTime>AIR_LIMP)e.effort=0;const tone=supported?1:AIR_TONE;
+      // The pistol is levelled directly as well: a hand is far too light to hold a pistol's weight level by its own torque.
+      const aiming=new Set();for(const hand of part('hand')){const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
+        if(!down&&free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
+      for(const b of e.bodies){if(!free(b))continue;const kind=b.plugin.part,foot=kind==='foot',arm=['upper arm','forearm','hand'].includes(kind),aim=aiming.has(b)&&!down;
+        const strength=(foot?.0024:aim?AIM_STRENGTH:arm?.00015:.0009)*(down&&!arm?GETUP_TORQUE:1)*e.effort*tone,target=aim?(b.plugin.flip?1:-1)*1.45:0; // an armed hand points forward instead of hanging
+        b.torque+=clamp(wrap(target-b.angle),-.5,.5)*b.inertia*strength-b.angularVelocity*b.inertia*(foot?.003:aim?.004:.002);}
       if(!feet.length||!pelvis||!free(chest))return;
       const mass=e.bodies.reduce((n,b)=>n+b.mass,0),weight=mass*.001*Math.max(this.gravity,.2),footX=feet.reduce((n,f)=>n+f.position.x,0)/feet.length,footY=Math.max(...feet.map(f=>f.position.y));
       const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort;
@@ -280,13 +304,13 @@
     clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
     freeze(body){if(!body)return;Body.setStatic(body,!body.isStatic);return body.isStatic;}
     beginDrag(body,point) {
-      this.endDrag();if(!body)return;
+      this.endDrag();if(!body)return;if(body.plugin.heldBy!==undefined)this.release(body); // grabbing a held thing takes it out of the hand
       this.drag=Constraint.create({pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),length:0,stiffness:this.settings.grabStrength,damping:.15});
       this.drag.plugin={drag:true};Composite.add(this.world,this.drag);
     }
     moveDrag(point){if(this.drag)this.drag.pointA={...point};}
     translateConnected(body,delta){
-      const connected=new Set([body]),queue=[body],joints=this.joints.filter(c=>c.plugin.joint||c.plugin.pierce);
+      const connected=new Set([body]),queue=[body],joints=this.joints.filter(c=>c.plugin.joint||c.plugin.pierce||c.plugin.hold);
       while(queue.length){const current=queue.shift();for(const c of joints){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!connected.has(other)){connected.add(other);queue.push(other);}}}
       for(const b of connected)Body.translate(b,delta);
     }
@@ -319,10 +343,10 @@
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
       const p=body.plugin,set=this.settings,gone=p.hp<=0;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
       p.hp=Math.max(0,p.hp-amount);
-      const e=this.getEntity(body);if(e&&amount>12&&set.stunScale>0)e.stun=Math.max(e.stun||0,clamp(amount/20,.6,5)*set.stunScale);if(e)e.restTime=0;
-      if(p.material==='flesh'){
+      const e=this.getEntity(body);const hurts=STUN_PART[p.part]??1;if(e&&amount>12&&set.stunScale>0&&hurts)e.stun=Math.max(e.stun||0,clamp(amount/20,.6,5)*set.stunScale*hurts);if(e)e.restTime=0;
+      if(p.material==='flesh'&&type!=='shock'){ // current cooks; it does not cut
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle);
-        const wound={x:clamp(p.flip?-local.x:local.x,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(type==='bullet'||type==='stab'?13:10),1.5,11),type,seed:Math.random()*6.28};
+        const wound={x:clamp(p.flip?-local.x:local.x,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(type==='bullet'||type==='stab'?13:type==='exit'?4:10),1.5,11),type,seed:Math.random()*6.28};
         p.wounds??=[];p.wounds.push(wound);p.wounds=p.wounds.slice(-14);
         p.bone=Math.max(0,(p.bone??100)-amount*(type==='bullet'||type==='stab'?.55:1));
         p.bleed=Math.min(7,(p.bleed||0)+amount/(type==='bullet'||type==='stab'?45:150));
@@ -363,24 +387,35 @@
       this.flashes.push({x,y,radius,life:.6,maxLife:.6});this.burst(x,y,70,'#eabb69',13*power);this.burst(x,y,30,'#cd7050',9*power,'smoke');
       for(const b of this.bodies){const dx=b.position.x-x,dy=b.position.y-y,d=Math.hypot(dx,dy);if(d>radius)continue;const f=1-d/radius;
         if(!b.isStatic){Body.setVelocity(b,{x:b.velocity.x+(dx/(d||1))*f*20*power,y:b.velocity.y+(dy/(d||1))*f*20*power-3*f});Body.setAngularVelocity(b,rnd(-.2,.2)*f);}
-        this.damage(b,f*140*power,b.position,'blast');b.plugin.heat+=f*180;
+        this.damage(b,f*f*170*power,b.position,'blast');b.plugin.heat+=f*180;
       }this.onEffect('explosion',power);
     }
     detonate(body){if(!this.bodies.includes(body))return;const {x,y}=body.position,barrel=body.plugin.kind==='barrel';this.removeBody(body);this.explode(x,y,barrel?220:170,barrel?1.2:1);}
+    // Bullets are rays. Each body the ray crosses is hit in order; whether the bullet stops there depends on what it is made of and the state it is in.
+    // Flesh stops a first bullet. A limb that is already perforated or destroyed no longer does: the next bullet goes in one side and out the other
+    // (entry and exit wound) and carries on, weaker, into whatever is behind it.
+    passes(body,damage){const p=body.plugin;if(p.boundary||body.isStatic)return false;if(p.material==='glass')return true;if(p.material==='wood')return p.hp-damage<=p.maxHp*.3;
+      if(p.material==='flesh')return p.hp<=0||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');return false;}
     shoot(from,to,ignore=null) {
       const direction=Vector.normalise(Vector.sub(to,from));if(!direction.x&&!direction.y)return;
-      const end=Vector.add(from,Vector.mult(direction,2500));let nearest=null,hit=end,best=Infinity;
-      // Exact segment/polygon intersection avoids tunnelling and query-order artifacts.
-      for(const body of [...this.bodies,...this.boundaries]){if(body===ignore)continue;
-        const v=body.vertices;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],sx=b.x-a.x,sy=b.y-a.y,rx=end.x-from.x,ry=end.y-from.y,den=rx*sy-ry*sx;
-          if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;
-          if(t>=0&&t<=1&&u>=0&&u<=1&&t<best){best=t;nearest=body;hit={x:from.x+rx*t,y:from.y+ry*t};}
-        }
-      }
-      this.traces.push({from:{...from},to:hit,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
-      if(nearest&&!nearest.plugin.boundary){Body.applyForce(nearest,hit,Vector.mult(direction,.018*this.settings.bulletForce));this.damage(nearest,this.settings.bulletDamage,hit,'bullet');}
-      this.onEffect('shot',.3);return nearest;
+      const end=Vector.add(from,Vector.mult(direction,2500)),rx=end.x-from.x,ry=end.y-from.y,hits=[];
+      // Exact segment/polygon intersection avoids tunnelling and query-order artifacts. Entry and exit are the nearest and farthest crossing of each body.
+      for(const body of [...this.bodies,...this.boundaries]){if(body===ignore||(ignore?.plugin.heldBy!==undefined&&body.collisionFilter.group===ignore.collisionFilter.group))continue; // a held pistol never shoots its own holder
+        let near=Infinity,far=-Infinity;const v=body.vertices;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],sx=b.x-a.x,sy=b.y-a.y,den=rx*sy-ry*sx;
+          if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
+        if(near<Infinity)hits.push({body,near,far});}
+      hits.sort((a,b)=>a.near-b.near);const at=t=>({x:from.x+rx*t,y:from.y+ry*t});let first=null,stop=end,power=1;
+      for(const {body,near,far} of hits){first??=body;stop=at(near);if(body.plugin.boundary)break;
+        const damage=this.settings.bulletDamage*power,through=this.passes(body,damage)&&far>near;
+        Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
+        this.damage(body,damage*(through?.6:1),stop,'bullet');if(!through)break;
+        // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
+        const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit');for(let i=0;i<8;i++)this.particles.push({x:exit.x,y:exit.y,vx:direction.x*rnd(2,7)+rnd(-1,1),vy:direction.y*rnd(2,7)+rnd(-1.5,.5),life:rnd(.4,1),maxLife:1,color:'#a4373c',size:rnd(1,3),type:'blood'});}
+        stop=exit;power*=.65;if(power<.2)break;}
+      this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
+      this.onEffect('shot',.3);return first;
     }
+    ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(['flesh','wood','rubber'].includes(body.plugin.material))body.plugin.burning=true;if(body.plugin.kind==='barrel'||body.plugin.kind==='bomb')body.plugin.fuse=.35;this.onEffect('fire',.1);}
     // A strike takes the highest thing under it. It is a massive shock: current jumps through conductors, flesh burns, flammables catch.
     lightning(x) {
       const under=this.bodies.filter(b=>b.bounds.min.x<=x&&b.bounds.max.x>=x).sort((a,b)=>a.bounds.min.y-b.bounds.min.y)[0],y=under?under.bounds.min.y:this.groundY,top=-370;
@@ -389,26 +424,26 @@
       if(under){this.shock(under);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
       this.onEffect('thunder',1);return under||null;
     }
-    ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(['flesh','wood','rubber'].includes(body.plugin.material))body.plugin.burning=true;if(body.plugin.kind==='barrel'||body.plugin.kind==='bomb')body.plugin.fuse=.35;this.onEffect('fire',.1);}
     shock(body) {
       if(!body)return;const touched=new Set(),queue=[body];
-      while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,b.plugin.material==='flesh'?24:5);if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
+      while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
         for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
     heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined)e.blood=100;for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
-      if(!body)return '';const p=body.plugin;
+      if(!body)return '';if(body.plugin.part==='hand'&&this.held(body))return this.activate(this.held(body));const p=body.plugin;
       if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
       if(p.kind==='bomb'){p.fuse=3;return 'Fuse lit — 3 seconds';}
       if(p.kind==='gun'){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,28)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-.015));return 'Pistol fired';}
       if(['thruster','wheel','battery'].includes(p.kind)){p.active=!p.active;return `${CATALOG.find(c=>c.id===p.kind).name} ${p.active?'on':'off'}`;}
       return 'This object has no activation';
     }
+    // ponytail: a blade in a hand shares that body's collision group, which piercing also needs, so held blades slash and do not pierce. Per-pair filtering would lift this.
     // Blades: the tip is the -y end of a sharp body. A fast, point-first hit on flesh runs it through instead of bouncing off.
     blade(sword){const h=sword.plugin.h,axis=Vector.rotate({x:0,y:-1},sword.angle);return {axis,tip:Vector.add(sword.position,Vector.mult(axis,h/2)),length:h*.76};}
     pierce(pair,sword,part) {
-      const p=sword.plugin;if(!defs[p.kind]?.sharp||p.stuck||part.plugin.material!=='flesh'||part.isStatic)return false;
+      const p=sword.plugin;if(!defs[p.kind]?.sharp||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
       const {axis,tip}=this.blade(sword),contact=pair.collision.supports[0]||part.position;if(Vector.magnitude(Vector.sub(contact,tip))>26)return false;
       const arm=Vector.sub(tip,sword.position),tipVelocity={x:sword.velocity.x-sword.angularVelocity*arm.y,y:sword.velocity.y+sword.angularVelocity*arm.x};
       const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed)return false;
@@ -510,7 +545,7 @@
         for(const {b,x,y,angle} of e.pin.pose){if(b.isStatic)continue;Body.setPosition(b,{x,y});Body.setAngle(b,angle);Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}
       }
       for(const c of [...this.joints])if(c.plugin.joint&&Constraint.currentLength(c)>c.plugin.breakForce*this.settings.jointStrength)this.sever(c);
-      this.blades();
+      this.blades();this.hands();
       this.regrowing=this.regrowing.filter(job=>{job.wait-=seconds;if(job.wait>0)return true;job.wait=REGROW_BEAT;return this.growNext(job);});
       const pending=this.damageQueue.splice(0);for(const fn of pending)fn();
       for(const p of this.particles){p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;
