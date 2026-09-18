@@ -20,7 +20,7 @@
   function outline(c, part, w, h, slot) {
     const x = w / 2, y = h / 2; c.beginPath();
     switch (part) {
-      case 'head': c.moveTo(0, -y); c.bezierCurveTo(x * 1.12, -y, x * 1.1, y * .1, x * .82, y * .45); c.bezierCurveTo(x * .6, y * .92, x * .28, y, 0, y); c.bezierCurveTo(-x * .28, y, -x * .6, y * .92, -x * .82, y * .45); c.bezierCurveTo(-x * 1.1, y * .1, -x * 1.12, -y, 0, -y); break;
+      case 'head': c.moveTo(-x * .1, -y); c.bezierCurveTo(x * .95, -y, x * 1.08, -y * .35, x * .98, y * .05); c.lineTo(x * 1.04, y * .34); c.bezierCurveTo(x * .98, y * .62, x * .8, y * .9, x * .42, y); c.bezierCurveTo(x * .05, y * 1.02, -x * .45, y * .85, -x * .62, y * .5); c.bezierCurveTo(-x * 1.08, y * .3, -x * 1.15, -y * .95, -x * .1, -y); break;
       case 'neck': c.moveTo(-x * .85, -y); c.lineTo(x * .85, -y); c.quadraticCurveTo(x * .8, 0, x * 1.15, y); c.lineTo(-x * 1.15, y); c.quadraticCurveTo(-x * .8, 0, -x * .85, -y); break;
       case 'chest': c.moveTo(-x * .5, -y); c.lineTo(x * .5, -y); c.bezierCurveTo(x * .95, -y * .98, x * 1.12, -y * .7, x * 1.08, -y * .3); c.bezierCurveTo(x * 1.02, y * .3, x * .86, y * .7, x * .78, y); c.lineTo(-x * .78, y); c.bezierCurveTo(-x * .86, y * .7, -x * 1.02, y * .3, -x * 1.08, -y * .3); c.bezierCurveTo(-x * 1.12, -y * .7, -x * .95, -y * .98, -x * .5, -y); break;
       case 'abdomen': c.moveTo(-x * 1.02, -y); c.lineTo(x * 1.02, -y); c.bezierCurveTo(x * .9, -y * .2, x * .92, y * .4, x * 1.06, y); c.lineTo(-x * 1.06, y); c.bezierCurveTo(-x * .92, y * .4, -x * .9, -y * .2, -x * 1.02, -y); break;
@@ -30,7 +30,7 @@
       case 'hand': c.moveTo(-x * .7, -y); c.lineTo(x * .7, -y); c.bezierCurveTo(x * 1.1, -y * .6, x * 1.05, y * .2, x * .8, y * .8); c.quadraticCurveTo(0, y * 1.12, -x * .8, y * .8); c.bezierCurveTo(-x * 1.05, y * .2, -x * 1.1, -y * .6, -x * .7, -y); break;
       case 'thigh': c.moveTo(-x * .9, -y); c.lineTo(x * .9, -y); c.bezierCurveTo(x * 1.14, -y * .45, x * 1.0, y * .45, x * .72, y); c.lineTo(-x * .72, y); c.bezierCurveTo(-x * 1.0, y * .45, -x * 1.14, -y * .45, -x * .9, -y); break;
       case 'shin': c.moveTo(-x * .85, -y); c.lineTo(x * .85, -y); c.bezierCurveTo(x * 1.18, -y * .55, x * .9, y * .3, x * .62, y); c.lineTo(-x * .62, y); c.bezierCurveTo(-x * .9, y * .3, -x * 1.18, -y * .55, -x * .85, -y); break;
-      case 'foot': { const d = slot === 13 ? -1 : 1; c.moveTo(-d * x * .45, -y); c.lineTo(d * x * .25, -y); c.bezierCurveTo(d * x * .45, -y * .1, d * x * .95, y * .05, d * x * 1.02, y * .62); c.quadraticCurveTo(d * x * 1.0, y, d * x * .8, y); c.lineTo(-d * x * .5, y); c.quadraticCurveTo(-d * x * .72, y * .2, -d * x * .45, -y); break; }
+      case 'foot': { const d = 1; c.moveTo(-d * x * .45, -y); c.lineTo(d * x * .25, -y); c.bezierCurveTo(d * x * .45, -y * .1, d * x * .95, y * .05, d * x * 1.02, y * .62); c.quadraticCurveTo(d * x * 1.0, y, d * x * .8, y); c.lineTo(-d * x * .5, y); c.quadraticCurveTo(-d * x * .72, y * .2, -d * x * .45, -y); break; }
       default: c.roundRect(-x, -y, w, h, 3);
     }
     c.closePath();
@@ -64,7 +64,7 @@
       case 'hand': c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.beginPath(); c.roundRect(-x * .6, -y * .85, x * 1.2, y * .5, 1.3); c.fill(); c.stroke(); for (let i = 0; i < 4; i++) { const fx = -x * .52 + i * x * .35; shaft(fx, -y * .3, fx * 1.15, y * .3, .9); shaft(fx * 1.15, y * .38, fx * 1.2, y * .78, .7); } break;
       case 'thigh': shaft(0, -y * .72, 0, y * .82, 3.4); knob(-2.2, -y * .84, 2.9); knob(1.4, -y * .7, 1.8); knob(-1.7, y * .86, 2.3); knob(1.7, y * .86, 2.3); break;
       case 'shin': shaft(-1, -y * .82, -.7, y * .86, 2.7); shaft(2.6, -y * .74, 2.2, y * .84, 1.1); knob(-1, -y * .86, 2.6); knob(-.6, y * .88, 1.9); break;
-      case 'foot': { const d = slot === 13 ? -1 : 1; c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.beginPath(); c.roundRect(d > 0 ? -x * .4 : -x * .15, -y * .55, x * .55, y * 1.15, 1.6); c.fill(); c.stroke(); for (let i = 0; i < 4; i++) shaft(d * x * .18, -y * .2 + i * y * .3, d * x * .86, y * .1 + i * y * .2, .9); break; }
+      case 'foot': { const d = 1; c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.beginPath(); c.roundRect(d > 0 ? -x * .4 : -x * .15, -y * .55, x * .55, y * 1.15, 1.6); c.fill(); c.stroke(); for (let i = 0; i < 4; i++) shaft(d * x * .18, -y * .2 + i * y * .3, d * x * .86, y * .1 + i * y * .2, .9); break; }
     }
     if (broken) {                                           // a fracture: the shaft parts, jagged ends, marrow showing
       c.strokeStyle = BONE.cavity; c.lineWidth = 2.6; c.beginPath(); c.moveTo(-x * .7, y * .02); c.lineTo(-x * .2, y * .16); c.lineTo(x * .15, -y * .04); c.lineTo(x * .7, y * .12); c.stroke();
@@ -95,9 +95,9 @@
 
   // ---- layer 3: skin. Shaded like a mannequin, light from the upper left; the face is drawn from the ragdoll's state.
   function drawSkin(c, part, w, h, slot, state) {
-    const x = w / 2, y = h / 2, tone = state.dead ? SKIN.dead : SKIN.base, g = c.createLinearGradient(-x, 0, x, 0);
-    g.addColorStop(0, SKIN.shade); g.addColorStop(.28, state.dead ? SKIN.dead : SKIN.light); g.addColorStop(.6, tone); g.addColorStop(1, SKIN.shade); c.fillStyle = g; c.fill();
-    if (state.pale > 0) { c.fillStyle = SKIN.pale; c.globalAlpha = state.pale * .6; c.fill(); c.globalAlpha = 1; }
+    const x = w / 2, y = h / 2, g = c.createLinearGradient(-x, 0, x, 0);
+    g.addColorStop(0, SKIN.shade); g.addColorStop(.28, SKIN.light); g.addColorStop(.6, SKIN.base); g.addColorStop(1, SKIN.shade); c.fillStyle = g; c.fill();
+    if (state.pale > 0) { c.fillStyle = SKIN.pale; c.globalAlpha = state.pale * .28; c.fill(); c.globalAlpha = 1; }   // a body keeps its colour in death; heavy blood loss only takes a little of it
     const lines = (list, width = .55, colour = SKIN.line) => { c.strokeStyle = colour; c.lineWidth = width; c.lineCap = 'round'; c.beginPath(); for (const [x0, y0, cx, cy, x1, y1] of list) { c.moveTo(x0, y0); c.quadraticCurveTo(cx, cy, x1, y1); } c.stroke(); };
     c.globalAlpha = .55;
     switch (part) {
@@ -110,27 +110,41 @@
       case 'shin': lines([[-x * .2, -y * .6, -x * .05, 0, -x * .15, y * .7]], .4); break;
       case 'upper arm': lines([[x * .2, -y * .5, x * .42, 0, x * .12, y * .45]], .4); break;
       case 'hand': lines([[-x * .35, y * .15, -x * .38, y * .5, -x * .4, y * .86], [0, y * .2, 0, y * .55, 0, y * .95], [x * .35, y * .15, x * .38, y * .5, x * .4, y * .86]], .4); break;
-      case 'foot': { const d = slot === 13 ? -1 : 1; lines([[d * x * .62, y * .45, d * x * .64, y * .7, d * x * .62, y * .95], [d * x * .78, y * .5, d * x * .8, y * .72, d * x * .8, y * .95], [d * x * .45, y * .42, d * x * .46, y * .7, d * x * .44, y * .95]], .4); break; }
+      case 'foot': { const d = 1; lines([[d * x * .62, y * .45, d * x * .64, y * .7, d * x * .62, y * .95], [d * x * .78, y * .5, d * x * .8, y * .72, d * x * .8, y * .95], [d * x * .45, y * .42, d * x * .46, y * .7, d * x * .44, y * .95]], .4); break; }
     }
     c.globalAlpha = 1;
     if (part === 'head') face(c, x, y, state.face, state.gaze || 0);
   }
-  // Five faces, from the reference sheet: neutral, tense (eyes screwed shut), dazed (half-lidded), closed, dead (crosses).
+  // The face, after reference/ragdoll.png, turned three-quarters toward +x: dark tousled hair, brows, two eyes (the far one narrower), nose, mouth, an ear half under the hair.
+  // Six moods: neutral, tense (eyes screwed shut, teeth gritted), dazed (half-lidded), closed (unconscious), dead (crosses), shout (mouth open on a big hit). gaze slides the irises.
+  const HAIR = { base: '#2b1e17', light: '#4d382b' };
   function face(c, x, y, mood, gaze) {
-    c.strokeStyle = '#2a201b'; c.lineWidth = 1; c.lineCap = 'round'; const ey = -y * .1, shout = mood === 'shout'; if (shout) mood = 'tense';
-    for (const s of [-1, 1]) { const ex = s * x * .42 + gaze * 1.5; c.beginPath();   // a glance: both eyes slide toward what it is looking at
-      if (mood === 'dead') { c.moveTo(ex - 2, ey - 2); c.lineTo(ex + 2, ey + 2); c.moveTo(ex + 2, ey - 2); c.lineTo(ex - 2, ey + 2); }
-      else if (mood === 'tense') { c.moveTo(ex + s * 2.2, ey - 1.8); c.lineTo(ex - s * 1.6, ey); c.lineTo(ex + s * 2.2, ey + 1.8); }   // > <  screwed shut, pointing at the nose
-      else if (mood === 'closed') { c.moveTo(ex - 2.4, ey - .4); c.quadraticCurveTo(ex, ey + 1.6, ex + 2.4, ey - .4); }
-      else if (mood === 'dazed') { c.moveTo(ex - 2.6, ey - 1.2); c.lineTo(ex + 2.6, ey - 1.2); c.moveTo(ex - 1.6, ey + .6); c.lineTo(ex + 1.6, ey + .6); }
-      else { c.moveTo(ex - 2.5, ey); c.lineTo(ex + 2.5, ey); }
-      c.stroke(); }
-    c.lineWidth = .7; c.globalAlpha = .7; c.beginPath();
-    if (shout) { c.fillStyle = '#3a1518'; c.ellipse(0, y * .52, x * .2, y * .13, 0, 0, 7); c.fill(); }                                           // mouth open on a big hit
-    else if (mood === 'tense') { c.moveTo(-x * .3, y * .52); c.lineTo(-x * .1, y * .44); c.lineTo(x * .1, y * .52); c.lineTo(x * .3, y * .44); }     // gritted
-    else if (mood === 'dead' || mood === 'closed') { c.moveTo(-x * .2, y * .5); c.lineTo(x * .2, y * .5); }
-    else if (mood === 'dazed') { c.ellipse(0, y * .5, x * .13, y * .06, 0, 0, 7); }
-    c.stroke(); c.globalAlpha = 1;
+    const shout = mood === 'shout'; if (shout) mood = 'tense'; c.lineCap = 'round'; c.lineJoin = 'round';
+    // ear, then hair over it
+    c.fillStyle = SKIN.base; c.strokeStyle = SKIN.line; c.lineWidth = .5; c.beginPath(); c.ellipse(-x * .42, y * .08, 2, 3.2, -.15, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(-x * .42, y * .1, 1, .6, 3.6); c.stroke();
+    c.fillStyle = HAIR.base; c.beginPath(); c.moveTo(x * .78, -y * .5); c.bezierCurveTo(x * .9, -y * .95, x * .2, -y * 1.16, -x * .2, -y * 1.1); c.bezierCurveTo(-x * .9, -y * 1.08, -x * 1.22, -y * .45, -x * 1.08, y * .12);
+    c.bezierCurveTo(-x * 1.02, y * .42, -x * .8, y * .5, -x * .66, y * .36); c.lineTo(-x * .6, y * .02); c.lineTo(-x * .34, -y * .12); c.bezierCurveTo(-x * .3, -y * .45, -x * .05, -y * .62, x * .3, -y * .6); c.bezierCurveTo(x * .55, -y * .62, x * .66, -y * .52, x * .78, -y * .5); c.closePath(); c.fill();
+    for (const [sx, sy, ex, ey] of [[-.1, -1.08, .12, -1.24], [.3, -1.02, .55, -1.15], [-.5, -1.04, -.42, -1.22], [-.85, -.85, -1.02, -.98], [.6, -.86, .86, -.9]]) { c.beginPath(); c.moveTo(x * sx - 1.4, y * sy + 1); c.lineTo(x * ex, y * ey); c.lineTo(x * sx + 1.6, y * sy + 1); c.closePath(); c.fill(); }   // tousled tufts
+    c.strokeStyle = HAIR.light; c.lineWidth = .55; c.globalAlpha = .8; for (const [sx, sy, mx, my, ex, ey] of [[.5, -.62, .1, -.95, -.4, -.9], [.2, -.66, -.3, -.8, -.75, -.55], [-.35, -.2, -.8, -.4, -.95, .05], [.7, -.55, .5, -.85, .15, -1.0]]) { c.beginPath(); c.moveTo(x * sx, y * sy); c.quadraticCurveTo(x * mx, y * my, x * ex, y * ey); c.stroke(); } c.globalAlpha = 1;
+    // brows
+    const near = x * .16, far = x * .72, ey = -y * .1, ink = '#2a1c15'; c.strokeStyle = HAIR.base; c.lineWidth = 1.05; const knit = mood === 'tense' ? 1.1 : mood === 'dazed' ? -.3 : 0;
+    c.beginPath(); c.moveTo(near - 2.6, ey - 3 - knit * .2); c.quadraticCurveTo(near, ey - 4 + knit * .3, near + 2.6, ey - 3.1 + knit); c.moveTo(far - 1.7, ey - 3.1 + knit); c.quadraticCurveTo(far + .2, ey - 4 + knit * .3, far + 1.8, ey - 3 - knit * .1); c.stroke();
+    // eyes
+    for (const [ex, half] of [[near, 2.5], [far, 1.7]]) { c.strokeStyle = ink; c.lineWidth = .8; c.beginPath();
+      if (mood === 'dead') { c.lineWidth = 1; c.moveTo(ex - half * .8, ey - 1.8); c.lineTo(ex + half * .8, ey + 1.8); c.moveTo(ex + half * .8, ey - 1.8); c.lineTo(ex - half * .8, ey + 1.8); c.stroke(); continue; }
+      if (mood === 'tense') { c.moveTo(ex - half, ey - .6); c.quadraticCurveTo(ex, ey + 1.1, ex + half, ey - .2); c.moveTo(ex - half * .7, ey + 1.2); c.lineTo(ex + half * .6, ey + 1.5); c.stroke(); continue; }   // screwed shut, with a crease under
+      if (mood === 'closed') { c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey + 1.5, ex + half, ey); c.stroke(); continue; }
+      const open = mood === 'dazed' ? .8 : 1.9; c.fillStyle = '#f4f1e8'; c.beginPath(); c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey - open * 1.25, ex + half, ey); c.quadraticCurveTo(ex, ey + open, ex - half, ey); c.fill();
+      c.save(); c.clip(); c.fillStyle = '#5a3d28'; c.beginPath(); c.arc(ex + gaze * half * .45 + .3, ey, 1.25, 0, 7); c.fill(); c.fillStyle = '#120c08'; c.beginPath(); c.arc(ex + gaze * half * .45 + .3, ey, .6, 0, 7); c.fill(); c.restore();
+      c.strokeStyle = ink; c.lineWidth = .85; c.beginPath(); c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey - open * 1.25, ex + half, ey); c.stroke(); if (mood === 'dazed') { c.lineWidth = .5; c.beginPath(); c.moveTo(ex - half * .8, ey + 1.6); c.quadraticCurveTo(ex, ey + 2.1, ex + half * .8, ey + 1.6); c.stroke(); } }
+    // nose, mouth, jaw shadow
+    c.strokeStyle = SKIN.line; c.lineWidth = .8; c.beginPath(); c.moveTo(x * .46, ey + .5); c.quadraticCurveTo(x * .62, y * .2, x * .66, y * .34); c.quadraticCurveTo(x * .56, y * .42, x * .42, y * .38); c.stroke();
+    c.strokeStyle = '#7d4a3e'; c.lineWidth = .9; c.beginPath(); const mx = x * .44, my = y * .62;
+    if (shout) { c.fillStyle = '#3a1518'; c.ellipse(mx, my + .6, 2.6, 2, 0, 0, 7); c.fill(); c.fillStyle = '#efe9dc'; c.fillRect(mx - 1.8, my - 1.1, 3.6, .9); }
+    else if (mood === 'tense') { c.moveTo(mx - 3, my + .3); c.lineTo(mx + 3, my - .1); c.stroke(); c.strokeStyle = '#efe9dc'; c.lineWidth = .6; c.beginPath(); c.moveTo(mx - 2.2, my + .1); c.lineTo(mx + 2.2, my - .1); c.stroke(); }
+    else if (mood === 'dazed') { c.moveTo(mx - 2.4, my); c.quadraticCurveTo(mx, my + 1.3, mx + 2.4, my + .2); c.stroke(); }
+    else { c.moveTo(mx - 2.8, my); c.quadraticCurveTo(mx, my + (mood === 'dead' ? .2 : .9), mx + 2.8, my - .2); c.stroke(); }
+    c.strokeStyle = SKIN.line; c.globalAlpha = .4; c.lineWidth = .6; c.beginPath(); c.moveTo(mx - 1.4, my + 3); c.quadraticCurveTo(mx, my + 3.6, mx + 1.4, my + 3); c.stroke(); c.globalAlpha = 1;
   }
 
   // ---- wounds: what each one removes from the skin and from the muscle
@@ -165,9 +179,13 @@
     // Beyond its individual wounds, a part that is nearly destroyed loses skin, and then muscle, in seeded patches.
     const torn = []; if (!state.noGore) { const skinLoss = Math.floor(clamp((48 - hp) / 7, 0, 7)), deep = Math.floor(clamp((16 - hp) / 4, 0, 4));
       for (let i = 0; i < skinLoss; i++) torn.push({ x: (hash(slot * 9.1 + i) - .5) * w * .8, y: (hash(slot * 5.3 + i * 2.7) - .5) * h * .8, r: 3 + hash(i + slot) * 3.5, seed: slot + i, deep: i < deep }); }
-    const intact = !wounds.length && !torn.length && !broken;
+    // Fire eats the body from the outside in. char runs 0..1 over about sixteen seconds of burning: the skin is gone by the middle of that, the muscle by the end, and the bone is left, blackened.
+    const burn = state.noGore ? 0 : state.char || 0, reach = Math.max(w, h), burnSkin = [], burnMuscle = [];
+    if (burn > .04) for (let i = 0; i < 12; i++) { const bx = (hash(slot * 3.7 + i * 1.9) - .5) * w * .9, by = (hash(slot * 7.1 + i * 4.3) - .5) * h * .9, rs = clamp(burn * 1.2 - i * .035, 0, 1) * reach * .62, rm = clamp((burn - .45) * 2 - i * .04, 0, 1) * reach * .6; if (rs > .6) burnSkin.push([bx, by, rs, i]); if (rm > .6) burnMuscle.push([bx, by, rm, i]); }
+    const intact = !wounds.length && !torn.length && !broken && !burnSkin.length;
     if (!intact) { outline(c, part, w, h, slot); drawBone(c, part, w, h, slot, broken);
-      layer(c, 0, size, m => { outline(m, part, w, h, slot); drawMuscle(m, part, w, h); }, m => { for (const wd of wounds) if (hole(m, wd, 1)) m.fill(); for (const t of torn) if (t.deep) { m.beginPath(); ragged(m, t.x, t.y, t.r * .6, t.seed); m.fill(); } if (broken) { m.beginPath(); m.ellipse(0, h * .04, w * .34, h * .07, .25, 0, 7); m.fill(); } }); }
+      layer(c, 0, size, m => { outline(m, part, w, h, slot); drawMuscle(m, part, w, h); }, m => { for (const wd of wounds) if (hole(m, wd, 1)) m.fill(); for (const t of torn) if (t.deep) { m.beginPath(); ragged(m, t.x, t.y, t.r * .6, t.seed); m.fill(); } if (broken) { m.beginPath(); m.ellipse(0, h * .04, w * .34, h * .07, .25, 0, 7); m.fill(); } for (const [bx, by, r, i] of burnMuscle) { m.beginPath(); ragged(m, bx, by, r, slot + i, 12); m.fill(); } });
+      if (burn > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${(burn - .5) * 1.3})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
     layer(c, 1, size, s => { outline(s, part, w, h, slot); drawSkin(s, part, w, h, slot, state);
       // bruises, burns and charring are changes to the skin itself, so they are painted before the holes are cut
       if (!state.noGore) { for (const wd of wounds) { if (wd.type === 'impact') { const fade = clamp(1 - (state.time - (wd.t ?? state.time)) / 150, .25, 1), r = (wd.radius || 3) * 1.7, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, `rgba(88,40,96,${.62 * fade})`); g.addColorStop(.6, `rgba(120,70,60,${.4 * fade})`); g.addColorStop(1, 'rgba(150,130,60,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
@@ -175,9 +193,9 @@
         if (p.bruise > .05) { const r = Math.max(w, h) * .6 * p.bruise + 3, g = s.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, `rgba(70,28,78,${Math.min(.75, p.bruise)})`); g.addColorStop(1, 'rgba(96,60,44,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
         // every open wound reddens the skin around it
         for (const wd of wounds) if (wd.type !== 'impact' && wd.type !== 'burn') { const r = (wd.radius || 3) * (wd.type === 'cut' ? 1.2 : 1.9) + 2, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, 'rgba(140,28,36,.75)'); g.addColorStop(1, 'rgba(140,28,36,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); } }
-      if (state.char > 0) { s.globalCompositeOperation = 'source-atop'; s.fillStyle = `rgba(24,17,14,${state.char})`; s.fillRect(-w, -h, w * 2, h * 2); }
+      if (state.char > 0) { s.globalCompositeOperation = 'source-atop'; s.fillStyle = `rgba(24,17,14,${Math.min(.75, state.char * 1.6)})`; s.fillRect(-w, -h, w * 2, h * 2); }   // the skin that is still there blackens fast
       s.globalCompositeOperation = 'source-over'; outline(s, part, w, h, slot); s.strokeStyle = SKIN.line; s.lineWidth = .7; s.stroke();
-    }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } });
+    }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } for (const [bx, by, r, i] of burnSkin) { s.beginPath(); ragged(s, bx, by, r, slot * 2 + i, 12); s.fill(); } });
     if (state.noGore) return;
     // finishing: the dark bore of a bullet hole, torn edges round the big wounds, the shard of a broken bone
     for (const wd of wounds) { if (wd.type === 'bullet') { c.fillStyle = '#16060a'; c.beginPath(); c.arc(wd.x, wd.y, 1, 0, 7); c.fill(); c.strokeStyle = '#5d1820'; c.lineWidth = .6; c.beginPath(); c.arc(wd.x, wd.y, 2.3, 0, 7); c.stroke(); }
@@ -191,14 +209,14 @@
   // ---- cache. A numeric signature of everything that changes the picture; string keys only for the shared pristine sprites.
   const perBody = new WeakMap(), pristine = new Map();
   function signature(p, state) {
-    let sig = Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 8) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
+    let sig = Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i]; sig += (w.seed * 1e5 | 0) * (i + 3) + (w.type === 'impact' ? Math.floor((state.time - (w.t ?? 0)) / 12) * 17 : 0); }
     const ends = p.severed; if (ends) sig += ends.length * 524287; return sig;
   }
   function sprite(body, state) {
     const p = body.plugin, sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;
-    const clean = !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05);
-    if (clean) { const key = `${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 8)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
+    const clean = !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
+    if (clean) { const key = `${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 20)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
       if (!shared) { if (pristine.size > 400) pristine.clear(); shared = document.createElement('canvas'); paintPart(shared, p, state); pristine.set(key, shared); } perBody.set(body, { sig, canvas: shared, own: false }); return shared; }
     const canvas = entry?.own ? entry.canvas : document.createElement('canvas'); paintPart(canvas, p, state); perBody.set(body, { sig, canvas, own: true }); return canvas;
   }

@@ -214,6 +214,8 @@
       const fits=([pa,pb])=>(have.has(pa)&&bring.has(pb))||(have.has(pb)&&bring.has(pa)),t=JOINTS.find(j=>fits(j)&&(!prefer||j[0]===prefer.plugin.slot||j[1]===prefer.plugin.slot))||JOINTS.find(fits);if(!t)return false;
       const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip,anchor=x=>Vector.add(x.position,Vector.rotate(x===a?t[2]:t[3],x.angle));
       const turn=stump.angle-limb.angle,pivot=anchor(limb);for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
+      // The piece's own joints (and anything pinned or held in it) carry anchors in world orientation; Matter only turns those on its next solve, and until then they would wrench the piece about. Turn them now.
+      for(const c of this.joints){if(c.bodyA&&piece.has(c.bodyA)){Vector.rotate(c.pointA,turn,c.pointA);c.angleA=c.bodyA.angle;}if(c.bodyB&&piece.has(c.bodyB)){Vector.rotate(c.pointB,turn,c.pointB);c.angleB=c.bodyB.angle;}}
       const to=anchor(stump),move=Vector.sub(to,anchor(limb));for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
       const joint=this.makeJoint(owner.kind,flip,a,b,t);if(a.plugin.kind==='android'||b.plugin.kind==='android')joint.plugin.breakForce=45;Composite.add(this.world,joint);links.push(joint);
       for(const x of [a,b]){x.plugin.severed=[];this.bleedOf(x.plugin);}

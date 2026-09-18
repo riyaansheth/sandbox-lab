@@ -19,17 +19,19 @@ npm run dev
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
 - Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
 - Hands: select a ragdoll's hand (click it or press S over it) and it takes the nearest loose object within 30 px. A pistol is raised and held level, F fires it, and it never hits its own holder; grab the object with the cursor to take it back; it is dropped on death. Held blades slash but do not pierce
-- Carrying: off the ground a ragdoll's muscles go slack, so it dangles from wherever it is held, swings, lands in a heap and then gets up
+- Carrying: off the ground a ragdoll keeps its muscle tone, so it holds itself together and swings from wherever it is held rather than folding like a rag; only the pull toward upright needs the ground. Letting go is a throw: the body, and everything jointed to it, leaves with the cursor's velocity
+- Anatomy: the body is seen from the side, facing the way it was spawned. Elbows only flex forward, knees only fold back, the trunk bends forward further than it arches. A joint forced well past its limit by the cursor, by a blow, or by a dead body landing on it breaks: the limb fractures, a broken neck kills, a broken spine takes the legs away
 - Local damage: a first bullet stops in the limb it hits and hurts nothing else; a limb that is already perforated lets the next one through (entry and exit wound) into whatever is behind, at 65% power. Glass never stops a bullet, weakened wood stops fewer. Arm and hand hits do not knock the body down, leg hits partly do. Shocks hurt without wounds and weaken with each hop; blast damage falls off with the square of distance
 - Damage model: one profile table gives each damage type its own injury — blunt breaks bone and bruises, cuts are long and bleed, stabs and bullets are deep and bleed most, blasts do everything, burns cauterise, shocks leave no wound
 - Fractures (bone ≤ 50): the limb hangs, its joints over-bend, and it carries no weight — one broken leg is stood on around, two and the ragdoll stays down; heal mends them
 - Organs by hit location: brain (blackout, or instant death), heart (death, or massive internal bleeding), lungs (oxygen runs down to unconsciousness and suffocation), gut (slow internal bleeding, seen as a spreading bruise). Blunt force only reaches the brain
 - Pain rises with injury (more for head, groin, hands and feet) and ebbs, slower while wounds are open; it slows getting up. Consciousness runs awake → dazed → unconscious → dead from blood, oxygen, brain and pain; the detail view shows vitals, damaged organs and the cause of death
 - Blood: every wound bleeds at its own rate and clots (fast on a still limb, slowly on a moving one; a new blow nearby reopens it). Deep wounds to the neck, upper arms and thighs hit an artery and spurt in time with a heart rate that races with pain and early blood loss, then fails. Skin pales below 75% blood
-- Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Bodies dragged through a wet pool smear it and get bloody; feet track prints away. Blood dries from red to brown in about 30 s and then no longer smears. Androids leak teal coolant and sparks instead
+- Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Blood only stains — no smears, no footprints, no wet shine — and dries from red to brown in about 30 s. Androids leak teal coolant and sparks instead
 - Particles are pooled and recycled; stains are capped per body and globally, fade after a settable lifetime, and none are created with decals off
 - Layered bodies (`body.js`, after `reference/ragdoll.png`): every human part is three drawings — skeleton, muscle, skin. Wounds cut holes through the upper layers instead of painting over them: a bullet is a small hole with a dark bore, an exit wound a ragged crater down to bone, a cut a long slit along the blade's path, a stab a short one, a blast a crater; bruises fade from purple to yellow, burns char, fractures split the bone under a tear, stumps are a ragged cap of muscle round a bone nub with strands that swing for a moment. Badly damaged parts lose skin, then muscle, in patches
-- Five faces driven by the simulation: neutral, tense (on a hit or in pain), dazed, closed (unconscious), crosses (dead)
+- A proper face, turned three-quarters the way the body faces: dark tousled hair, brows, eyes with irises that glance, nose, mouth, an ear under the hair. Six moods driven by the simulation: neutral, tense, dazed, closed (unconscious), crosses (dead), mouth open on a big hit. A body keeps its colour in death
+- Burning eats through the layers: over about sixteen seconds the skin goes in spreading patches, then the muscle, and a blackened skeleton is left
 - Each part is painted once into a cached sprite and repainted only when its damage changes, so ten wounded ragdolls cost ten ragdolls' worth of drawImage
 - Gibs: crushed and blasted limbs throw flesh chunks and bone fragments that trail blood, capped at 36 and gone after ~14 s. Blood sprays along the blow: forward from an exit wound, mostly back from an entry wound
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
@@ -61,6 +63,7 @@ npm run dev
 - Fire: hundreds of soft additive blobs per fire that rise, stretch, wander and cool from yellow-white to red, merging into one flame body around a burning ragdoll; embers, smoke above the tips, a glow on the surroundings, and charring that stays
 - Rendering never builds gradients or blurs per frame: flames, glows and smoke are pre-painted sprites and lightning channels are cached paths (measured: no frame over 20 ms with a burning scene, a storm and the lights off, also at 4× CPU throttle)
 - Lightning: forked, glowing channels with restrikes, sky flash, thunder, scorch marks; strikes hit the highest thing under them, shock through conductors, burn and ignite
+- Toolbar housekeeping: Clear fire (puts everything out and cools it), Clear dead (dead ragdolls, remains, debris, stains), Clear objects (everything except ragdolls)
 - Four starter scenes, pause, frame stepping, slow motion, and adjustable gravity
 - Pan and zoom, object inspection, search and categories
 - Save/load a complete scene locally, including body poses, health, constraints and active devices
@@ -88,7 +91,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 83 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 88 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

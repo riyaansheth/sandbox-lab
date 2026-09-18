@@ -140,7 +140,7 @@
   // Blood dries from bright red to a dark brown over about half a minute; android coolant from teal to near black.
   const STAIN_RAMP=[[155,31,42],[72,26,28]],OIL_RAMP=[[47,84,90],[24,34,36]];
   function stainColor(wet,oil){const [a,b]=oil?OIL_RAMP:STAIN_RAMP;return `rgb(${Math.round(b[0]+(a[0]-b[0])*wet)},${Math.round(b[1]+(a[1]-b[1])*wet)},${Math.round(b[2]+(a[2]-b[2])*wet)})`;}
-  const REMAINS={pale:.5,face:'dead',faceId:13,gaze:0,dead:true,noGore:false,time:0,char:0,breath:0}; // parts whose owner is gone
+  const REMAINS={pale:0,face:'dead',faceId:13,gaze:0,dead:true,noGore:false,time:0,char:0,breath:0}; // parts whose owner is gone
   const looks=new Map(); // entity id -> how that ragdoll looks this frame: pallor, face, dead. Filled once per frame, shared by its 17 parts.
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
@@ -160,9 +160,9 @@
     for(const x of [0,2600]){ctx.fillStyle='#3d494e';ctx.fillRect(x-8,-370,16,1020);}
     if(set.decals)for(const st of sim.stains){if(st.x+st.r<left||st.x-st.r>right)continue;
       if(st.scorch){ctx.globalAlpha=.8;ctx.drawImage(glowSprite('scorch','11,13,14',1),st.x-st.r,st.y-3.5,st.r*2,7);ctx.globalAlpha=1;continue;}
-      if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=(st.smear?.7:st.print?.75:.9)*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
+      if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=.9*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
       if(st.wall){ctx.ellipse(st.x,st.y,2.6,st.r,0,0,7);ctx.fill();ctx.fillRect(st.x-.8,st.y,1.6,st.r*(2.2-wet)*1.4);} // a run down the wall that lengthens as it dries
-      else{const ry=st.smear?1.5:st.print?1.4:Math.min(4.2,1.4+st.r*.07);ctx.ellipse(st.x,st.y,st.r,ry,0,0,7);ctx.fill();if(wet>.35&&st.r>6&&!st.smear){ctx.globalAlpha=wet*.3*fade;ctx.fillStyle=st.oil?'#8fb3b8':'#e58a8a';ctx.beginPath();ctx.ellipse(st.x-st.r*.3,st.y-ry*.3,st.r*.35,ry*.28,0,0,7);ctx.fill();}}
+      else{const ry=Math.min(4.2,1.4+st.r*.07);ctx.ellipse(st.x,st.y,st.r,ry,0,0,7);ctx.fill();}
     }ctx.globalAlpha=1;
     for(const c of sim.joints){const a=Constraint.pointAWorld(c),b=Constraint.pointBWorld(c),organic=c.bodyA?.plugin.material==='flesh';ctx.strokeStyle=c.plugin.rope?'#c8b889':organic?'#d6ab88':'#596d67';ctx.lineWidth=c.plugin.rope?2:organic?Math.min(c.bodyA.plugin.w,c.bodyB.plugin.w)*.72:6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.lineCap='butt';if(c.plugin.rope){ctx.fillStyle='#d0c6aa';for(const p of [a,b]){ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill();}}}
     // A lodged blade is drawn first, so the body hides the part inside it and the point shows out the far side.
@@ -171,7 +171,7 @@
       if(set.shadows&&b.position.y>520){ctx.fillStyle='#10191d30';ctx.beginPath();ctx.ellipse(b.position.x,sim.groundY-1,Math.max(5,(p.w||p.r*2||20)*.5),3,0,0,7);ctx.fill();}
       ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);const growing=p.grow!==undefined;
       if(growing){const g=1-Math.pow(1-clamp(p.grow,.02,1),3),ax=p.flip?-p.growFrom.x:p.growFrom.x;ctx.translate(ax,p.growFrom.y);ctx.scale(g,g);ctx.translate(-ax,-p.growFrom.y);}
-      if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=Math.max(p.char||0,clamp(((p.heat||20)-180)/600,0,.85));if(look.breath&&(p.slot===2||p.slot===3)){ctx.save();ctx.scale(1+look.breath,1+look.breath*.5);BodyArt.draw(ctx,b,look);ctx.restore();}else BodyArt.draw(ctx,b,look);
+      if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=p.char||0;if(look.breath&&(p.slot===2||p.slot===3)){ctx.save();ctx.scale(1+look.breath,1+look.breath*.5);BodyArt.draw(ctx,b,look);ctx.restore();}else BodyArt.draw(ctx,b,look);
         // for a second or two after a limb comes off, strands hang and swing from the stump
         if(!set.noGore)for(const end of p.severed||[])if(end.fresh>0){ctx.strokeStyle='#8a2830';ctx.lineWidth=.9;ctx.globalAlpha=Math.min(1,end.fresh);for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(end.x+i*2.2,end.y);ctx.quadraticCurveTo(end.x+i*3+Math.sin(sim.time*9+i)*2.5,end.y+4,end.x+i*2.6+Math.sin(sim.time*7+i*2)*3.5,end.y+7+i);ctx.stroke();}ctx.globalAlpha=1;}}
       else drawObject(ctx,p.kind,p,sim.time);
@@ -230,10 +230,12 @@
       case'delete':if(body){sim.removeEntity(body);select(null);}break;
     }
   }
-  function pointer(e){const r=canvas.getBoundingClientRect();state.pointer={x:e.clientX-r.left,y:e.clientY-r.top};state.worldPointer=toWorld(state.pointer);$('#coordinates').textContent=`x ${Math.round(state.worldPointer.x)} : y ${Math.round(state.worldPointer.y)}`;return state.worldPointer;}
+  const trail=[]; // the last few cursor positions with their times, for the throw
+  function throwVelocity(){const now=performance.now(),recent=trail.filter(t=>now-t.t<90);if(recent.length<2)return null;const a=recent[0],b=recent[recent.length-1],ms=Math.max(8,b.t-a.t);return {x:(b.x-a.x)/ms*16.67,y:(b.y-a.y)/ms*16.67};}
+  function pointer(e){const r=canvas.getBoundingClientRect();state.pointer={x:e.clientX-r.left,y:e.clientY-r.top};state.worldPointer=toWorld(state.pointer);$('#coordinates').textContent=`x ${Math.round(state.worldPointer.x)} : y ${Math.round(state.worldPointer.y)}`;trail.push({x:state.worldPointer.x,y:state.worldPointer.y,t:performance.now()});if(trail.length>8)trail.shift();return state.worldPointer;}
   canvas.addEventListener('pointerdown',e=>{if(e.button!==0&&e.button!==1&&e.button!==2)return;canvas.focus();canvas.setPointerCapture(e.pointerId);pointer(e);state.inside=true;if(e.button===2||e.button===1||state.shift){state.pan={x:e.clientX,y:e.clientY,cx:camera.x,cy:camera.y};canvas.style.cursor='grabbing';return;}state.down=true;perform(state.worldPointer);});
   canvas.addEventListener('pointermove',e=>{pointer(e);state.inside=true;if(state.pan){camera.x=state.pan.cx-(e.clientX-state.pan.x)/camera.zoom;camera.y=state.pan.cy-(e.clientY-state.pan.y)/camera.zoom;return;}if(sim.drag){const body=sim.drag.bodyB,target=Vector.sub(state.worldPointer,sim.drag.pointB);if(state.paused)sim.translateConnected(body,Vector.sub(target,body.position));else if(body.isStatic)Body.setPosition(body,target);sim.moveDrag(state.worldPointer);}});
-  function release(){state.down=false;state.pan=null;sim.endDrag();canvas.style.cursor=state.tool!=='grab'?'crosshair':'grab';}
+  function release(){state.down=false;state.pan=null;sim.endDrag(state.paused?null:throwVelocity());canvas.style.cursor=state.tool!=='grab'?'crosshair':'grab';}
   canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);canvas.addEventListener('pointerleave',()=>state.inside=false);window.addEventListener('blur',()=>{release();state.shift=false;held.clear();});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('dblclick',e=>{const b=sim.bodyAt(pointer(e));if(b&&state.tool==='grab')toast(sim.activate(b));});
   function zoom(factor,p={x:width/2,y:height/2}){const before=toWorld(p);camera.zoom=clamp(camera.zoom*factor,.2,3);const after=toWorld(p);camera.x+=before.x-after.x;camera.y+=before.y-after.y;updateZoom();}
@@ -246,6 +248,9 @@
   $('#sound-btn').onclick=()=>{applySettings({sound:!sim.settings.sound});if(sim.settings.sound)sound('impact',.2);};
   $('#zoom-in').onclick=()=>zoom(1.2);$('#zoom-out').onclick=()=>zoom(1/1.2);$('#zoom-reset').onclick=fit;
   $('#scene-select').onchange=e=>loadPreset(e.target.value);$('#reset-btn').onclick=()=>{loadPreset($('#scene-select').value);toast('Scene reset');};$('#clear-btn').onclick=()=>{sim.clear();select(null);state.ropeStart=null;toast('Chamber cleared');};
+  $('#clear-fire-btn').onclick=()=>{const n=sim.clearFire();toast(n?`Put out ${n} fire${n>1?'s':''}`:'Nothing is burning');};
+  $('#clear-dead-btn').onclick=()=>{const n=sim.clearDead();select(null);toast(n?'Cleared the dead and the debris':'Nothing dead to clear');};
+  $('#clear-objects-btn').onclick=()=>{const n=sim.clearObjects();select(null);toast(n?`Cleared ${n} object${n>1?'s':''}; ragdolls stay`:'No objects to clear');};
   $('#save-btn').onclick=()=>{try{const data=sim.serialize();localStorage.setItem('sandbox-lab-scene',JSON.stringify({...data,camera:{...camera},savedAt:new Date().toISOString()}));toast('Scene saved on this device');}catch{toast('Could not save. Browser storage may be full or disabled.');}};
   $('#load-btn').onclick=()=>{try{const raw=localStorage.getItem('sandbox-lab-scene');if(!raw){toast('No saved scene yet. Build something and save it first.');return;}const data=JSON.parse(raw);sim.restore(data);state.selected=null;state.ropeStart=null;if(data.camera&&[data.camera.x,data.camera.y,data.camera.zoom].every(Number.isFinite))Object.assign(camera,data.camera);$('#scene-select').value=sim.scene;$('#scene-name').textContent='Saved experiment';applySettings({});setPaused(true);updateZoom();toast('Scene loaded — paused so you can pick up where you left off.');}catch{toast('Could not load this saved scene. Your current scene was kept if validation failed.');}};
   // ---- Settings. The page is generated from the engine's SETTINGS table, so adding a row there adds a control here.
@@ -261,7 +266,7 @@
     {name:'Overkill',note:'Everything hits four times harder',values:{bulletDamage:220,bulletForce:4,explosionPower:3,pierceSpeed:2,limbCrush:true,extraGunshot:true}}
   ];
   const format=(item,value)=>item.type!=='range'?String(value):(+value.toFixed(item.step<.1?2:item.step<1?1:0))+item.unit;
-  function applySettings(values){sim.configure(values);try{localStorage.setItem(STORE,JSON.stringify(sim.settings));}catch{/* private mode: settings last for this visit only */}reflectSettings();}
+  function applySettings(values){sim.configure(values);try{localStorage.setItem(STORE,JSON.stringify({version:2,...Object.fromEntries(SETTINGS.filter(i=>sim.settings[i.id]!==i.def).map(i=>[i.id,sim.settings[i.id]]))}));}catch{/* private mode: settings last for this visit only */}reflectSettings();}
   // Everything outside the canvas that mirrors a setting.
   function reflectSettings(){const set=sim.settings;$('#fps').hidden=!set.showFps;$('#tool-caption').hidden=!set.hints;$('#sound-btn').textContent=set.sound?'Sound on':'Sound off';$('#sound-btn').setAttribute('aria-pressed',String(set.sound));
     const preset=[...$('#gravity').options].find(o=>o.value!=='custom'&&Math.abs(Number(o.value)*9.81-set.gravity)<.02);$('#gravity').value=preset?preset.value:'custom';$('#gravity-custom').textContent=`Custom (${format(SETTINGS[0],set.gravity).trim()})`;
@@ -292,7 +297,7 @@
     // An imported file is untrusted: configure() keeps only known ids with values inside their ranges.
     $('#settings-import').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>100000)throw 0;const values=JSON.parse(await file.text());if(!values||typeof values!=='object')throw 0;const kept=Object.keys(Sandbox.sanitize(values)).length;applySettings(values);toast(`Imported ${kept} settings`);}catch{toast('That file is not a settings export.');}};
   }
-  buildSettings();try{sim.configure(JSON.parse(localStorage.getItem(STORE)||'{}'));}catch{/* corrupt or unavailable storage: defaults */}reflectSettings();
+  buildSettings();try{const saved=JSON.parse(localStorage.getItem(STORE)||'{}');if(saved.version!==2)for(const id of ['pierceSpeed','bladeGrip','shadows'])delete saved[id]; /* version 1 stored every value, so old defaults would otherwise stick for ever */ sim.configure(saved);}catch{/* corrupt or unavailable storage: defaults */}reflectSettings();
   const help=$('#help-dialog');function showHelp(){if(!help.open)help.showModal();}$('#help-btn').onclick=showHelp;$('#more-help').onclick=showHelp;$('#close-help').onclick=()=>help.close();$('#start-btn').onclick=()=>help.close();help.addEventListener('click',e=>{if(e.target===help){const r=help.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)help.close();}});
   $('#deselect-btn').onclick=()=>select(null);$('#freeze-selection').onclick=()=>{sim.freeze(state.selected);updateSelection();};$('#activate-selection').onclick=()=>{toast(sim.activate(state.selected));updateSelection();};$('#delete-selection').onclick=()=>{sim.removeEntity(state.selected);select(null);};
   $('#search').addEventListener('input',renderCatalog);
