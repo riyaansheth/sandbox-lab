@@ -12,12 +12,15 @@
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
   const rnd=(a,b)=>a+random()*(b-a);
   // Dimensions are shared by the physics bodies and the renderer, in world pixels.
+  // A true side profile, facing +x: one torso seen edge-on, both arms hanging from the one shoulder point and both legs from the one hip, exactly overlapped at rest.
+  // Slots 5-7 and 11-13 are the far arm and leg (drawn behind the torso), 8-10 and 14-16 the near ones (drawn in front). [part, x, y, width, height] from the spawn point.
   const ANATOMY=[
-    ['head',0,-105,23,30],['neck',0,-84,11,14],['chest',0,-60,35,36],['abdomen',0,-32,26,23],['pelvis',0,-11,30,23],
-    ['upper arm',-24,-56,12,35],['forearm',-25,-23,10,31],['hand',-25,-1,10,15],
-    ['upper arm',24,-56,12,35],['forearm',25,-23,10,31],['hand',25,-1,10,15],
-    ['thigh',-10,22,16,45],['shin',-10,64,12,41],['foot',-10,88,22,12],
-    ['thigh',10,22,16,45],['shin',10,64,12,41],['foot',10,88,22,12]
+    // The foot's physics box sits exactly centred under the ankle: loaded even one pixel off-centre it rocks onto its heel and skates (7 px/s); the drawing extends the toes forward of the box instead.
+    ['head',2,-105,24,30],['neck',0,-84,11,14],['chest',0,-60,26,36],['abdomen',0,-32,22,23],['pelvis',0,-11,24,23],
+    ['upper arm',0,-54,12,35],['forearm',0,-21,10,31],['hand',0,1,10,15],
+    ['upper arm',0,-54,12,35],['forearm',0,-21,10,31],['hand',0,1,10,15],
+    ['thigh',0,22,16,45],['shin',0,64,12,41],['foot',0,88,22,12],
+    ['thigh',0,22,16,45],['shin',0,64,12,41],['foot',0,88,22,12]
   ];
   const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
   // Every tunable lives in this one table: the engine reads the values, the settings page is generated from it, and saved values are validated against it.
@@ -97,7 +100,7 @@
   };
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
-  const ORGANS={head:[['brain',-1,-1,1,.35,1.5]],chest:[['heart',-.55,-.6,.2,.25,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
+  const ORGANS={head:[['brain',-1,-1,.7,.3,1.5]],chest:[['heart',-.1,-.45,.75,.3,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
   const ARTERIAL=new Set(['neck','upper arm','thigh']),ARTERY_RATE=2.5; // deep wounds here hit an artery: they bleed this much faster, in spurts
   const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
@@ -106,7 +109,7 @@
   // Angles are for a right-facing body and are mirrored for a left-facing one. Anything a pose does not mention is [0, 1]: straight, full strength.
   // Arms are mirror images of each other (the left elbow bends negative, the right positive), so arm entries come in pairs.
   const POSES={
-    stand:{5:[.07,1],6:[-.2,1],8:[-.09,1],9:[-.26,1]},   // legs stay symmetric and straight: any standing asymmetry ratchets the feet along the floor with each breath
+    stand:{5:[.12,1],6:[-.16,1],8:[-.1,1],9:[-.3,1]},   // legs stay symmetric and straight: any standing asymmetry ratchets the feet along the floor with each breath
     kneel:{11:[.15,1.3],14:[.15,1.3],12:[1.9,1.3],15:[1.9,1.3],13:[.4,.6],16:[.4,.6]},                                  // on the knees, shins folded back
     crouch:{11:[-1.05,1.5],14:[-1.05,1.5],12:[2.0,1.5],15:[2.0,1.5],3:[-.15,1],5:[-.5,1.5],8:[-.5,1.5]},             // knees under the body, ready to rise
     gather:{11:[-.7,1.2],14:[-.7,1.2],12:[1.4,1.2],15:[1.4,1.2],5:[-.9,2],8:[-.9,2],6:[-1.3,2],9:[-1.3,2]},          // lying: limbs drawn in, hands under the shoulders
@@ -116,7 +119,7 @@
     limp:Object.fromEntries(Array.from({length:17},(_,slot)=>[slot,[0,0]]))        // every muscle off: unconscious or dead
   };
   // How strong each joint's muscles are next to each other, and how hard any of them can pull: the error a muscle "sees" is capped, which caps its torque.
-  const MUSCLE={atlas:1.1,neck:1.3,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.45,MUSCLE_MAX=2,POSE_BLEND=.25; // MUSCLE_MAX: the chest carries five joints, so their stiffnesses add up on it; much above 2 each and a rigid pose rings, then explodes
+  const MUSCLE={atlas:1.6,neck:1.8,spine:1.6,waist:1.6,shoulder:.32,elbow:.26,wrist:.16,hip:1.7,knee:1.7,ankle:1.3},MUSCLE_KP=.0034,MUSCLE_KD=.0042,MUSCLE_REACH=.45,MUSCLE_MAX=2,POSE_BLEND=.25; // MUSCLE_MAX: the chest carries five joints, so their stiffnesses add up on it; much above 2 each and a rigid pose rings, then explodes
   // Reactions. FLINCH: seconds a flinch lasts. STEP: seconds per recovery step, and how far a stagger shifts the balance point (px per point of damage, capped).
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
@@ -126,10 +129,13 @@
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
+  // Bullets: x1.4 at the muzzle, full damage out to RANGE_NEAR px, then falling by one for every RANGE_FALLOFF px down to RANGE_MIN. A round that still carries THROUGH damage goes clean through fresh flesh.
+  const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
+  const WRENCH_PULL=70,WRENCH_BLOW=45,VITAL_JOINT={atlas:4,neck:4,spine:3,waist:3}; // px the cursor must be hauling from the body; damage a blow must do; how much longer the neck and spine hold out than a limb
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
   // Balance and landing. STEP_*: how far ahead of its feet (px, with velocity looked ahead) the chest may get before a recovery step, and the pause between steps.
   // LAND_*: a fall speed (px/frame) that counts as a full-depth landing, and how long the legs take to straighten again. STRUGGLE_*: tone and kick rate of a body held off the ground.
-  const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
+  const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -142,19 +148,19 @@
   // arms and thighs swing forward negative, elbows only flex forward, knees only fold back, the trunk bends forward further than it arches.
   // Joint template: [parent slot, child slot, anchor on parent, anchor on child, min, max, name]. Slots index ANATOMY. Regeneration regrows from the same table.
   const JOINTS=[
-    [1,0,{x:0,y:-7},{x:0,y:14},-.5,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.3,.45,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.55,.2,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.55,.2,'waist'],
-    [2,5,{x:-21,y:-12},{x:3,y:-16},-2.9,.9,'shoulder'],[5,6,{x:-1,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
-    [2,8,{x:21,y:-12},{x:-3,y:-16},-2.9,.9,'shoulder'],[8,9,{x:1,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
-    [4,11,{x:-10,y:11},{x:0,y:-22},-1.9,.6,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle'],
-    [4,14,{x:10,y:11},{x:0,y:-22},-1.9,.6,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle']
+    [1,0,{x:0,y:-7},{x:-2,y:14},-.5,.6,'atlas'],[2,1,{x:0,y:-18},{x:0,y:6},-.3,.45,'neck'],[2,3,{x:0,y:17},{x:0,y:-11},-.55,.2,'spine'],[3,4,{x:0,y:10},{x:0,y:-11},-.55,.2,'waist'],
+    [2,5,{x:0,y:-10},{x:0,y:-16},-2.9,.9,'shoulder'],[5,6,{x:0,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[6,7,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
+    [2,8,{x:0,y:-10},{x:0,y:-16},-2.9,.9,'shoulder'],[8,9,{x:0,y:17},{x:0,y:-16},-2.5,.05,'elbow'],[9,10,{x:0,y:15},{x:0,y:-7},-.6,.6,'wrist'],
+    [4,11,{x:0,y:11},{x:0,y:-22},-1.9,.6,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle'],
+    [4,14,{x:0,y:11},{x:0,y:-22},-1.9,.6,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle']
   ];
-  const LOCK_STIFFNESS=1.25,SLOT_MUSCLE=Array.from({length:17},(_,slot)=>{const t=JOINTS.find(j=>j[1]===slot);return t?MUSCLE[t[6]]:1;}); // each slot's usual muscle strength, so a pose can ask for one absolute stiffness everywhere
+  const LOCK_STIFFNESS=2,SLOT_MUSCLE=Array.from({length:17},(_,slot)=>{const t=JOINTS.find(j=>j[1]===slot);return t?MUSCLE[t[6]]:1;}); // each slot's usual muscle strength, so a pose can ask for one absolute stiffness everywhere
   const LIMIT_GAIN=.6,LIMIT_SPEED=.4,LIMIT_SHARE=.5,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.8,AIR_UPRIGHT=.15,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.busy=new Array(17).fill(0);this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -196,11 +202,11 @@
     }
     makeJoint(kind,flip,a,b,[,,pa,pb,min,max,name]) {
       // Anchors are stored unrotated; a regrown limb hangs off a body that may be at any angle.
-      const c=Constraint.create({bodyA:a,bodyB:b,pointA:Vector.rotate(pa,a.angle),pointB:Vector.rotate(pb,b.angle),length:0,stiffness:.97,damping:.2});
+      const c=Constraint.create({bodyA:a,bodyB:b,pointA:Vector.rotate(flip?{x:-pa.x,y:pa.y}:pa,a.angle),pointB:Vector.rotate(flip?{x:-pb.x,y:pb.y}:pb,b.angle),length:0,stiffness:.97,damping:.2}); // a left-facing body is the mirror image: feet and face point the other way
       c.plugin={joint:true,breakForce:kind==='android'?45:29,min:flip?-max:min,max:flip?-min:max,name};return c;
     }
     ragdoll(kind,x,y,flip=false) {
-      const group=Body.nextGroup(true),parts=ANATOMY.map(([,dx,dy],slot)=>this.makePart(kind,slot,x+dx,y+dy,0,group,flip));
+      const group=Body.nextGroup(true),parts=ANATOMY.map(([,dx,dy],slot)=>this.makePart(kind,slot,x+(flip?-dx:dx),y+dy,0,group,flip));
       const joints=JOINTS.map(t=>this.makeJoint(kind,flip,parts[t[0]],parts[t[1]],t));
       const e=this.entity(kind,parts,joints);e.upright=true;e.blood=100;e.alive=true;return e;
     }
@@ -215,7 +221,7 @@
     seat(main,owner,piece,links,prefer) {
       const slotOf=set=>new Map([...set].map(b=>[b.plugin.slot,b])),have=slotOf(main),bring=slotOf(piece);if([...bring.keys()].some(slot=>have.has(slot)))return false; // that place is already taken
       const fits=([pa,pb])=>(have.has(pa)&&bring.has(pb))||(have.has(pb)&&bring.has(pa)),t=JOINTS.find(j=>fits(j)&&(!prefer||j[0]===prefer.plugin.slot||j[1]===prefer.plugin.slot))||JOINTS.find(fits);if(!t)return false;
-      const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip,anchor=x=>Vector.add(x.position,Vector.rotate(x===a?t[2]:t[3],x.angle));
+      const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip,anchor=x=>{const local=x===a?t[2]:t[3];return Vector.add(x.position,Vector.rotate(flip?{x:-local.x,y:local.y}:local,x.angle));},unused=x=>Vector.add(x.position,Vector.rotate(x===a?t[2]:t[3],x.angle));
       const turn=stump.angle-limb.angle,pivot=anchor(limb);for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
       // The piece's own joints (and anything pinned or held in it) carry anchors in world orientation; Matter only turns those on its next solve, and until then they would wrench the piece about. Turn them now.
       for(const c of this.joints){if(c.bodyA&&piece.has(c.bodyA)){Vector.rotate(c.pointA,turn,c.pointA);c.angleA=c.bodyA.angle;}if(c.bodyB&&piece.has(c.bodyB)){Vector.rotate(c.pointB,turn,c.pointB);c.angleB=c.bodyB.angle;}}
@@ -235,12 +241,12 @@
       // Where and how each thing is held, in the item's own frame: grip point, and its angle relative to the hand.
       const flip=!!hand.plugin.flip,side=flip?-1:1,def=defs[item.plugin.kind]||{},grip=def.grip||(def.firearm?{x:-14,y:9}:def.sharp?{x:0,y:item.plugin.h*.37}:{x:0,y:0}),tilt=def.firearm?side*Math.PI/2:def.sharp?side*1.15:0; // a pistol lies along the forearm, so raising the arm levels it
       if(flip)item.plugin.flip=true;else delete item.plugin.flip;Body.setAngle(item,hand.angle+tilt);const local=Vector.rotate({x:grip.x*side,y:grip.y},item.angle);
-      Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;
+      Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;item.plugin.heldSlot=hand.plugin.slot;
       // The second pin sits at the item's centre of mass: a long lever, so the weight of a pistol cannot twist it in the hand.
       const toCentre=Vector.sub(item.position,hand.position),axis=Vector.magnitude(toCentre)>6?toCentre:Vector.rotate({x:0,y:-12},item.angle);for(const offset of [{x:0,y:0},axis]){const point=Vector.add(hand.position,offset);const c=Constraint.create({bodyA:hand,bodyB:item,pointA:offset,pointB:Vector.sub(point,item.position),length:0,stiffness:.9,damping:.2});c.plugin={hold:true};Composite.add(this.world,c);}
       e.restTime=0;this.onEffect('impact',.2);return `Picked up the ${(CATALOG.find(c=>c.id===item.plugin.kind)?.name||'object').toLowerCase()}`;
     }
-    release(item){for(const c of this.joints.filter(c=>c.plugin.hold&&c.bodyB===item))Composite.remove(this.world,c);item.collisionFilter.group=0;delete item.plugin.heldBy;}
+    release(item){for(const c of this.joints.filter(c=>c.plugin.hold&&c.bodyB===item))Composite.remove(this.world,c);item.collisionFilter.group=0;delete item.plugin.heldBy;delete item.plugin.heldSlot;}
     // Things leave a hand when the cursor takes them (see beginDrag), when the holder dies, or when the hand is gone. A tug cannot be the test: pulling a held pistol just drags its owner along.
     hands(){for(const item of this.bodies){if(item.plugin.heldBy===undefined)continue;const pins=this.joints.filter(c=>c.plugin.hold&&c.bodyB===item),e=pins[0]&&this.getEntity(pins[0].bodyA);if(!pins.length||!e||!e.alive)this.release(item);}}
     // Dismember: cut the clicked part off at the joint that ties it to the rest of the body (the side nearer the chest). The chest has no such joint, so it loses everything attached to it.
@@ -292,7 +298,7 @@
       const owner=this.getEntity(job.root);if(!owner||!this.bodies.includes(job.root))return false;
       const whole=this.connected(job.root),slots=new Map([...whole].map(b=>[b.plugin.slot,b]));
       for(const stump of whole)for(const t of JOINTS){const [pa,pb]=t,have=stump.plugin.slot;if((pa!==have&&pb!==have)||slots.has(pa)===slots.has(pb))continue;
-        const need=have===pa?pb:pa,flip=!!stump.plugin.flip,offset=Vector.rotate({x:ANATOMY[need][1]-ANATOMY[have][1],y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
+        const need=have===pa?pb:pa,flip=!!stump.plugin.flip,offset=Vector.rotate({x:(ANATOMY[need][1]-ANATOMY[have][1])*(flip?-1:1),y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
         const part=this.makePart(owner.kind,need,stump.position.x+offset.x,stump.position.y+offset.y,stump.angle,stump.collisionFilter.group,flip);Body.setVelocity(part,stump.velocity);
         part.plugin.grow=0;part.plugin.growFrom={...(need===pb?t[3]:t[2])};part.plugin.entityId=owner.id;slots.set(need,part);
         const joint=this.makeJoint(owner.kind,flip,slots.get(pa),slots.get(pb),t);Composite.add(this.world,[part,joint]);
@@ -352,7 +358,7 @@
       if(set.slowHealing){if(human){e.blood=Math.min(100,e.blood+seconds*.8);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*.4);}
         for(const b of e.bodies){const p=b.plugin;p.hp=Math.min(p.maxHp,p.hp+seconds*1.5);p.bone=Math.min(100,(p.bone??100)+seconds);for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds*.05);p.bruise=Math.max(0,(p.bruise||0)-seconds*.02);if(p.wounds?.length&&random()<seconds*.06)p.wounds.shift();}}
     }
-    forced(part){const e=this.getEntity(part);return !!e&&((this.drag&&this.drag.bodyB.plugin.entityId===e.id)||this.time-(e.hitTime??-9)<.35);}
+    forced(part){const e=this.getEntity(part);if(!e)return false;const wrench=this.drag&&this.drag.bodyB.plugin.entityId===e.id&&Constraint.currentLength(this.drag)>WRENCH_PULL;return wrench||(this.time-(e.hitTime??-9)<.35&&(e.hitHard||0)>=WRENCH_BLOW);}
     // A joint bent the wrong way, hard and for long enough, breaks. A limb joint fractures the limb below it; the neck kills; the spine takes the legs away.
     snap(c) {
       const b=c.bodyB,e=this.getEntity(b),at=Vector.add(b.position,c.pointB);c.plugin.broken=true;c.plugin.strain=0;this.onEffect('break',.5);if(b.plugin.material!=='flesh'){this.burst(at.x,at.y,8,'#ffe7a0',5);b.plugin.hp=Math.max(0,b.plugin.hp-60);return;}
@@ -360,6 +366,7 @@
       if(!e||!e.alive)return;e.pain=Math.min(100,(e.pain||0)+30*this.settings.painSensitivity);e.hitTime=this.time;e.shoutT=.5;
       if(c.plugin.name==='atlas'||c.plugin.name==='neck')this.kill(e,'broken neck');else if(c.plugin.name==='spine'||c.plugin.name==='waist')e.paralysed=true;
     }
+    bearing(f){return f.plugin.part==='foot'?f.position.x-(f.plugin.flip?-1:1)*FOOT_AHEAD*Math.cos(f.angle):f.position.x;}
     // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
     strengthOf(b){return this.fractured(b)?0:clamp((b.plugin.hp??100)/50,.2,1);}
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
@@ -503,7 +510,7 @@
       else{uprightness=0;liftScale=0;}
       const down=rung==='stand'&&(Math.abs(tilt)>.6||!support.length);
       // Catching its balance: when the chest gets ahead of the feet (or is about to), it steps that way rather than tipping over like a plank.
-      e.stepCool=Math.max(0,(e.stepCool||0)-seconds);if(rung==='stand'&&!down&&support.length&&!(e.stagN>0)&&!e.stepCool&&!grabbed&&!e.rise){let fx=0;for(const f of support)fx+=f.position.x/support.length;
+      e.stepCool=Math.max(0,(e.stepCool||0)-seconds);if(rung==='stand'&&!down&&support.length&&!(e.stagN>0)&&!e.stepCool&&!grabbed&&!e.rise){let fx=0;for(const f of support)fx+=this.bearing(f)/support.length;
         const ahead=chest.position.x-fx+chest.velocity.x*STEP_LOOKAHEAD;if(Math.abs(ahead)>STEP_TRIGGER){e.stagN=Math.abs(ahead)>STEP_TRIGGER*2.2?2:1;e.stagDir=Math.sign(ahead);e.stagT=0;e.stagLeg=(e.stagLeg^1)||0;e.stagPush=Math.min(STAGGER_MAX,Math.abs(ahead)*.7);}}
       // Getting up is staged: gather the limbs, push up on the arms, get the knees under, and only then stand. Pain and blood loss slow every stage.
       // If it is still down a while after the last stage, the attempt has failed: it sags, rests, and tries again.
@@ -520,20 +527,24 @@
       // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
       const vigour=e.effort*tone*(human?clamp((e.blood-20)/45,.4,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.85:1):1);
       const crawlDir=this.pose(e,base,aiming,chest,down,seconds,rung);
+      if(e.idle&&(rung==='crawl'||rung==='drag'))return; // nothing to flee and nowhere to go: it lies there with every muscle off, so it can come to rest and sleep like any other body on the floor
       // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
-      const live=this.joints;for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
+      // Several muscles meet at the pelvis and the chest. Each one's damping is explicit, and their sum on one body must stay well under one per step or it overshoots, flips sign every step and blows up;
+      // so a joint's damping is divided by how many muscles share its busier end.
+      const live=this.joints,busy=this.busy;busy.fill(0);for(let i=0;i<live.length;i++){const c=live[i];if(c.plugin.joint&&c.bodyA.plugin.entityId===e.id&&c.bodyB.plugin.slot!==undefined){busy[c.bodyA.plugin.slot]++;busy[c.bodyB.plugin.slot]++;}}
+      for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
         if(c.plugin.name==='ankle'&&this.touching.has(b)&&rung==='stand')continue; // a planted foot lies flat on the ground whatever the shin does; the ankle gives. Holding it to the shin makes the foot rock on its edge and walk.
         const arm=slot>=5&&slot<=10,limb=Math.min(this.strengthOf(a),this.strengthOf(b));let power=e.poseNow.power[slot]*limb*(arm&&this.poseWant.armsFree?vigour/tone:vigour)*(MUSCLE[c.plugin.name]||1);if(power<=0)continue;if(power>MUSCLE_MAX)power=MUSCLE_MAX; // arms need no ground to reach out; and no muscle, however it is driven, is stiffer than the step can integrate
         const target=e.poseNow.angle[slot]*(b.plugin.flip?-1:1),error=clamp(wrap(target-(b.angle-a.angle)),-MUSCLE_REACH,MUSCLE_REACH),ia=free(a)?a.inverseInertia:0,ib=free(b)?b.inverseInertia:0;if(!ia&&!ib)continue;
         // Damping grows with the root of the strength: scaled linearly, the strong leg joints end up over-damped for a 120 Hz explicit step and chatter.
-        const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
+        const torque=(MUSCLE_KP*error*power-MUSCLE_KD*(b.angularVelocity-a.angularVelocity)*Math.sqrt(power)/Math.max(1,busy[a.plugin.slot]-1,busy[slot]-1))/(ia+ib);if(ib)b.torque+=torque;if(ia)a.torque-=torque;}
       // Two parts answer to the world rather than to a parent: the chest holds itself upright (or, crawling, level with the ground), and planted feet hold themselves flat. Both push against the ground through the limbs.
       const lean=crawlDir?crawlDir*1.2:0;if(free(chest)&&(uprightness>0||crawlDir))chest.torque+=(clamp(wrap(lean-chest.angle),-.5,.5)*.0011*(crawlDir?1.5:uprightness)*(supported?1:AIR_UPRIGHT)-chest.angularVelocity*.0022)*chest.inertia*vigour;
       if(rung==='stand')for(const f of support)if(f.plugin.part==='foot'&&free(f))f.torque+=(clamp(wrap(-f.angle),-.5,.5)*.0024-f.angularVelocity*.003)*f.inertia*vigour;
       // A real step: the stepping foot is unloaded, picked up, and carried to where the body is going, by a force between foot and pelvis (internal, so it cannot push the body along by itself).
       // With the foot back under the chest the body recovers by moving over its feet instead of tipping back like a plank.
       if(e.stagN>0&&rung==='stand'&&!down&&pelvis&&e.stagT<STEP_TIME*.65){const foot=e.bodies.find(b=>b.plugin.slot===(e.stagLeg?16:13)),i=support.indexOf(foot);
-        if(foot&&free(foot)&&free(pelvis)&&this.bears(foot)&&(i<0||support.length>1)){if(i>=0)support.splice(i,1);const w=this.carried(e,chest)*.001*Math.max(this.gravity,.2),goal=chest.position.x+chest.velocity.x*STEP_LOOKAHEAD*.6+e.stagDir*STEP_REACH;
+        if(foot&&free(foot)&&free(pelvis)&&this.bears(foot)&&(i<0||support.length>1)){if(i>=0)support.splice(i,1);const w=this.carried(e,chest)*.001*Math.max(this.gravity,.2),goal=chest.position.x+chest.velocity.x*STEP_LOOKAHEAD*.6+e.stagDir*STEP_REACH+(foot.plugin.flip?-1:1)*FOOT_AHEAD;
           const fx=clamp((goal-foot.position.x)*.03-foot.velocity.x*.12,-.6,.6)*w,fy=-STEP_LIFT*w;foot.force.x+=fx;foot.force.y+=fy;pelvis.force.x-=fx;pelvis.force.y-=fy;}}
       // Only what is really braced against something may take the body's weight. A light shin that is merely brushing the floor would be shot downward by it; a part already moving down is not holding anything up.
       for(let i=support.length-1;i>=0;i--)if(support[i].velocity.y>BRACED||support[i].speed>BRACED*3)support.splice(i,1);
@@ -542,7 +553,7 @@
       // A hurt leg takes less of the load, so the body shifts over the good one: that is a limp. Shares are by the health of each supporting leg, from its foot up to the hip.
       let mass=this.carried(e,chest),footX=0,footY=-1e9,total=0;const shares=this.shares;shares.length=support.length;
       for(let i=0;i<support.length;i++){const f=support[i],slot=f.plugin.slot,from=slot>=14?14:11;let health=1;for(const b of e.bodies)if(b.plugin.slot>=from&&b.plugin.slot<=from+2)health=Math.min(health,b.plugin.hp/b.plugin.maxHp);shares[i]=clamp(health*health,.12,1);total+=shares[i];}
-      for(let i=0;i<support.length;i++){shares[i]/=total;footX+=support[i].position.x*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
+      for(let i=0;i<support.length;i++){shares[i]/=total;footX+=this.bearing(support[i])*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
       const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
       const daze=e.consciousness==='dazed'?Math.sin(this.time*1.3)*9+Math.sin(this.time*.7+1)*6:0; // dazed: the point it balances over wanders
       const sway=clamp((footX+daze+(e.leanAway||0)+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
@@ -622,7 +633,7 @@
       p.hp=Math.max(0,p.hp-amount);
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
-      if(e)e.hitTime=this.time;
+      if(e){e.hitTime=this.time;e.hitHard=amount;}
       if(e&&e.kind==='human'&&e.alive){const hurt=amount*profile.pain*(PAIN_PART[p.part]??1)*set.painSensitivity;e.pain=Math.min(100,(e.pain||0)+hurt);
         // the wound that hurts most is the one the hands go to; an older one only keeps that place while it still hurts more
         if(p.slot!==undefined&&hurt>=(e.hurtScore||0)){const local=Vector.rotate(Vector.sub(point,body.position),-body.angle);e.hurtScore=hurt;e.hurtSlot=p.slot;e.hurtX=local.x;e.hurtY=local.y;}}
@@ -729,7 +740,7 @@
     // Flesh stops a first bullet. A limb that is already perforated or destroyed no longer does: the next bullet goes in one side and out the other
     // (entry and exit wound) and carries on, weaker, into whatever is behind it.
     passes(body,damage){const p=body.plugin,mat=matOf(p);if(p.boundary||body.isStatic||mat.absorb>=1)return false;if(mat.brittle)return true;if(p.material!=='flesh')return p.hp-damage<=p.maxHp*.3; // brittle things never stop a bullet; wood, plastic and rubber do until they are nearly destroyed
-      return p.hp<=0||damage>=90||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');} // flesh: already holed, already destroyed, or a round too powerful to stop
+      return p.hp<=0||damage>=THROUGH||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');} // flesh: already holed, already destroyed, or a round too powerful to stop
     shoot(from,to,ignore=null) {
       const direction=Vector.normalise(Vector.sub(to,from));if(!direction.x&&!direction.y)return;
       const end=Vector.add(from,Vector.mult(direction,2500)),rx=end.x-from.x,ry=end.y-from.y,hits=[];
@@ -738,9 +749,9 @@
         let near=Infinity,far=-Infinity;const v=body.vertices;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],sx=b.x-a.x,sy=b.y-a.y,den=rx*sy-ry*sx;
           if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
         if(near<Infinity)hits.push({body,near,far});}
-      hits.sort((a,b)=>a.near-b.near);const at=t=>({x:from.x+rx*t,y:from.y+ry*t});let first=null,stop=end,power=1;
+      hits.sort((a,b)=>a.near-b.near);const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=t=>clamp(RANGE_POINT_BLANK-(t*2500-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let first=null,stop=end,power=1;
       for(const {body,near,far} of hits){first??=body;stop=at(near);if(body.plugin.boundary)break;
-        const damage=this.settings.bulletDamage*power,through=this.passes(body,damage)&&far>near;
+        const damage=this.settings.bulletDamage*power*range(near),through=this.passes(body,damage)&&far>near;
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
         const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
@@ -888,7 +899,7 @@
       // Limits are equal-and-opposite angular impulses: momentum-neutral, so a body pinned against the floor cannot walk itself sideways.
       for(const c of this.joints){if(!c.plugin.joint||c.plugin.min===undefined)continue;const a=c.bodyA,b=c.bodyB,slack=this.fractured(a)||this.fractured(b)||c.plugin.broken?FRACTURE_SLACK:0,relative=wrap(b.angle-a.angle),error=relative-clamp(relative,c.plugin.min-slack,c.plugin.max+slack);
         // Breaking takes force from outside: the cursor wrenching the body about, or a blow in the last moments. A body folding under its own weight, or pushing itself up off its face, does not snap its own neck.
-        const limp=this.getEntity(a)?.alive===false;if(Math.abs(error)>BREAK_BEND&&!slack&&(limp||this.forced(a))){c.plugin.strain=(c.plugin.strain||0)+seconds;if(c.plugin.strain>(limp&&!this.forced(a)?BREAK_TIME*8:BREAK_TIME))this.snap(c);} /* a dead body that lands with a limb folded the wrong way under it breaks it too, given a moment */ else if(c.plugin.strain)c.plugin.strain=0;
+        const limp=this.getEntity(a)?.alive===false;if(Math.abs(error)>BREAK_BEND*(VITAL_JOINT[c.plugin.name]?1.5:1)&&!slack&&(limp||this.forced(a))){c.plugin.strain=(c.plugin.strain||0)+seconds;if(c.plugin.strain>(limp&&!this.forced(a)?BREAK_TIME*8:BREAK_TIME)*(VITAL_JOINT[c.plugin.name]||1))this.snap(c);} /* a dead body that lands with a limb folded the wrong way under it breaks it too, given a moment */ else if(c.plugin.strain)c.plugin.strain=0;
         if(Math.abs(error)<.005)continue;
         const ia=a.isStatic?0:a.inverseInertia,ib=b.isStatic?0:b.inverseInertia,total=ia+ib;if(!total)continue;
         const velocity=b.angularVelocity-a.angularVelocity,target=clamp(-error*LIMIT_GAIN,-LIMIT_SPEED,LIMIT_SPEED),impulse=(target-velocity)*LIMIT_SHARE; // only part of the correction per step: the muscles across the same joint damp it too, and together a full correction overshoots and rings
