@@ -62,6 +62,9 @@
     {id:'reactionIntensity',section:'Ragdolls',label:'Reaction intensity',help:'How big the movements of a reaction are.',type:'range',min:.25,max:2,step:.05,def:1,unit:'×'},
     {id:'painSensitivity',section:'Ragdolls',label:'Pain sensitivity',help:'How much pain a given injury causes.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
     {id:'breathing',section:'Ragdolls',label:'Breathing',help:'Living humans breathe: faster and deeper in pain, shallow near death.',type:'toggle',def:true},
+    {id:'awareness',section:'Ragdolls',label:'Awareness',help:'Conscious humans look at what threatens them, throw their arms up at something coming at their head, pull away from heat, and start when someone nearby is hurt.',type:'toggle',def:true},
+    {id:'faces',section:'Ragdolls',label:'Faces',help:'Eyes and mouth follow pain, consciousness and where the ragdoll is looking. Off, every face is neutral.',type:'toggle',def:true},
+    {id:'grunts',section:'Ragdolls',label:'Grunts',help:'A soft synthesized grunt when a conscious human is hit. Needs sound on.',type:'toggle',def:false},
     {id:'brainDamage',section:'Ragdolls',label:'Brain damage',help:'A damaged head causes blackouts: the ragdoll collapses now and then.',type:'toggle',def:false},
     {id:'slowHealing',section:'Ragdolls',label:'Slow injury healing',help:'Wounds of the living slowly close, bones knit and blood is replaced.',type:'toggle',def:false},
     {id:'fragility',section:'Gore',label:'Fragility multiplier',help:'Multiplies all damage to ragdolls. Higher is more fragile.',type:'range',min:.1,max:10,step:.1,def:1,unit:'×'},
@@ -146,6 +149,7 @@
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
+  const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -369,6 +373,9 @@
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
     react(e,body,amount,direction,stun) {
       const slot=body.plugin.slot??2,dir=direction&&Math.abs(direction.x)>1e-6?Math.sign(direction.x):(e.bodies[2]&&body.position.x>e.bodies[2].position.x?-1:1);
+      e.shoutT=amount>38?.5:0;if(e.kind==='human'&&this.settings.grunts&&amount>12&&e.consciousness!=='unconscious')this.onEffect('grunt',clamp(amount/60,.2,1));
+      // Someone being hurt startles the conscious people near them: a small flinch, and they look.
+      if(this.settings.awareness&&amount>15)for(const other of this.entities){if(other===e||other.kind!=='human'||!this.active(other)||other.flinch>0)continue;const oc=other.bodies[0];if(!oc||Math.abs(oc.position.x-body.position.x)>WITNESS_RANGE)continue;other.flinch=FLINCH_TIME*.7;other.flinchMag=.22;other.flinchSlot=2;other.flinchDir=Math.sign(oc.position.x-body.position.x)||1;other.startleX=body.position.x;other.startleAt=this.time;}
       e.fleeT=FLEE_TIME;e.flinch=FLINCH_TIME*clamp(amount/25,.8,1.6);e.flinchMag=clamp(amount/28,.12,1)*(e.consciousness==='dazed'?.55:1);e.flinchSlot=slot;e.flinchDir=dir;
       const standing=this.balancing(e)&&!(e.stagN>0)&&Math.abs(wrap(e.bodies[2]?.angle||0))<.4,torso=slot<=4;
       if(standing&&amount>10&&(torso||amount>25)){e.stagN=clamp(Math.round(amount/16),1,3);e.stagDir=dir;e.stagT=0;e.stagLeg=dir>0?0:1;e.stagPush=Math.min(STAGGER_MAX,amount*STAGGER_PUSH);}
@@ -411,6 +418,13 @@
       if(human&&set.breathing){const b=Math.sin(e.breath*Math.PI*2),weak=e.blood<45,depth=(.035+pain*.05)*(weak?.45:1)*(weak?1+.5*Math.sin(this.time*5.3):1);A[5]+=b*depth;A[8]-=b*depth;A[3]+=b*depth*.35;A[1]-=b*depth*.3;} // shoulders rise and fall, the spine with them
       if(!human){ // androids feel nothing, but damaged actuators glitch: jerky, more so the worse off it is
         let hp=0;for(const b of e.bodies)hp+=b.plugin.hp/b.plugin.maxHp;hp/=e.bodies.length||1;if(hp<.6){const g=(.6-hp)*1.2*k;for(let i=5;i<17;i++)A[i]+=(Math.floor(this.time*9+i*3.7)%5-2)*.06*g*((i*7+Math.floor(this.time*9))%3);if(random()<seconds*g*4){const b=e.bodies[(random()*e.bodies.length)|0];this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}}return;}
+      if(set.awareness){const head=e.bodies.find(b=>b.plugin.slot===0);e.awareT=(e.awareT||0)+seconds;if(head&&e.awareT>=AWARE_EVERY){e.awareT=0;this.aware(e,chest,head,this.bodiesNow);}
+        if(head&&e.lookX!=null){const d=Math.sign(e.lookX-head.position.x);e.gaze=d;A[0]+=d*.11*k*flip;A[1]+=d*.04*k*flip;}else e.gaze=0;                       // head and eyes to the threat
+        if(e.heatDir){A[3]+=-e.heatDir*.2*flip;for(const [sh,side] of [[5,-1],[8,1]])if(side===-e.heatDir||true){A[sh]+=-e.heatDir*.55*flip;P[sh]=2.5;}e.leanAway=e.heatDir*14;}else e.leanAway=0; // shrink from heat: torso and arms bend away, and the balance point shifts
+        if(e.guardT>0&&head){e.guardT-=seconds;const bodyAt=slot=>e.bodies.find(b=>b.plugin.slot===slot);for(const [sh,side] of [[5,-1],[8,1]]){const upper=bodyAt(sh),fore=bodyAt(sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore))continue;
+            this.reach(want,chest,{sh,side,sx:upper.position.x+Math.sin(upper.angle)*upper.plugin.h/2,sy:upper.position.y-Math.cos(upper.angle)*upper.plugin.h/2},head.position.x-e.guardDir*6,head.position.y-4,flip,6);}
+          A[3]+=e.guardDir*.18*flip;e.leanAway=e.guardDir*18;}}                                                                                                   // arms over the head, and duck away from it
+      else{e.gaze=0;e.leanAway=0;}
       if(!set.painReactions)return; // from here on it is behaviour, not reflex. Most of it scales with pain; guarding a damaged limb does not need it to still hurt.
       // Trembling: slow noise on every limb joint (a random walk pulled back to zero, so it never jumps), worse with pain and with blood loss.
       const shake=e.tremor??=new Array(17).fill(0),amp=(pain*.9+Math.max(0,60-e.blood)/60)*.09*k;for(let i=0;i<17;i++){shake[i]+=(random()-.5)*seconds*26-shake[i]*seconds*9;A[i]+=shake[i]*amp;}
@@ -429,10 +443,28 @@
       // Clutching: the nearest hand that still works goes to the wound that hurts most and stays there; both hands for the head and trunk. Not while the arms are needed to crawl or to break a fall.
       if(e.pain>CLUTCH_PAIN&&e.hurtScore>0&&rung!=='crawl'&&rung!=='drag'&&!(e.bracing>0)){const part=bodyAt(e.hurtSlot);if(part){const local=Vector.rotate({x:e.hurtX,y:e.hurtY},part.angle),tx=part.position.x+local.x,ty=part.position.y+local.y,both=e.hurtSlot<=4;let done=0;
         const arms=[[5,-1],[8,1]].map(([sh,side])=>{const upper=bodyAt(sh),fore=bodyAt(sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||(e.hurtSlot>=sh&&e.hurtSlot<=sh+2)||upper.plugin.hp<=0)return null;const sx=upper.position.x+Math.sin(upper.angle)*upper.plugin.h/2,sy=upper.position.y-Math.cos(upper.angle)*upper.plugin.h/2;return {sh,side,sx,sy,far:Math.hypot(tx-sx,ty-sy)};}).filter(Boolean).sort((a,b)=>a.far-b.far);
-        for(const arm of arms){if(done&&!both)break;const d=clamp(arm.far,Math.abs(ARM_UPPER-ARM_FORE)+2,ARM_UPPER+ARM_FORE-2),bend=arm.side*flip,beta=bend*(Math.PI-Math.acos(clamp((ARM_UPPER**2+ARM_FORE**2-d*d)/(2*ARM_UPPER*ARM_FORE),-1,1)));
-          const alpha=Math.atan2(ARM_FORE*Math.sin(beta),ARM_UPPER+ARM_FORE*Math.cos(beta)),aim=Math.atan2(-(tx-arm.sx),ty-arm.sy)-alpha; // two-link reach: the upper arm points short of the target by alpha, the elbow makes up the rest
-          A[arm.sh]=wrap(aim-chest.angle)*flip;A[arm.sh+1]=beta*flip;A[arm.sh+2]=0;P[arm.sh]=P[arm.sh+1]=4.5;want.armsFree=true;done++;}
+        for(const arm of arms){if(done&&!both)break;this.reach(want,chest,arm,tx,ty,flip,4.5);done++;}
         e.clutching=done;}else e.clutching=0;}else e.clutching=0;
+    }
+    // Two-link reach: the upper arm points short of the target by alpha and the elbow makes up the rest. The elbow only bends its own way, which picks the solution.
+    reach(want,chest,arm,tx,ty,flip,power) {
+      const d=clamp(Math.hypot(tx-arm.sx,ty-arm.sy),Math.abs(ARM_UPPER-ARM_FORE)+2,ARM_UPPER+ARM_FORE-2),bend=arm.side*flip,beta=bend*(Math.PI-Math.acos(clamp((ARM_UPPER**2+ARM_FORE**2-d*d)/(2*ARM_UPPER*ARM_FORE),-1,1)));
+      const alpha=Math.atan2(ARM_FORE*Math.sin(beta),ARM_UPPER+ARM_FORE*Math.cos(beta)),aim=Math.atan2(-(tx-arm.sx),ty-arm.sy)-alpha,A=want.angle,P=want.power;
+      A[arm.sh]=wrap(aim-chest.angle)*flip;A[arm.sh+1]=beta*flip;A[arm.sh+2]=0;P[arm.sh]=P[arm.sh+1]=power;want.armsFree=true;
+    }
+    // Awareness, ten times a second: what is the most pressing thing near this ragdoll? Something about to hit its head, heat close to it, something fast, a fire or blast, the thing that last hurt it.
+    // The result is three numbers the pose reads: where to look, whether to guard, which way to shrink from heat. No pathfinding, no memory beyond a second or two.
+    aware(e,chest,head,bodies) {
+      e.lookX=null;e.heatDir=0;let best=0;const hx=head.position.x,hy=head.position.y,note=(score,x)=>{if(score>best){best=score;e.lookX=x;}};
+      if(this.time-(e.hitTime??-9)<2.5)note(3,hx-(e.flinchDir||1)*200);                                    // whatever hit it came from the other way
+      for(let i=0;i<bodies.length;i++){const b=bodies[i],p=b.plugin;if(p.entityId===e.id)continue;const dx=b.position.x-hx,dy=b.position.y-hy,far=Math.hypot(dx,dy);if(far>SEE_RANGE)continue;
+        if(p.burning||p.heat>250){note(2+(SEE_RANGE-far)/SEE_RANGE,b.position.x);if(Math.abs(b.position.x-chest.position.x)<HEAT_NEAR+Math.max(p.w||0,p.r||0)/2&&b.position.y>hy-30&&b.position.y<chest.position.y+170)e.heatDir=Math.sign(chest.position.x-b.position.x)||1;} // close beside any part of it, from head to feet
+        if(b.speed>SEE_FAST&&!p.part){note(2.5+b.speed/10,b.position.x);
+          // on a course for the head within INCOMING seconds?
+          const vx=b.velocity.x,vy=b.velocity.y,t=-(dx*vx+dy*vy)/(vx*vx+vy*vy);if(t>0&&t<INCOMING*60){const miss=Math.hypot(dx+vx*t,dy+vy*t);if(miss<38+Math.max(p.w||0,p.h||0,p.r||0)/2){e.guardT=.6;e.guardDir=Math.sign(-dx)||1;note(9,b.position.x);}}}
+        if(this.drag?.bodyB===b&&(p.kind==='gun'||defs[p.kind]?.sharp)&&far<220)note(4,b.position.x);}       // a weapon held near it by the cursor
+      for(const f of this.flashes)if(!f.grow&&Math.hypot(f.x-hx,f.y-hy)<SEE_RANGE*1.4)note(6,f.x);
+      if(e.startleX!==undefined&&this.time-e.startleAt<1.5)note(3.5,e.startleX);
     }
     // Crawling: belly down, head the way it is going. Each good arm reaches past the head, plants, and pulls; the pull on the body is reacted on the planted hand,
     // which is pressed into the floor for grip, so it is all internal. It crawls away from what last hurt it for a few seconds, then lies still.
@@ -502,7 +534,7 @@
       for(let i=0;i<support.length;i++){shares[i]/=total;footX+=support[i].position.x*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
       const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
       const daze=e.consciousness==='dazed'?Math.sin(this.time*1.3)*9+Math.sin(this.time*.7+1)*6:0; // dazed: the point it balances over wanders
-      const sway=clamp((footX+daze+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
+      const sway=clamp((footX+daze+(e.leanAway||0)+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
       chest.force.x+=sway*.6;chest.force.y-=lift*.6;if(free(pelvis)){pelvis.force.x+=sway*.4;pelvis.force.y-=lift*.4;}
       for(let i=0;i<support.length;i++){const f=support[i];if(free(f)){f.force.x-=sway*this.shares[i];f.force.y+=lift*this.shares[i];}}
     }
@@ -777,10 +809,10 @@
     step(dt=1000/60) {
       if(dt>1000/120+.001){this.step(dt/2);this.step(dt/2);return;}
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
-      const bodies=this.bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
+      const bodies=this.bodies;this.bodiesNow=bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.alive)this.vitals(e,seconds);else if(e.twitchAt?.length)this.twitch(e,seconds);
-        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
+        e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
         this.balance(e,e.rung=this.capability(e));

@@ -113,12 +113,12 @@
       case 'foot': { const d = slot === 13 ? -1 : 1; lines([[d * x * .62, y * .45, d * x * .64, y * .7, d * x * .62, y * .95], [d * x * .78, y * .5, d * x * .8, y * .72, d * x * .8, y * .95], [d * x * .45, y * .42, d * x * .46, y * .7, d * x * .44, y * .95]], .4); break; }
     }
     c.globalAlpha = 1;
-    if (part === 'head') face(c, x, y, state.face);
+    if (part === 'head') face(c, x, y, state.face, state.gaze || 0);
   }
   // Five faces, from the reference sheet: neutral, tense (eyes screwed shut), dazed (half-lidded), closed, dead (crosses).
-  function face(c, x, y, mood) {
-    c.strokeStyle = '#2a201b'; c.lineWidth = 1; c.lineCap = 'round'; const ey = -y * .1;
-    for (const s of [-1, 1]) { const ex = s * x * .42; c.beginPath();
+  function face(c, x, y, mood, gaze) {
+    c.strokeStyle = '#2a201b'; c.lineWidth = 1; c.lineCap = 'round'; const ey = -y * .1, shout = mood === 'shout'; if (shout) mood = 'tense';
+    for (const s of [-1, 1]) { const ex = s * x * .42 + gaze * 1.5; c.beginPath();   // a glance: both eyes slide toward what it is looking at
       if (mood === 'dead') { c.moveTo(ex - 2, ey - 2); c.lineTo(ex + 2, ey + 2); c.moveTo(ex + 2, ey - 2); c.lineTo(ex - 2, ey + 2); }
       else if (mood === 'tense') { c.moveTo(ex + s * 2.2, ey - 1.8); c.lineTo(ex - s * 1.6, ey); c.lineTo(ex + s * 2.2, ey + 1.8); }   // > <  screwed shut, pointing at the nose
       else if (mood === 'closed') { c.moveTo(ex - 2.4, ey - .4); c.quadraticCurveTo(ex, ey + 1.6, ex + 2.4, ey - .4); }
@@ -126,7 +126,8 @@
       else { c.moveTo(ex - 2.5, ey); c.lineTo(ex + 2.5, ey); }
       c.stroke(); }
     c.lineWidth = .7; c.globalAlpha = .7; c.beginPath();
-    if (mood === 'tense') { c.moveTo(-x * .3, y * .52); c.lineTo(-x * .1, y * .44); c.lineTo(x * .1, y * .52); c.lineTo(x * .3, y * .44); }     // gritted
+    if (shout) { c.fillStyle = '#3a1518'; c.ellipse(0, y * .52, x * .2, y * .13, 0, 0, 7); c.fill(); }                                           // mouth open on a big hit
+    else if (mood === 'tense') { c.moveTo(-x * .3, y * .52); c.lineTo(-x * .1, y * .44); c.lineTo(x * .1, y * .52); c.lineTo(x * .3, y * .44); }     // gritted
     else if (mood === 'dead' || mood === 'closed') { c.moveTo(-x * .2, y * .5); c.lineTo(x * .2, y * .5); }
     else if (mood === 'dazed') { c.ellipse(0, y * .5, x * .13, y * .06, 0, 0, 7); }
     c.stroke(); c.globalAlpha = 1;
@@ -201,12 +202,12 @@
       if (!shared) { if (pristine.size > 400) pristine.clear(); shared = document.createElement('canvas'); paintPart(shared, p, state); pristine.set(key, shared); } perBody.set(body, { sig, canvas: shared, own: false }); return shared; }
     const canvas = entry?.own ? entry.canvas : document.createElement('canvas'); paintPart(canvas, p, state); perBody.set(body, { sig, canvas, own: true }); return canvas;
   }
-  const FACES = ['neutral', 'tense', 'dazed', 'closed', 'dead'];
+  const FACES = ['neutral', 'tense', 'dazed', 'closed', 'dead', 'shout'];
   root.BodyArt = {
     SCALE, PAD, FACES,
     // Draw a human part at the origin of the current transform (already translated, rotated and mirrored by the caller).
     draw(ctx, body, state) { const canvas = sprite(body, state); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); },
     // For previews (library card, spawn ghost): a pristine part from its dimensions alone.
-    preview(ctx, part, slot, w, h) { const canvas = sprite({ plugin: { part, slot, w, h, hp: 100, bone: 100 } }, { pale: 0, char: 0, face: 'neutral', faceId: 0, noGore: true, dead: false, time: 0 }); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); }
+    preview(ctx, part, slot, w, h) { const canvas = sprite({ plugin: { part, slot, w, h, hp: 100, bone: 100 } }, { pale: 0, char: 0, face: 'neutral', faceId: 1, gaze: 0, noGore: true, dead: false, time: 0 }); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

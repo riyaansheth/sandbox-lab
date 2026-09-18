@@ -42,6 +42,7 @@ npm run dev
 - Electric shock locks every muscle rigid where it was, shaking, for as long as the current flows — conscious or not — and then the body goes slack for a moment. Androids get the same lock and "reboot", staggering, bracing and a limp from damaged legs, and glitch and spark when badly damaged; they have no pain, clutching or breathing
 - Safety: only parts that are actually braced may take the body's weight, joint stiffness is capped, and ragdoll parts have a speed limit far above anything real. 120 seeded shock-and-recover runs all end standing
 - Consciousness and dying: awake → dazed (weaker, swaying on its feet, duller reflexes) → unconscious (limp but still breathing, wakes again if what put it out recovers) → dead. Bleeding out is a descent: below 50% blood the legs go and it sinks to its knees, below 44% it slumps, below 40% it passes out, below 25% it dies. After death a nerve may fire once or twice in the first seconds — never after the brain or heart was destroyed — and then the body comes to rest and sleeps
+- Awareness (ten times a second, no pathfinding): a conscious human turns its head and eyes to the most pressing thing nearby — whatever last hurt it, a fire or blast, something moving fast, a weapon the cursor is holding close. Something on course for its head within half a second gets both arms thrown up and a duck away from it; heat close beside any part of it makes it bend and lean away; a neighbour being hurt makes it start and look. Eyes glance, the mouth opens on a big hit, and an optional soft grunt can be switched on. Androids have none of it
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
 - Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
 - Damage-driven collapse and breakable joints
@@ -85,7 +86,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 59 behaviour tests: physics, damage, blood, organs, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 83 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

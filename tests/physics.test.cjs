@@ -373,7 +373,8 @@ test('the pose blend is part of a save',()=>{
 const standing=(kind='human',set={})=>{const s=new Simulation();s.configure({organDamage:false,...set});const e=s.spawn(kind,1000,555);advance(s,120);return {s,e,chest:e.bodies[2]};};
 const rel=(e,slot,parent)=>{const a=e.bodies[slot].angle-e.bodies[parent].angle;return Math.atan2(Math.sin(a),Math.cos(a));};
 test('a small hit is a flinch: the struck arm pulls in, the head snaps away, and it passes',()=>{
-  const {s,e}=standing();const fore=e.bodies[9];s.damage(fore,10,fore.position,'impact',{x:1,y:0});let elbow=0,head=0;for(let i=0;i<24;i++){s.step(1000/120);elbow=Math.max(elbow,Math.abs(rel(e,9,8)));head=Math.min(head,rel(e,0,1));}
+  const {s,e}=standing('human',{awareness:false});const fore=e.bodies[9];s.damage(fore,10,fore.position,'impact',{x:1,y:0});let elbow=0,head=0; // awareness off: this is about the reflex alone, not where it looks afterwards
+for(let i=0;i<24;i++){s.step(1000/120);elbow=Math.max(elbow,Math.abs(rel(e,9,8)));head=Math.min(head,rel(e,0,1));}
   assert.ok(elbow>.12,`elbow only reached ${elbow}`);assert.ok(head<-.04,`head should snap back from a blow travelling right, got ${head}`);assert.ok(!(e.stun>0)&&!(e.stagN>0),'a tap on the arm neither staggers nor drops anyone');
   advance(s,90);assert.ok(Math.abs(rel(e,9,8))<.1&&Math.abs(rel(e,0,1))<.1,'and it is over within a second or so');
   const tiny=standing();tiny.s.damage(tiny.e.bodies[9],3,tiny.e.bodies[9].position,'impact',{x:1,y:0});let twitch=0;for(let i=0;i<24;i++){tiny.s.step(1000/120);twitch=Math.max(twitch,Math.abs(rel(tiny.e,9,8)));}assert.ok(twitch<elbow*.6,'a tiny hit is only a twitch');
@@ -462,4 +463,28 @@ test('an unconscious ragdoll is limp, but wakes when what put it out recovers',(
 test('a dazed ragdoll sways on its feet',()=>{
   const sway=(blood)=>{const {s,e,chest}=standing('human',{bleedRate:0});e.blood=blood;let low=1e9,high=-1e9;for(let i=0;i<600;i++){e.blood=blood;s.step();const over=chest.position.x-(e.bodies[13].position.x+e.bodies[16].position.x)/2;low=Math.min(low,over);high=Math.max(high,over);}return {range:high-low,state:e.consciousness,up:chest.position.y<512};};
   const clear=sway(100),dazed=sway(53);assert.equal(dazed.state,'dazed');assert.ok(dazed.up);assert.ok(dazed.range>clear.range+3,`dazed sway ${dazed.range} vs ${clear.range}`);
+});
+// ---- reaction spec, sections 5 and 7: awareness and its settings
+test('a conscious ragdoll looks at what hurt it, at fire, and at something fast; an unconscious one and an android do not',()=>{
+  const {s,e}=standing();const arm=e.bodies[5];s.damage(arm,10,arm.position,'impact',{x:1,y:0});advance(s,20);assert.equal(e.gaze,-1,'the blow came from the left');advance(s,200);assert.equal(e.gaze,0,'and a few seconds later it has stopped looking');
+  const fire=standing();const crate=fire.s.spawn('crate',1180,622).bodies[0];fire.s.ignite(crate);advance(fire.s,20);assert.equal(fire.e.gaze,1);
+  const ball=standing();ball.s.gravity=0;ball.s.configure({gravity:0});const b=ball.s.spawn('ball',780,300).bodies[0];Body.setVelocity(b,{x:0,y:-8});advance(ball.s,8);assert.equal(ball.e.gaze,-1,'something fast off to the left');
+  const out=standing('human',{stunScale:0});out.e.stun=3;const c2=out.s.spawn('crate',1180,622).bodies[0];out.s.ignite(c2);advance(out.s,30);assert.ok(!out.e.gaze);
+  const bot=standing('android');bot.s.ignite(bot.s.spawn('crate',1180,622).bodies[0]);advance(bot.s,30);assert.ok(!bot.e.gaze,'androids have no awareness');
+  const off=standing('human',{awareness:false});off.s.ignite(off.s.spawn('crate',1180,622).bodies[0]);advance(off.s,30);assert.ok(!off.e.gaze);
+});
+test('something flying at its head: the arms go up before it lands',()=>{
+  const {s,e}=standing();s.gravity=0;s.configure({gravity:0});const head=e.bodies[0],brick=s.spawn('brick',head.position.x-260,head.position.y).bodies[0];Body.setVelocity(brick,{x:9,y:0});let guarded=null,hit=null;
+  for(let i=0;i<60;i++){s.step();if(guarded===null&&e.guardT>0)guarded=i;if(hit===null&&e.hitTime>1.9)hit=i;}assert.ok(guarded!==null,'it should see it coming');assert.ok(hit===null||guarded<hit,'and guard before the impact');
+  const hands=[7,10].map(k=>Math.hypot(e.bodies[k].position.x-head.position.x,e.bodies[k].position.y-head.position.y));assert.ok(Math.min(...hands)<45,`a hand should be up by the head, nearest is ${Math.min(...hands).toFixed(0)}px`);
+  const miss=standing();miss.s.configure({gravity:0});const far=miss.s.spawn('brick',740,200).bodies[0];Body.setVelocity(far,{x:9,y:0});advance(miss.s,40);assert.ok(!(miss.e.guardT>0),'something that is going to miss is only watched');
+});
+test('heat close by makes it shrink away; a neighbour being hurt makes it start and look',()=>{
+  const {s,e,chest}=standing();const over=()=>chest.position.x-(e.bodies[13].position.x+e.bodies[16].position.x)/2;const before=over(),crate=s.spawn('crate',1062,622).bodies[0];s.freeze(crate);crate.plugin.heat=600;advance(s,90);assert.equal(e.heatDir,-1);assert.ok(over()<before-2,`it should lean away from the heat: ${over()} vs ${before}`);
+  const two=new Simulation();const a=two.spawn('human',1000,555),b=two.spawn('human',1200,555);advance(two,120);two.damage(a.bodies[2],30,a.bodies[2].position,'impact',{x:1,y:0});assert.ok(b.flinch>0&&b.flinchMag<.3,'a small start');advance(two,15);assert.equal(b.gaze,-1,'and a look');
+  const far=new Simulation();const c=far.spawn('human',1000,555),d=far.spawn('human',1700,555);advance(far,120);far.damage(c.bodies[2],30,c.bodies[2].position,'impact',{x:1,y:0});assert.ok(!(d.flinch>0),'too far away to notice');
+});
+test('grunts are off by default and only come from conscious humans when on',()=>{
+  const count=(kind,set)=>{const {s,e,chest}=standing(kind,set);let n=0;s.onEffect=t=>{if(t==='grunt')n++;};s.damage(chest,25,chest.position,'impact',{x:1,y:0});return n;};
+  assert.equal(count('human',{}),0);assert.equal(count('human',{grunts:true}),1);assert.equal(count('android',{grunts:true}),0);
 });
