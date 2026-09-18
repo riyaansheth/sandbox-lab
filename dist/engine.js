@@ -64,6 +64,7 @@
     {id:'limbCrush',section:'Gore',label:'Limb crushing',help:'A destroyed limb that takes another heavy blow is crushed out of existence.',type:'toggle',def:false},
     {id:'crushSensitivity',section:'Gore',label:'Limb crush sensitivity',help:'How little force it takes to crush a destroyed limb.',type:'range',min:25,max:400,step:5,def:100,unit:'%'},
     {id:'fragments',section:'Gore',label:'Procedural fragments',help:'Crushed limbs leave physical fragments behind.',type:'toggle',def:true},
+    {id:'gibCount',section:'Gore',label:'Gib count',help:'Flesh chunks thrown by a crushed or blasted limb, plus half as many bone fragments. Needs procedural fragments on.',type:'range',min:0,max:8,step:1,def:3,unit:''},
     {id:'extraGunshot',section:'Gore',label:'Extra gunshot particles',help:'Bullet hits throw out more debris.',type:'toggle',def:false},
     {id:'bloodAmount',section:'Gore',label:'Blood amount',help:'How much blood sprays and drips. Visual only; bleeding rate decides how fast anyone bleeds out.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
     {id:'arterialSpurts',section:'Gore',label:'Arterial spurts',help:'Deep wounds to the neck, upper arms, thighs and heart pump blood out in time with the pulse, and drain far faster.',type:'toggle',def:true},
@@ -115,7 +116,8 @@
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
   const ORGANS={head:[['brain',-1,-1,1,.35,1.5]],chest:[['heart',-.55,-.6,.2,.25,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
   const ARTERIAL=new Set(['neck','upper arm','thigh']),ARTERY_RATE=2.5; // deep wounds here hit an artery: they bleed this much faster, in spurts
-  const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=10,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
+  const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
+  const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
   const FRACTURE=50,FRACTURE_SLACK=.7; // bone at or below this is fractured; a fractured limb's joints bend this much further
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
   const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
@@ -370,6 +372,13 @@
       const c=Constraint.create({bodyA:a||undefined,bodyB:b||undefined,pointA:a?Vector.sub(pa,a.position):{...pa},pointB:b?Vector.sub(pb,b.position):{...pb},stiffness:.8,damping:.06});
       c.plugin={rope:true};Composite.add(this.world,c);return c;
     }
+    // Blood thrown by a blow. With a direction it is a cone: forward says how much of it carries on with the blow (negative = back-spatter toward the attacker,
+    // which is what an entry wound does; an exit wound throws it all forward). Without a direction it is the old radial burst.
+    spray(point,direction,count,speed,forward) {
+      if(!direction||(!direction.x&&!direction.y)){this.burst(point.x,point.y,count,'#a4373c',speed,'blood');return;}
+      const d=Vector.normalise(direction);count=Math.round(count*Math.max(1,this.settings.bloodAmount));
+      for(let i=0;i<count;i++){const along=(Math.random()<Math.abs(forward)?Math.sign(forward):-Math.sign(forward)*.4)*rnd(.4,1)*speed,side=rnd(-.45,.45)*speed;this.emit(point.x,point.y,d.x*along-d.y*side,d.y*along+d.x*side-rnd(0,1),rnd(.3,1),1,'#a4373c',rnd(1,3.2),'blood');}
+    }
     // Particles are recycled: dead ones go to a free list and come back, and the live array is compacted in place, so a long bleed allocates nothing.
     emit(x,y,vx,vy,life,maxLife,color,size,type) {
       if(type==='blood'||type==='oil'){if(this.settings.bloodAmount<1&&Math.random()>this.settings.bloodAmount)return null;}
@@ -394,6 +403,7 @@
       const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
       p.hp=Math.max(0,p.hp-amount);
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun;if(e&&amount>12&&set.stunScale>0&&hurts)e.stun=Math.max(e.stun||0,clamp(amount/20,.6,5)*set.stunScale*hurts);if(e)e.restTime=0;
+      if(e)e.hitTime=this.time;
       if(e&&e.kind==='human'&&e.alive)e.pain=Math.min(100,(e.pain||0)+amount*profile.pain*(PAIN_PART[p.part]??1));
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
@@ -403,8 +413,8 @@
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9)w.bleed=Math.min(4,(w.bleed||0)+rate*.3);
         if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:Math.random()*6.28;
-          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:Math.random()*6.28,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
-          if(type!=='burn')this.burst(point.x,point.y,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),'#a4373c',type==='bullet'?6:3,'blood');}
+          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:Math.random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
+          if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
           if(e.alive&&(p.part==='head'||p.part==='chest')&&p.hp<12)this.kill(e,`massive ${p.part} trauma`);}
@@ -416,6 +426,7 @@
           // A bullet can incapacitate without automatically detaching the whole limb.
           if(type==='blast'||amount>85*set.jointStrength||p.bone<=0)for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
           // Limb crushing: a limb that was already destroyed and takes another heavy blow is pulped.
+          if(type==='blast'&&p.part&&!p.gibbed){p.gibbed=true;const at={...body.position},v={...body.velocity},m=p.material;this.damageQueue.push(()=>this.gibs(at.x,at.y,m,v,.6));}
           if(set.limbCrush&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
         }
         else if(!p.debris&&!p.destroying&&p.kind!=='platform'){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
@@ -424,7 +435,7 @@
     // Blood that lands on a body stays where it landed, in that body's own frame, so it turns with it. Oldest goes first.
     stain(body,point,r,oil) {
       const p=body.plugin,local=Vector.rotate(Vector.sub(point,body.position),-body.angle);p.stains??=[];
-      for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(5,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
+      for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(3.6,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
       p.stains.push({x:local.x,y:local.y,r,wet:1,oil:oil||undefined});if(p.stains.length>BODY_STAINS)p.stains.shift();
     }
     addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
@@ -462,12 +473,20 @@
       else if(organ==='gut')p.internal=(p.internal||0)+amount/80;                                                                          // slow internal bleed
       // lungs: no immediate effect; vitals() runs the oxygen down while they are damaged
     }
+    // Gibs: small physical chunks of what used to be a limb, and half as many bone fragments. They trail blood for a moment, and do not last.
+    gibs(x,y,material,velocity,scale=1) {
+      const set=this.settings,count=Math.round(set.gibCount*scale);if(!set.fragments||!count||this.bodies.length>set.maxObjects-12)return;
+      const old=this.bodies.filter(b=>b.plugin.gib);for(const b of old.slice(0,Math.max(0,old.length+count*1.5-GIB_MAX)))this.removeBody(b);
+      const bits=[],total=count+(material==='flesh'?Math.ceil(count/2):0);for(let i=0;i<total;i++){const bone=i>=count,w=bone?rnd(3,6):rnd(4,9),h=bone?rnd(2,3):rnd(4,8),b=Bodies.rectangle(x+rnd(-8,8),y+rnd(-8,8),w,h,{density:bone?.002:.0015,friction:.8,restitution:.15,frictionAir:.01*set.airDrag});
+        this.meta(b,'gib',{material:bone?'bone':material,w,h,hp:10,maxHp:10,debris:true,gib:true,life:GIB_LIFE*rnd(.7,1.2),trail:material==='flesh'&&!bone?rnd(.8,1.8):0,seed:Math.random()*100});
+        Body.setVelocity(b,{x:velocity.x*.5+rnd(-5,5),y:velocity.y*.5+rnd(-7,-1)});Body.setAngularVelocity(b,rnd(-.4,.4));bits.push(b);}
+      this.entity('debris',bits);
+    }
     crush(body) {
       if(!this.bodies.includes(body))return;const p=body.plugin,{x,y}=body.position,e=this.getEntity(body),flesh=p.material==='flesh';
       this.burst(x,y,flesh?45:20,flesh?'#8d2a31':'#e1bc7b',7,flesh?'blood':'spark');if(flesh)this.burst(x,y,14,'#7a2a30',3,'smoke');
       if(e&&(p.part==='head'||p.part==='chest'))this.kill(e,`${p.part} destroyed`);this.removeBody(body);
-      if(this.settings.fragments&&this.bodies.length<this.settings.maxObjects-3){const bits=[];for(let i=0;i<3;i++){const w=rnd(4,9),h=rnd(4,8),b=Bodies.rectangle(x+rnd(-8,8),y+rnd(-8,8),w,h,{density:.0015,friction:.8,frictionAir:.01*this.settings.airDrag});
-        this.meta(b,p.kind,{material:p.material,w,h,hp:10,maxHp:10,debris:true});Body.setVelocity(b,{x:rnd(-4,4),y:rnd(-5,0)});Body.setAngularVelocity(b,rnd(-.3,.3));bits.push(b);}this.entity('debris',bits);}
+      this.gibs(x,y,flesh?'flesh':p.material,body.velocity,1);
       this.onEffect('break',.4);
     }
     shatter(body) {
@@ -593,6 +612,7 @@
       for(const b of bodies){const p=b.plugin;
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
+        if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&Math.random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
         p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
@@ -601,7 +621,7 @@
             if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(Math.random()>=chance)continue;
             const wx=p.flip?-w.x:w.x,cos=Math.cos(b.angle),sin=Math.sin(b.angle),px=b.position.x+wx*cos-w.y*sin,py=b.position.y+wx*sin+w.y*cos;
             // A spurt leaves along the line from the limb's centre through the wound, weaker as the blood runs out; anything else just drips.
-            if(gush){const len=Math.hypot(wx,w.y)||1,ox=(wx*cos-w.y*sin)/len,oy=(wx*sin+w.y*cos)/len,force=(3+3.5*pulse)*(.35+.65*blood/100);drop=this.emit(px,py,b.velocity.x*.4+ox*force+rnd(-.5,.5),b.velocity.y*.4+oy*force-1+rnd(-.5,.5),2.5,2.5,BLOOD,rnd(1.2,2.8),'blood');}
+            if(gush){const len=Math.hypot(wx,w.y)||1,ox=(wx*cos-w.y*sin)/len,oy=(wx*sin+w.y*cos)/len,force=(2+2.4*pulse)*(.35+.65*blood/100);drop=this.emit(px,py,b.velocity.x*.4+ox*force+rnd(-.5,.5),b.velocity.y*.4+oy*force-1+rnd(-.5,.5),2.5,2.5,BLOOD,rnd(1.2,2.8),'blood');}
             else drop=this.emit(px,py,b.velocity.x*.4+rnd(-1.2,1.2),b.velocity.y*.4+rnd(-.7,.8),3,3,BLOOD,rnd(.8,2.6),'blood');if(drop)drop.owner=p.entityId;}}
           p.bleed=Math.min(7,sum);
         }
@@ -660,7 +680,7 @@
         else if(p.type==='ember'){p.vx+=Math.sin(this.time*9+p.y*.05)*seconds*5;p.vy-=seconds*.6;}else if(p.type==='smoke'){p.vx+=seconds*.35;p.vy*=1-seconds*.5;}
         if(wet&&p.life>0){if(p.y>=this.groundY){if(decals)this.pool(p.x,rnd(2,5),p.type==='oil');p.life=0;}
           else if(p.x<=2||p.x>=this.width-2){if(decals)this.addStain({x:p.x<=2?1:this.width-1,y:p.y,r:rnd(2,5),wet:1,age:0,wall:true,oil:p.type==='oil'||undefined});p.life=0;}
-          else if(land&&p.life<p.maxLife-.08){for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||(p.owner===b.plugin.entityId&&p.life>p.maxLife-.45)||!M.Vertices.contains(b.vertices,p))continue;if(decals)this.stain(b,p,rnd(1,2.4),p.type==='oil');p.life=0;break;}}}
+          else if(land&&p.life<p.maxLife-.08){for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||(p.owner===b.plugin.entityId&&p.life>p.maxLife-.45)||!M.Vertices.contains(b.vertices,p))continue;if(decals&&Math.random()<.55)this.stain(b,p,rnd(.8,2),p.type==='oil');p.life=0;break;}}}
         if(p.life>0)list[keep++]=p;else if(this.spare.length<900)this.spare.push(p);}
       list.length=keep;
       if(land)this.stainsTick(seconds*4,bodies);

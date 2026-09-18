@@ -51,54 +51,6 @@
   function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh'||!b.plugin.part)return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Dead':e?.consciousness==='unconscious'?'Unconscious':e?.stun>0?'Knocked down':e?.consciousness==='dazed'?'Dazed':p.bleed>.05?'Bleeding':'Stable'}</b></div>`+(p.bone<=50?`<div class="stat-row"><span>Limb</span><b>Fractured</b></div>`:'')+(p.internal>.02?`<div class="stat-row"><span>Internal bleeding</span><b>${p.internal>1?'Massive':p.internal>.3?'Heavy':'Slow'}</b></div>`:'')
     +(e&&e.kind==='human'?`<div class="stat-row"><span>Pain</span><b>${Math.round(e.pain||0)}%</b></div><div class="stat-row"><span>Oxygen</span><b>${Math.round(e.oxygen??100)}%</b></div>`+(e.organs?Object.entries(e.organs).filter(([,v])=>v<100).map(([k,v])=>`<div class="stat-row"><span>${k[0].toUpperCase()+k.slice(1)}</span><b>${v<=0?'Destroyed':Math.round(v)+'%'}</b></div>`).join(''):'')+(e.causeOfDeath?`<div class="stat-row"><span>Cause of death</span><b>${e.causeOfDeath}</b></div>`:''):''));}
   function roundRect(c,x,y,w,h,r=2){c.beginPath();c.roundRect(x,y,w,h,r);}
-  function humanOutline(c,p){
-    const w=p.w||14,h=p.h||30;c.beginPath();
-    if(p.part==='head'){c.moveTo(-8,-15);c.bezierCurveTo(-15,-10,-12,5,-7,11);c.lineTo(-3,15);c.lineTo(6,13);c.lineTo(9,8);c.lineTo(10,2);c.lineTo(13,0);c.lineTo(10,-5);c.bezierCurveTo(11,-13,4,-17,-8,-15);}
-    else if(p.part==='chest'){c.moveTo(-10,-h/2);c.lineTo(10,-h/2);c.quadraticCurveTo(21,-15,18,-4);c.lineTo(12,h/2);c.quadraticCurveTo(0,h/2+2,-12,h/2);c.lineTo(-18,-4);c.quadraticCurveTo(-21,-15,-10,-h/2);}
-    else if(p.part==='abdomen'){c.moveTo(-12,-h/2);c.quadraticCurveTo(-10,0,-13,h/2);c.lineTo(13,h/2);c.quadraticCurveTo(10,0,12,-h/2);}
-    else if(p.part==='pelvis'){c.moveTo(-13,-h/2);c.lineTo(13,-h/2);c.quadraticCurveTo(17,0,13,h/2);c.lineTo(4,h/2);c.lineTo(0,h/2-4);c.lineTo(-4,h/2);c.lineTo(-13,h/2);c.quadraticCurveTo(-17,0,-13,-h/2);}
-    else if(p.part==='foot'){c.moveTo(-w/2,-h/2);c.lineTo(-1,-h/2);c.lineTo(3,-1);c.quadraticCurveTo(w/2+3,0,w/2,5);c.lineTo(-w/2,5);}
-    else if(p.part==='hand'){c.roundRect(-w/2,-h/2,w,h,3);}
-    else{const lower=p.part==='thigh'?.66:p.part==='upper arm'?.8:p.part==='shin'?.58:p.part==='forearm'?.64:.9;c.moveTo(-w*.36,-h/2);c.quadraticCurveTo(-w*.58,-h*.22,-w*.45,h*.1);c.lineTo(-w*.5*lower,h/2);c.quadraticCurveTo(0,h/2+2,w*.5*lower,h/2);c.lineTo(w*.45,h*.1);c.quadraticCurveTo(w*.58,-h*.22,w*.36,-h/2);}
-    c.closePath();
-  }
-  function drawAnatomy(c,p,time){
-    const w=p.w||14,h=p.h||30,health=p.hp??100,dead=health<=0,char=clamp(((p.heat||20)-180)/600,0,.85);
-    humanOutline(c,p);
-    const skin=c.createLinearGradient(-w/2,0,w/2,0);skin.addColorStop(0,dead?'#8b7873':'#b48d78');skin.addColorStop(.32,dead?'#b49a8b':'#e1bca2');skin.addColorStop(.7,dead?'#a68c81':'#d6ac91');skin.addColorStop(1,dead?'#776b68':'#967762');
-    c.fillStyle=skin;c.fill();const pale=pallor.get(p.entityId);if(pale&&!dead){c.fillStyle=`rgba(226,224,214,${pale*.55})`;c.fill();}c.strokeStyle='#58483e';c.lineWidth=.7;c.stroke();
-    c.save();humanOutline(c,p);c.clip();
-    // Muscle contours and anatomical landmarks remain subtle until tissue is damaged.
-    c.strokeStyle='#8c645850';c.lineWidth=.65;c.beginPath();
-    if(p.part==='chest'){c.moveTo(-13,-10);c.quadraticCurveTo(-5,-15,0,-10);c.quadraticCurveTo(5,-15,13,-10);c.moveTo(-13,-2);c.quadraticCurveTo(-7,3,-1,-1);c.moveTo(1,-1);c.quadraticCurveTo(7,3,13,-2);c.moveTo(0,-9);c.lineTo(0,13);}
-    else if(p.part==='abdomen'){c.moveTo(0,-10);c.lineTo(0,10);for(let y=-6;y<9;y+=6){c.moveTo(-7,y);c.quadraticCurveTo(0,y+2,7,y);}c.moveTo(-10,-8);c.lineTo(-7,8);c.moveTo(10,-8);c.lineTo(7,8);}
-    else if(p.part==='head'){c.moveTo(1,-5);c.lineTo(9,-5);c.moveTo(5,7);c.lineTo(9,7);c.moveTo(1,10);c.lineTo(4,12);}
-    else if(p.part==='hand'){for(let x=-2;x<4;x+=2){c.moveTo(x,1);c.lineTo(x,h/2-1);}}
-    else{c.moveTo(-w*.16,-h*.27);c.quadraticCurveTo(w*.14,0,-w*.05,h*.3);c.moveTo(-w*.3,h*.35);c.lineTo(w*.3,h*.35);}
-    c.stroke();
-    if(p.part==='pelvis'){c.fillStyle='#545c59';c.fillRect(-w/2-2,-h/2,w+4,h*.82);c.fillStyle='#717c73';c.fillRect(-w/2,-h/2,w,3);}
-    if(p.part==='head'){c.fillStyle='#403b36';c.beginPath();c.moveTo(-13,-3);c.lineTo(-10,-15);c.quadraticCurveTo(3,-20,10,-10);c.lineTo(3,-11);c.lineTo(-4,-7);c.lineTo(-8,2);c.lineTo(-10,3);c.fill();c.fillStyle=dead?'#463d39':'#e9e6d5';c.fillRect(5,-4,4,1.8);if(!dead){c.fillStyle='#373b35';c.fillRect(7,-4,1.3,1.8);}c.strokeStyle='#9c7561';c.beginPath();c.ellipse(-5,1,2,3,0,0,7);c.stroke();}
-    if(!sim.settings.noGore){
-      // Internal bleeding: a dark bruise spreading under the skin. A fracture: a kink of swelling and a bone shard through the skin.
-      if(p.bruise>.02){const g=c.createRadialGradient(0,0,0,0,0,Math.max(w,h)*.6*p.bruise+3);g.addColorStop(0,`rgba(74,32,78,${Math.min(.75,p.bruise)})`);g.addColorStop(.7,`rgba(96,60,44,${Math.min(.45,p.bruise*.6)})`);g.addColorStop(1,'rgba(96,60,44,0)');c.fillStyle=g;c.fillRect(-w,-h,w*2,h*2);}
-      if((p.bone??100)<=50&&!['head','chest','abdomen','pelvis','neck'].includes(p.part)){const y=h*.08,side=(p.slot%2?1:-1);c.fillStyle='#6d3a4a88';c.beginPath();c.ellipse(side*w*.12,y,w*.55,h*.16,0,0,7);c.fill();c.fillStyle='#e6dcc0';c.strokeStyle='#7a2b30';c.lineWidth=.7;c.beginPath();c.moveTo(side*w*.05,y+3);c.lineTo(side*w*.62,y-5);c.lineTo(side*w*.5,y+1);c.lineTo(side*w*.2,y+5);c.closePath();c.fill();c.stroke();}
-    }
-    for(const wound of sim.settings.noGore?[]:p.wounds||[]){
-      const r=wound.radius||3,x=wound.x,y=wound.y;c.fillStyle=wound.type==='impact'?'#72425288':'#803039';c.beginPath();c.ellipse(x,y,r*1.65,r*1.3,wound.seed,0,7);c.fill();
-      if(wound.type!=='impact'||health<35){c.fillStyle='#65272e';c.beginPath();for(let i=0;i<9;i++){const a=i/9*Math.PI*2,rr=r*(.7+.25*Math.sin(i*2.3+wound.seed));const px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr;(i?c.lineTo:c.moveTo).call(c,px,py);}c.closePath();c.fill();c.strokeStyle='#c46861';c.lineWidth=.65;c.stroke();
-        c.strokeStyle='#ac4c4c';for(let i=-1;i<=1;i++){c.beginPath();c.moveTo(x-r*.5,y+i*1.5);c.lineTo(x+r*.5,y+i*1.5+.8);c.stroke();}
-        if(health<30||(p.bone??100)<35){c.strokeStyle='#d4c7a5';c.lineWidth=1.5;c.beginPath();c.moveTo(x,y-r*.7);c.lineTo(x+.5,y+r*.7);c.stroke();}
-      }
-    }
-    if(health<22&&!sim.settings.noGore&&['chest','abdomen'].includes(p.part)){
-      c.fillStyle='#62262ecc';roundRect(c,-w*.28,-h*.32,w*.56,h*.65,5);c.fill();
-      if(p.part==='chest'){c.strokeStyle='#cfc1a4';c.lineWidth=1.4;for(let y=-10;y<=9;y+=5){c.beginPath();c.moveTo(-9,y);c.quadraticCurveTo(0,y+6,9,y);c.stroke();}c.beginPath();c.moveTo(0,-12);c.lineTo(0,12);c.stroke();}
-      else{c.strokeStyle='#b36863';c.lineWidth=2;for(let y=-5;y<7;y+=4){c.beginPath();c.moveTo(-6,y);c.bezierCurveTo(8,y-5,-8,y+6,6,y+3);c.stroke();}}
-    }
-    if(char>0){c.fillStyle=`rgba(39,29,27,${char})`;c.fillRect(-w,-h,w*2,h*2);}
-    c.restore();
-    for(const end of sim.settings.noGore?[]:p.severed||[]){const x=end.x,y=end.y,rad=Math.min(w*.46,7);c.fillStyle='#67252d';c.beginPath();c.ellipse(x,y,rad,3,0,0,7);c.fill();c.strokeStyle='#b05651';c.lineWidth=1;c.stroke();c.fillStyle='#dfd2b3';c.fillRect(x-1.5,y-3,3,6);c.strokeStyle='#ae393d';c.beginPath();c.moveTo(x+rad*.65,y);c.lineTo(x+rad*.6+Math.sin(time*2)*.8,y+5);c.stroke();}
-  }
   // Weapons are drawn as silhouettes rather than decorated boxes. Both fit the physics body: pistol 48x18 with the muzzle at +x, sword 12x100 with the point at -y.
   function poly(c,points){c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();}
   function drawPistol(c){
@@ -146,14 +98,17 @@
     const pommel=c.createRadialGradient(-1.2,45.5,.5,0,47,4.6);pommel.addColorStop(0,'#f1d78c');pommel.addColorStop(.6,'#a9843a');pommel.addColorStop(1,'#5f471c');
     c.strokeStyle='#1b2226';c.lineWidth=.7;c.beginPath();c.arc(0,47,4.3,0,7);c.fillStyle=pommel;c.fill();c.stroke();
   }
+  const ANATOMY_SLOT=Object.fromEntries(Sandbox.ANATOMY.map(([part],slot)=>[part,slot]).reverse());
   function drawObject(c,kind,p={},time=0){
     const d=Sandbox.defs[kind]||{},w=p.w||d.w||25,h=p.h||d.h||35,r=p.r||d.r;
     const item=CATALOG.find(i=>i.id===kind);c.fillStyle=item?.color||'#b5bdb8';c.strokeStyle='#141c21';c.lineWidth=1.5;
+    if(p.gib){const bone=p.material==='bone',plain=sim.settings.noGore;c.fillStyle=bone?'#ece3cb':plain?'#8d8a84':p.material==='flesh'?'#8a2a31':'#8f9a9e';c.strokeStyle=bone?'#b8ab8a':plain?'#6f6c66':'#5a161c';c.lineWidth=.6;c.beginPath();
+      for(let i=0;i<7;i++){const a=i/7*6.283,r=(i%2?.62:1)*(bone?.55:.5)*(.8+hash(p.seed+i)*.4);(i?c.lineTo:c.moveTo).call(c,Math.cos(a)*w*r,Math.sin(a)*h*r);}c.closePath();c.fill();c.stroke();if(!bone&&!plain){c.fillStyle='#c0565a';c.beginPath();c.arc(-w*.12,-h*.1,Math.min(w,h)*.16,0,7);c.fill();}return;}
     if(p.debris){if(p.material==='flesh')c.fillStyle=sim.settings.noGore?'#8d8a84':'#7d2f33';c.fillRect(-w/2,-h/2,w,h);return;}
     if(kind==='gun'){drawPistol(c);return;}
     if(kind==='sword'){drawSword(c,p);return;}
     if(kind==='human'||kind==='android'){
-      if(kind==='human'){drawAnatomy(c,p,time);return;}
+      if(kind==='human'){BodyArt.preview(c,p.part,p.slot??ANATOMY_SLOT[p.part],p.w,p.h);return;} // previews only; live humans are drawn by BodyArt.draw with their damage state
       const robot=kind==='android';c.fillStyle=robot?'#8ba8a4':p.part==='chest'?'#99a9a0':p.part==='hip'?'#727f7b':'#c9c3b6';
       if(p.hp<=0)c.fillStyle=robot?'#637777':'#aa9289';
       if(p.part==='head'){roundRect(c,-w/2,-h/2,w,h,robot?3:7);c.fill();c.stroke();c.fillStyle=robot?'#d3cd83':'#394746';c.fillRect(5,-4,4,robot?3:2);if(robot){c.fillStyle='#506763';c.fillRect(-7,-9,12,3);}}
@@ -175,7 +130,7 @@
     if(kind==='battery'){c.fillStyle='#d4d5b1';c.fillRect(-9,-h/2-5,18,5);c.fillStyle='#4a594b';c.fillRect(-w/2+3,-h/2+6,w-6,12);c.fillStyle=p.active?'#f4dc8d':'#d7d7ae';c.font='bold 19px Arial';c.textAlign='center';c.fillText('ϟ',0,13);}
   }
   function drawMini(c,kind){c.clearRect(0,0,160,114);c.save();c.translate(80,55);if(kind==='human'||kind==='android'){
-    c.scale(.45,.45);c.translate(0,12);for(const [part,x,y,w,h]of Sandbox.ANATOMY){c.save();c.translate(x,y);drawObject(c,kind,{part,w,h,r:0,hp:100});c.restore();}
+    c.scale(.45,.45);c.translate(0,12);Sandbox.ANATOMY.forEach(([part,x,y,w,h],slot)=>{c.save();c.translate(x,y);drawObject(c,kind,{part,slot,w,h,r:0,hp:100});c.restore();});
   }else{const d=Sandbox.defs[kind],s=Math.min(1.3,120/(d.w||d.r*2),78/(d.h||d.r*2));c.scale(s,s);drawObject(c,kind,d);}c.restore();}
   function renderCatalog(){const query=$('#search').value.trim().toLowerCase();const list=CATALOG.filter(c=>(state.category==='all'||c.category===state.category)&&`${c.name} ${c.description}`.toLowerCase().includes(query));$('#catalog-count').textContent=list.length+' objects';$('#catalog').replaceChildren();for(const item of list){const button=document.createElement('button');button.className='object-card'+(state.spawn===item.id?' active':'');button.dataset.object=item.id;button.title=item.description;button.setAttribute('aria-label','Spawn '+item.name);const preview=document.createElement('canvas');preview.width=160;preview.height=114;preview.setAttribute('aria-hidden','true');button.appendChild(preview);const name=document.createElement('span');name.className='name';name.textContent=item.name;button.appendChild(name);if(item.id==='human'){const tag=document.createElement('span');tag.className='tag';tag.textContent='Start here';button.appendChild(tag);}button.addEventListener('click',()=>chooseSpawn(item.id));$('#catalog').appendChild(button);drawMini(preview.getContext('2d'),item.id);}if(!list.length){const p=document.createElement('p');p.className='no-results';p.textContent='No objects match your search.';$('#catalog').appendChild(p);}}
   for(const tool of TOOLS){const b=document.createElement('button');b.className='tool'+(tool.id==='grab'?' active':'');b.dataset.tool=tool.id;b.title=`${tool.title} (${tool.key})`;b.setAttribute('aria-label',tool.title);b.setAttribute('aria-pressed',String(tool.id==='grab'));b.innerHTML=`<span class="shortcut">${tool.key}</span><span class="symbol">${tool.symbol}</span><span class="tool-name">${tool.name}</span>`;b.addEventListener('click',()=>setTool(tool.id));$('#tools').appendChild(b);}
@@ -244,13 +199,15 @@
   // Blood dries from bright red to a dark brown over about half a minute; android coolant from teal to near black.
   const STAIN_RAMP=[[155,31,42],[72,26,28]],OIL_RAMP=[[47,84,90],[24,34,36]];
   function stainColor(wet,oil){const [a,b]=oil?OIL_RAMP:STAIN_RAMP;return `rgb(${Math.round(b[0]+(a[0]-b[0])*wet)},${Math.round(b[1]+(a[1]-b[1])*wet)},${Math.round(b[2]+(a[2]-b[2])*wet)})`;}
-  const pallor=new Map(); // entity id -> 0..1, how drained of blood it is; filled once per frame
+  const REMAINS={pale:.5,face:'dead',faceId:4,dead:true,noGore:false,time:0,char:0}; // parts whose owner is gone
+  const looks=new Map(); // entity id -> how that ragdoll looks this frame: pallor, face, dead. Filled once per frame, shared by its 17 parts.
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
     ctx.save();ctx.translate(width/2+(Math.random()-.5)*shake,height/2+(Math.random()-.5)*shake);ctx.scale(camera.zoom,camera.zoom);ctx.translate(-camera.x,-camera.y);shake*=.88;{const m=ctx.getTransform();view.a=m.a;view.e=m.e;view.f=m.f;}
     const left=camera.x-width/2/camera.zoom,right=camera.x+width/2/camera.zoom,top=camera.y-height/2/camera.zoom,bottom=camera.y+height/2/camera.zoom;
     ctx.lineWidth=1/camera.zoom;
-    const set=sim.settings;pallor.clear();for(const e of sim.entities)if(e.kind==='human'&&e.blood<75)pallor.set(e.id,clamp((75-e.blood)/50,0,1));
+    const set=sim.settings;looks.clear();for(const e of sim.entities){if(e.kind!=='human')continue;const face=!e.alive?'dead':e.consciousness==='unconscious'?'closed':(sim.time-(e.hitTime??-9)<.6||e.pain>65)?'tense':e.consciousness==='dazed'?'dazed':'neutral';
+      looks.set(e.id,{pale:e.blood<75?clamp((75-e.blood)/50,0,1):0,face,faceId:BodyArt.FACES.indexOf(face),dead:!e.alive,noGore:set.noGore,time:sim.time,char:0});}
     if(set.grid)for(let x=Math.floor(left/32)*32;x<right;x+=32){ctx.strokeStyle=x%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,Math.min(bottom,sim.groundY));ctx.stroke();}
     if(set.grid)for(let y=Math.floor(top/32)*32;y<Math.min(bottom,sim.groundY);y+=32){ctx.strokeStyle=y%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
     // Far wall measurement ticks and subtle workshop fixtures.
@@ -266,19 +223,24 @@
       if(st.wall){ctx.ellipse(st.x,st.y,2.6,st.r,0,0,7);ctx.fill();ctx.fillRect(st.x-.8,st.y,1.6,st.r*(2.2-wet)*1.4);} // a run down the wall that lengthens as it dries
       else{const ry=st.smear?1.5:st.print?1.4:Math.min(4.2,1.4+st.r*.07);ctx.ellipse(st.x,st.y,st.r,ry,0,0,7);ctx.fill();if(wet>.35&&st.r>6&&!st.smear){ctx.globalAlpha=wet*.3*fade;ctx.fillStyle=st.oil?'#8fb3b8':'#e58a8a';ctx.beginPath();ctx.ellipse(st.x-st.r*.3,st.y-ry*.3,st.r*.35,ry*.28,0,0,7);ctx.fill();}}
     }ctx.globalAlpha=1;
-    for(const c of sim.joints){const a=Constraint.pointAWorld(c),b=Constraint.pointBWorld(c),organic=c.bodyA?.plugin.material==='flesh';ctx.strokeStyle=c.plugin.rope?'#c8b889':organic?'#bf967d':'#596d67';ctx.lineWidth=c.plugin.rope?2:organic?Math.min(c.bodyA.plugin.w,c.bodyB.plugin.w)*.72:6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.lineCap='butt';if(c.plugin.rope){ctx.fillStyle='#d0c6aa';for(const p of [a,b]){ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill();}}}
+    for(const c of sim.joints){const a=Constraint.pointAWorld(c),b=Constraint.pointBWorld(c),organic=c.bodyA?.plugin.material==='flesh';ctx.strokeStyle=c.plugin.rope?'#c8b889':organic?'#d6ab88':'#596d67';ctx.lineWidth=c.plugin.rope?2:organic?Math.min(c.bodyA.plugin.w,c.bodyB.plugin.w)*.72:6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.lineCap='butt';if(c.plugin.rope){ctx.fillStyle='#d0c6aa';for(const p of [a,b]){ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill();}}}
     // A lodged blade is drawn first, so the body hides the part inside it and the point shows out the far side.
     for(const b of [...sim.bodies].sort((a,b)=>(b.plugin.stuck!==undefined)-(a.plugin.stuck!==undefined))){const p=b.plugin;if(b.bounds.max.x<left||b.bounds.min.x>right||b.bounds.max.y<top||b.bounds.min.y>bottom)continue;
       // Contact shadow anchors objects in the chamber.
       if(set.shadows&&b.position.y>520){ctx.fillStyle='#10191d30';ctx.beginPath();ctx.ellipse(b.position.x,sim.groundY-1,Math.max(5,(p.w||p.r*2||20)*.5),3,0,0,7);ctx.fill();}
       ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);const growing=p.grow!==undefined;
       if(growing){const g=1-Math.pow(1-clamp(p.grow,.02,1),3),ax=p.flip?-p.growFrom.x:p.growFrom.x;ctx.translate(ax,p.growFrom.y);ctx.scale(g,g);ctx.translate(-ax,-p.growFrom.y);}
-      drawObject(ctx,p.kind,p,sim.time);
+      if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=Math.max(p.char||0,clamp(((p.heat||20)-180)/600,0,.85));BodyArt.draw(ctx,b,look);
+        // for a second or two after a limb comes off, strands hang and swing from the stump
+        if(!set.noGore)for(const end of p.severed||[])if(end.fresh>0){ctx.strokeStyle='#8a2830';ctx.lineWidth=.9;ctx.globalAlpha=Math.min(1,end.fresh);for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(end.x+i*2.2,end.y);ctx.quadraticCurveTo(end.x+i*3+Math.sin(sim.time*9+i)*2.5,end.y+4,end.x+i*2.6+Math.sin(sim.time*7+i*2)*3.5,end.y+7+i);ctx.stroke();}ctx.globalAlpha=1;}}
+      else drawObject(ctx,p.kind,p,sim.time);
       // A growing part starts raw and wet and settles into skin; a grafted body glows while the surge runs through it.
       if(growing){ctx.globalAlpha=(1-p.grow)*.7;ctx.fillStyle=p.kind==='human'?'#b8323c':'#7fe3ff';ctx.beginPath();ctx.roundRect(-p.w/2,-p.h/2,p.w,p.h,4);ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=`rgba(150,255,210,${(1-p.grow)*.3})`;ctx.lineWidth=6;ctx.stroke();ctx.strokeStyle=`rgba(190,255,230,${1-p.grow})`;ctx.lineWidth=1.5;ctx.stroke();}
       if(p.surge){const pulse=p.surge*(.65+.35*Math.sin(sim.time*40));ctx.beginPath();ctx.roundRect(-(p.w||20)/2-1,-(p.h||20)/2-1,(p.w||20)+2,(p.h||20)+2,4);ctx.strokeStyle=`rgba(120,230,255,${Math.min(.35,pulse*.35)})`;ctx.lineWidth=8;ctx.stroke();ctx.strokeStyle=`rgba(200,250,255,${Math.min(1,pulse)})`;ctx.lineWidth=2;ctx.stroke();}
       if(p.stains?.length&&set.decals){ctx.save();if(p.flip)ctx.scale(-1,1);ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,3);ctx.clip();
-        for(const st of p.stains){if(set.noGore&&!st.oil)continue;ctx.globalAlpha=.88;ctx.fillStyle=stainColor(st.wet||0,st.oil);ctx.beginPath();ctx.ellipse(st.x,st.y,st.r,st.r*(1+(1-(st.wet||0))*.5),-b.angle,0,7);ctx.fill();}ctx.restore();} // they sag downward as they dry: the long axis stays vertical in the world
+        for(const st of p.stains){if(set.noGore&&!st.oil)continue;ctx.globalAlpha=.88;ctx.fillStyle=stainColor(st.wet||0,st.oil);ctx.beginPath();ctx.ellipse(st.x,st.y,st.r*(.75+hash(st.x*3.1+st.y)*.5),st.r*(1+(1-(st.wet||0))*.6),-b.angle,0,7);ctx.fill();
+          // a splat, not a dot: a couple of satellite droplets thrown off it, placed by where it landed
+          for(let k=0;k<2;k++){const a=hash(st.x+st.y*2.3+k)*6.28,d=st.r*(1.5+hash(st.y+k*5)*1.2);ctx.beginPath();ctx.arc(st.x+Math.cos(a)*d,st.y+Math.sin(a)*d,st.r*.28,0,7);ctx.fill();}}ctx.restore();} // they sag downward as they dry: the long axis stays vertical in the world
       if(p.char&&p.kind!=='human'){ctx.fillStyle=`rgba(14,11,9,${Math.min(.8,p.char*.85)})`;ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,2);ctx.fill();}
       if(p.heat>100&&p.kind!=='human'){ctx.fillStyle=`rgba(219,99,49,${Math.min(.55,(p.heat-100)/1000)})`;ctx.fillRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24);}
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}
@@ -296,7 +258,7 @@
     if(sim.drag){ctx.strokeStyle='#cbb78588';ctx.lineWidth=1;const p=Constraint.pointBWorld(sim.drag);ctx.beginPath();ctx.moveTo(sim.drag.pointA.x,sim.drag.pointA.y);ctx.lineTo(p.x,p.y);ctx.stroke();}
     if(state.graftStump&&sim.bodies.includes(state.graftStump)){const g=state.graftStump.position,pulse=10+Math.sin(sim.time*9)*3;ctx.strokeStyle='#8fe9ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(g.x,g.y,pulse+8,0,7);ctx.stroke();ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.ropeStart){ctx.strokeStyle='#dec58e';ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(state.ropeStart.point.x,state.ropeStart.point.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
-    if(state.inside&&state.spawn&&!state.down){ctx.save();ctx.globalAlpha=.3;ctx.translate(state.worldPointer.x,state.worldPointer.y);ctx.rotate(state.rotation);if(state.spawn==='human'||state.spawn==='android'){for(const [part,x,y,w,h] of Sandbox.ANATOMY){ctx.save();ctx.translate(x,y);drawObject(ctx,state.spawn,{part,w,h,hp:100});ctx.restore();}}else drawObject(ctx,state.spawn);ctx.restore();}
+    if(state.inside&&state.spawn&&!state.down){ctx.save();ctx.globalAlpha=.3;ctx.translate(state.worldPointer.x,state.worldPointer.y);ctx.rotate(state.rotation);if(state.spawn==='human'||state.spawn==='android'){Sandbox.ANATOMY.forEach(([part,x,y,w,h],slot)=>{ctx.save();ctx.translate(x,y);drawObject(ctx,state.spawn,{part,slot,w,h,hp:100});ctx.restore();});}else drawObject(ctx,state.spawn);ctx.restore();}
     if(state.inside&&['blast','fire','shock','heal','revive','regrow','reattach','graft','dismember'].includes(state.tool)){ctx.strokeStyle=state.tool==='blast'?'#e3b07966':'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:24,0,7);ctx.stroke();ctx.setLineDash([]);}
     if(!set.floodlights)darkness();
     ctx.restore();weather();

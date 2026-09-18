@@ -171,7 +171,7 @@ test('lightning strikes the highest thing under it, shocks and heats it',()=>{
 });
 test('limb crushing removes a destroyed limb and leaves fragments; healing and brain damage work over time',()=>{
   const s=new Simulation();s.configure({limbCrush:true});const e=s.spawn('human',1000,555),hand=e.bodies[7];s.damage(hand,100,hand.position);s.step();assert.ok(s.bodies.includes(hand),'first blow only destroys it');
-  s.damage(hand,60,hand.position);s.step();assert.ok(!s.bodies.includes(hand));assert.equal(s.bodies.filter(b=>b.plugin.debris).length,3);assert.equal(e.bodies.length,16);
+  s.damage(hand,60,hand.position);s.step();assert.ok(!s.bodies.includes(hand));assert.equal(s.bodies.filter(b=>b.plugin.gib&&b.plugin.material==='flesh').length,3);assert.equal(s.bodies.filter(b=>b.plugin.gib&&b.plugin.material==='bone').length,2);assert.equal(e.bodies.length,16);
   const off=new Simulation();const h=off.spawn('human',1000,555).bodies[7];off.damage(h,100,h.position);off.damage(h,60,h.position);off.step();assert.ok(off.bodies.includes(h));
   const heal=new Simulation();heal.configure({slowHealing:true,stunScale:0});const p=heal.spawn('human',1000,555),arm=p.bodies[5];heal.damage(arm,40,arm.position,'bullet');const hp=arm.plugin.hp;advance(heal,600);assert.ok(arm.plugin.hp>hp+10);
   const brain=new Simulation();brain.configure({brainDamage:true,stunScale:0});const v=brain.spawn('human',1000,555);v.bodies[0].plugin.hp=20;let out=0;for(let i=0;i<1800;i++){brain.step();if(v.stun>0)out++;}assert.ok(out>60,'a badly hurt head should black out');
@@ -338,4 +338,15 @@ test('blood state survives save and load',()=>{
   const r=new Simulation();r.restore(data);const t=r.bodies.find(b=>b.plugin.slot===thigh.plugin.slot);assert.deepEqual(t.plugin.wounds,thigh.plugin.wounds);assert.deepEqual(t.plugin.stains,JSON.parse(JSON.stringify(thigh.plugin.stains)));assert.equal(r.stains.length,s.stains.length);
   const blood=r.entities[0].blood;advance(r,300);assert.ok(r.entities[0].blood<blood,'and the wound keeps bleeding after loading');
   for(const b of data.bodies)for(const w of b.plugin.wounds||[])delete w.bleed;const old=new Simulation();old.restore(data);advance(old,60);assert.ok(old.bodies.every(b=>Number.isFinite(b.plugin.bleed??0)),'wounds from an old save have no rate of their own and simply do not bleed');
+});
+// ---- gore spec, section 3: gibs and spray
+test('gibs come from crushed and blasted limbs, trail blood, respect the settings, stay capped and expire',()=>{
+  const s=new Simulation();s.configure({gibCount:4});const e=s.spawn('human',1000,555);s.explode(1000,540,220,1.4);advance(s,4);const gibs=()=>s.bodies.filter(b=>b.plugin.gib);assert.ok(gibs().length>=3,'a blast that destroys limbs throws gibs');
+  assert.ok(gibs().some(b=>b.plugin.material==='bone')&&gibs().some(b=>b.plugin.material==='flesh'));s.particles.length=0;advance(s,20);assert.ok(s.particles.some(p=>p.type==='blood'),'flying gibs trail blood');
+  for(let i=0;i<30;i++)s.gibs(600+i*10,300,'flesh',{x:0,y:0});assert.ok(gibs().length<=36,`gib count ${gibs().length}`);advance(s,60*18);assert.equal(gibs().length,0,'gibs do not last');
+  for(const set of [{fragments:false},{gibCount:0}]){const off=new Simulation();off.configure(set);off.gibs(1000,300,'flesh',{x:0,y:0});assert.equal(off.bodies.length,0);}
+});
+test('blood sprays along the blow: an exit wound throws it forward, an entry wound mostly back',()=>{
+  const flow=(forward)=>{const s=new Simulation();s.spray({x:1000,y:300},{x:1,y:0},200,6,forward);return s.particles.reduce((n,p)=>n+p.vx,0)/s.particles.length;};
+  assert.ok(flow(1)>2,'exit: forward');assert.ok(flow(-.35)<flow(.6),'an entry wound sends more back than a cut does');const s=new Simulation();s.spray({x:0,y:0},null,20,5,1);assert.equal(s.particles.length,20,'no direction: a plain burst');
 });

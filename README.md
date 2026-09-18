@@ -28,6 +28,10 @@ npm run dev
 - Blood: every wound bleeds at its own rate and clots (fast on a still limb, slowly on a moving one; a new blow nearby reopens it). Deep wounds to the neck, upper arms and thighs hit an artery and spurt in time with a heart rate that races with pain and early blood loss, then fails. Skin pales below 75% blood
 - Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Bodies dragged through a wet pool smear it and get bloody; feet track prints away. Blood dries from red to brown in about 30 s and then no longer smears. Androids leak teal coolant and sparks instead
 - Particles are pooled and recycled; stains are capped per body and globally, fade after a settable lifetime, and none are created with decals off
+- Layered bodies (`body.js`, after `reference/ragdoll.png`): every human part is three drawings — skeleton, muscle, skin. Wounds cut holes through the upper layers instead of painting over them: a bullet is a small hole with a dark bore, an exit wound a ragged crater down to bone, a cut a long slit along the blade's path, a stab a short one, a blast a crater; bruises fade from purple to yellow, burns char, fractures split the bone under a tear, stumps are a ragged cap of muscle round a bone nub with strands that swing for a moment. Badly damaged parts lose skin, then muscle, in patches
+- Five faces driven by the simulation: neutral, tense (on a hit or in pain), dazed, closed (unconscious), crosses (dead)
+- Each part is painted once into a cached sprite and repainted only when its damage changes, so ten wounded ragdolls cost ten ragdolls' worth of drawImage
+- Gibs: crushed and blasted limbs throw flesh chunks and bone fragments that trail blood, capped at 36 and gone after ~14 s. Blood sprays along the blow: forward from an exit wound, mostly back from an entry wound
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
 - Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
@@ -72,7 +76,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs physics behavior and save/restore tests. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 59 behaviour tests: physics, damage, blood, organs, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 
