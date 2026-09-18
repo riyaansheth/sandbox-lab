@@ -446,3 +446,20 @@ test('ten ragdolls in pain for thirty seconds: nothing blows up',()=>{
   all.forEach((e,i)=>{const hit=e.bodies[[2,5,11,3,14,8,0,12,6,15][i]];s.damage(hit,28+i*3,hit.position,['impact','cut','stab','bullet','blast'][i%5],{x:i%2?1:-1,y:0});if(i===4)s.ignite(e.bodies[2]);if(i===7)s.shock(e.bodies[2]);});
   let top=0;for(let i=0;i<1800;i++){s.step();if(i%10===0)for(const b of s.bodies){assert.ok(Number.isFinite(b.position.x)&&Number.isFinite(b.angle),`NaN at step ${i}`);top=Math.max(top,b.speed);}}assert.ok(top<60,`a body reached ${top} px/step`);
 });
+// ---- reaction spec, section 6: consciousness and death
+test('bleeding out is a descent: it sinks to its knees, slumps, passes out, dies, twitches once or twice, and then lies still and sleeps',()=>{
+  const s=new Simulation().seed(5);s.configure({organDamage:false,stunScale:0});const e=s.spawn('human',1000,555);advance(s,60);const chest=e.bodies[2];s.sever(s.joints.find(c=>c.plugin.name==='shoulder'));
+  const rungs=[],states=[];let kneltAt=null;for(let i=0;i<9000&&e.alive;i++){s.step();if(rungs[rungs.length-1]!==e.rung)rungs.push(e.rung);if(states[states.length-1]!==e.consciousness)states.push(e.consciousness);if(e.rung==='kneel'&&kneltAt===null)kneltAt=chest.position.y;}
+  assert.deepEqual(states,['awake','dazed','unconscious','dead']);const order=rungs.filter((r,i)=>['stand','kneel','curl','limp'].includes(r)&&rungs.indexOf(r)===i);assert.deepEqual(order,['stand','kneel','curl','limp'],`went ${rungs.join('>')}`);assert.equal(e.causeOfDeath,'blood loss');
+  assert.ok(e.twitchAt.length>=1,'a death by blood loss leaves a nerve or two to fire');let twitches=0,last=e.lastTwitch;for(let i=0;i<300;i++){s.step();if(e.lastTwitch!==last){twitches++;last=e.lastTwitch;}}assert.ok(twitches>=1&&twitches<=2,`${twitches} twitches`);assert.equal(e.twitchAt.length,0);
+  advance(s,480);assert.ok(e.pin,'a dead ragdoll comes to rest and sleeps');const x=chest.position.x;advance(s,600);assert.equal(chest.position.x,x);
+  const head=new Simulation();const h=head.spawn('human',1000,555);head.kill(h,'brain destroyed');assert.equal(h.twitchAt.length,0,'no last twitches without a brain to send them');
+});
+test('an unconscious ragdoll is limp, but wakes when what put it out recovers',()=>{
+  const {s,e,chest}=standing('human',{stunScale:0,bleedRate:0});for(let i=0;i<270;i++){e.pain=99;s.step();}assert.equal(e.consciousness,'unconscious');assert.equal(e.rung,'limp');assert.ok(chest.position.y>560,'it should be on the floor');
+  const breath=e.breath;advance(s,30);assert.notEqual(e.breath,breath,'still breathing');e.pain=0;advance(s,600);assert.equal(e.consciousness,'awake');assert.ok(chest.position.y<505,'and it gets back up');
+});
+test('a dazed ragdoll sways on its feet',()=>{
+  const sway=(blood)=>{const {s,e,chest}=standing('human',{bleedRate:0});e.blood=blood;let low=1e9,high=-1e9;for(let i=0;i<600;i++){e.blood=blood;s.step();const over=chest.position.x-(e.bodies[13].position.x+e.bodies[16].position.x)/2;low=Math.min(low,over);high=Math.max(high,over);}return {range:high-low,state:e.consciousness,up:chest.position.y<512};};
+  const clear=sway(100),dazed=sway(53);assert.equal(dazed.state,'dazed');assert.ok(dazed.up);assert.ok(dazed.range>clear.range+3,`dazed sway ${dazed.range} vs ${clear.range}`);
+});

@@ -145,6 +145,7 @@
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
+  const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -328,13 +329,19 @@
     active(e){return !!e.alive&&!!e.upright&&this.settings.autoBalance&&!(e.stun>0)&&e.consciousness!=='unconscious';}
     // stand -> kneel -> crawl -> drag -> curl. Legs that bear weight stand; knees without feet kneel; two good arms crawl, one drags; nothing left, or too much pain, curls up.
     capability(e) {
-      if(e.kind==='human'&&(e.pain||0)>=88)return 'curl';if(this.canStand(e))return 'stand';
+      if(e.kind==='human'&&((e.pain||0)>=88||e.blood<SLUMP_BLOOD))return 'curl';if(this.canStand(e))return e.kind==='human'&&e.blood<KNEEL_BLOOD?'kneel':'stand'; // bleeding out: first the legs go, then it slumps, then it is unconscious
       const live=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id),joint=(slot)=>live.find(c=>c.bodyB.plugin.slot===slot),ok=slot=>{const c=joint(slot);return !!c&&!this.fractured(c.bodyB)&&c.bodyB.plugin.hp>0;};
       const chest=e.bodies.find(b=>b.plugin.slot===2),head=e.bodies.find(b=>b.plugin.slot===0);if(!chest||!head||chest.plugin.hp<35||head.plugin.hp<35||!joint(0)||!joint(1))return 'curl';
       const trunk=!!joint(3)&&!!joint(4),brokenLeg=live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB));if(trunk&&!brokenLeg&&((ok(11)&&ok(12))||(ok(14)&&ok(15))))return 'kneel'; // kneeling is for missing feet, not for broken legs
       const arms=(ok(5)&&ok(6)?1:0)+(ok(8)&&ok(9)?1:0);return arms===2?'crawl':arms===1?'drag':'curl';
     }
     revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
+    // After death a nerve may still fire once or twice: a limb jerks at one joint, equal and opposite on its two parts, and that is the end of it. Then the body is left to come to rest.
+    twitch(e,seconds) {
+      e.deadFor+=seconds;if(e.deadFor<e.twitchAt[0])return;e.twitchAt.shift();if(e.twitchAt[0]>TWITCH_WINDOW)e.twitchAt.length=0;
+      const joints=this.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id&&c.bodyB.plugin.slot>=5);if(!joints.length)return;const c=joints[(random()*joints.length)|0],a=c.bodyA,b=c.bodyB,total=a.inverseInertia+b.inverseInertia;if(!total)return;
+      const kick=(random()<.5?-1:1)*.16;Body.setAngularVelocity(a,a.angularVelocity-kick*a.inverseInertia/total);Body.setAngularVelocity(b,b.angularVelocity+kick*b.inverseInertia/total);e.restTime=0;e.pin=null;e.lastTwitch=this.time;
+    }
     // Once per step for every living ragdoll: what the injuries are doing to it. Humans only for blood, organs, oxygen and pain; androids have none of those.
     vitals(e,seconds) {
       const set=this.settings,head=e.bodies.find(b=>b.plugin.part==='head'),human=e.kind==='human';
@@ -362,7 +369,7 @@
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
     react(e,body,amount,direction,stun) {
       const slot=body.plugin.slot??2,dir=direction&&Math.abs(direction.x)>1e-6?Math.sign(direction.x):(e.bodies[2]&&body.position.x>e.bodies[2].position.x?-1:1);
-      e.fleeT=FLEE_TIME;e.flinch=FLINCH_TIME*clamp(amount/25,.8,1.6);e.flinchMag=clamp(amount/28,.12,1);e.flinchSlot=slot;e.flinchDir=dir;
+      e.fleeT=FLEE_TIME;e.flinch=FLINCH_TIME*clamp(amount/25,.8,1.6);e.flinchMag=clamp(amount/28,.12,1)*(e.consciousness==='dazed'?.55:1);e.flinchSlot=slot;e.flinchDir=dir;
       const standing=this.balancing(e)&&!(e.stagN>0)&&Math.abs(wrap(e.bodies[2]?.angle||0))<.4,torso=slot<=4;
       if(standing&&amount>10&&(torso||amount>25)){e.stagN=clamp(Math.round(amount/16),1,3);e.stagDir=dir;e.stagT=0;e.stagLeg=dir>0?0:1;e.stagPush=Math.min(STAGGER_MAX,amount*STAGGER_PUSH);}
       // A knockdown arrives through the stagger: the legs get a moment to try before they go.
@@ -473,7 +480,7 @@
       const aiming=this.aimSet;aiming.clear();if(rung==='stand'&&!down)for(const hand of e.bodies){if(hand.plugin.part!=='hand')continue;const item=this.held(hand);if(item?.plugin.kind!=='gun')continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
         if(free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
       // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
-      const vigour=e.effort*tone*(human?clamp((e.blood-25)/50,.25,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.75:1):1);
+      const vigour=e.effort*tone*(human?clamp((e.blood-20)/45,.4,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.85:1):1);
       const crawlDir=this.pose(e,base,aiming,chest,down,seconds,rung);
       // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
       const live=this.joints;for(let i=0;i<live.length;i++){const c=live[i];if(!c.plugin.joint||c.bodyA.plugin.entityId!==e.id)continue;const a=c.bodyA,b=c.bodyB,slot=b.plugin.slot;if(slot===undefined)continue;
@@ -494,7 +501,8 @@
       for(let i=0;i<support.length;i++){const f=support[i],slot=f.plugin.slot,from=slot>=14?14:11;let health=1;for(const b of e.bodies)if(b.plugin.slot>=from&&b.plugin.slot<=from+2)health=Math.min(health,b.plugin.hp/b.plugin.maxHp);shares[i]=clamp(health*health,.12,1);total+=shares[i];}
       for(let i=0;i<support.length;i++){shares[i]/=total;footX+=support[i].position.x*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
       const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
-      const sway=clamp((footX+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
+      const daze=e.consciousness==='dazed'?Math.sin(this.time*1.3)*9+Math.sin(this.time*.7+1)*6:0; // dazed: the point it balances over wanders
+      const sway=clamp((footX+daze+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
       chest.force.x+=sway*.6;chest.force.y-=lift*.6;if(free(pelvis)){pelvis.force.x+=sway*.4;pelvis.force.y-=lift*.4;}
       for(let i=0;i<support.length;i++){const f=support[i];if(free(f)){f.force.x-=sway*this.shares[i];f.force.y+=lift*this.shares[i];}}
     }
@@ -628,7 +636,7 @@
     }
     // A part's bleeding is the sum of its wounds and stumps.
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
-    kill(e,cause){if(!e.alive)return;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;}
+    kill(e,cause){if(!e.alive)return;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;e.twitchAt=e.kind==='human'&&!/destroyed/.test(cause)?[rnd(.4,1.4),random()<.6?rnd(1.8,TWITCH_WINDOW):99]:[];}
     // Where on the part the blow landed decides whether it found an organ. Blunt force only reaches the brain (concussion).
     organHit(e,body,lx,ly,amount,type) {
       const p=body.plugin,zones=ORGANS[p.part];if(!zones)return;const fx=lx/(p.w/2),fy=ly/(p.h/2),zone=zones.find(([organ,x0,y0,x1,y1])=>fx>=x0&&fx<=x1&&fy>=y0&&fy<=y1&&(type!=='impact'||organ==='brain'));if(!zone)return;
@@ -771,10 +779,10 @@
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
       const bodies=this.bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
-        if(e.alive)this.vitals(e,seconds);
+        if(e.alive)this.vitals(e,seconds);else if(e.twitchAt?.length)this.twitch(e,seconds);
         e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
-        e.effort=Math.min(e.consciousness==='dazed'?.7:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
+        e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
         this.balance(e,e.rung=this.capability(e));
       }
       for(const b of bodies){const p=b.plugin;
@@ -874,7 +882,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');

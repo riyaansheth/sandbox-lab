@@ -199,7 +199,7 @@
   // Blood dries from bright red to a dark brown over about half a minute; android coolant from teal to near black.
   const STAIN_RAMP=[[155,31,42],[72,26,28]],OIL_RAMP=[[47,84,90],[24,34,36]];
   function stainColor(wet,oil){const [a,b]=oil?OIL_RAMP:STAIN_RAMP;return `rgb(${Math.round(b[0]+(a[0]-b[0])*wet)},${Math.round(b[1]+(a[1]-b[1])*wet)},${Math.round(b[2]+(a[2]-b[2])*wet)})`;}
-  const REMAINS={pale:.5,face:'dead',faceId:4,dead:true,noGore:false,time:0,char:0}; // parts whose owner is gone
+  const REMAINS={pale:.5,face:'dead',faceId:4,dead:true,noGore:false,time:0,char:0,breath:0}; // parts whose owner is gone
   const looks=new Map(); // entity id -> how that ragdoll looks this frame: pallor, face, dead. Filled once per frame, shared by its 17 parts.
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
@@ -207,7 +207,7 @@
     const left=camera.x-width/2/camera.zoom,right=camera.x+width/2/camera.zoom,top=camera.y-height/2/camera.zoom,bottom=camera.y+height/2/camera.zoom;
     ctx.lineWidth=1/camera.zoom;
     const set=sim.settings;looks.clear();for(const e of sim.entities){if(e.kind!=='human')continue;const face=!e.alive?'dead':e.consciousness==='unconscious'?'closed':(sim.time-(e.hitTime??-9)<.6||e.pain>65)?'tense':e.consciousness==='dazed'?'dazed':'neutral';
-      looks.set(e.id,{pale:e.blood<75?clamp((75-e.blood)/50,0,1):0,face,faceId:BodyArt.FACES.indexOf(face),dead:!e.alive,noGore:set.noGore,time:sim.time,char:0});}
+      looks.set(e.id,{pale:e.blood<75?clamp((75-e.blood)/50,0,1):0,face,faceId:BodyArt.FACES.indexOf(face),dead:!e.alive,noGore:set.noGore,time:sim.time,char:0,breath:e.alive&&set.breathing?Math.sin((e.breath||0)*Math.PI*2)*(.018+Math.min(.03,(e.pain||0)/2500)):0});}
     if(set.grid)for(let x=Math.floor(left/32)*32;x<right;x+=32){ctx.strokeStyle=x%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,Math.min(bottom,sim.groundY));ctx.stroke();}
     if(set.grid)for(let y=Math.floor(top/32)*32;y<Math.min(bottom,sim.groundY);y+=32){ctx.strokeStyle=y%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
     // Far wall measurement ticks and subtle workshop fixtures.
@@ -230,7 +230,7 @@
       if(set.shadows&&b.position.y>520){ctx.fillStyle='#10191d30';ctx.beginPath();ctx.ellipse(b.position.x,sim.groundY-1,Math.max(5,(p.w||p.r*2||20)*.5),3,0,0,7);ctx.fill();}
       ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);const growing=p.grow!==undefined;
       if(growing){const g=1-Math.pow(1-clamp(p.grow,.02,1),3),ax=p.flip?-p.growFrom.x:p.growFrom.x;ctx.translate(ax,p.growFrom.y);ctx.scale(g,g);ctx.translate(-ax,-p.growFrom.y);}
-      if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=Math.max(p.char||0,clamp(((p.heat||20)-180)/600,0,.85));BodyArt.draw(ctx,b,look);
+      if(p.kind==='human'&&p.part){const look=looks.get(p.entityId)||REMAINS;look.noGore=set.noGore;look.time=sim.time;look.char=Math.max(p.char||0,clamp(((p.heat||20)-180)/600,0,.85));if(look.breath&&(p.slot===2||p.slot===3)){ctx.save();ctx.scale(1+look.breath,1+look.breath*.5);BodyArt.draw(ctx,b,look);ctx.restore();}else BodyArt.draw(ctx,b,look);
         // for a second or two after a limb comes off, strands hang and swing from the stump
         if(!set.noGore)for(const end of p.severed||[])if(end.fresh>0){ctx.strokeStyle='#8a2830';ctx.lineWidth=.9;ctx.globalAlpha=Math.min(1,end.fresh);for(let i=-1;i<=1;i++){ctx.beginPath();ctx.moveTo(end.x+i*2.2,end.y);ctx.quadraticCurveTo(end.x+i*3+Math.sin(sim.time*9+i)*2.5,end.y+4,end.x+i*2.6+Math.sin(sim.time*7+i*2)*3.5,end.y+7+i);ctx.stroke();}ctx.globalAlpha=1;}}
       else drawObject(ctx,p.kind,p,sim.time);
