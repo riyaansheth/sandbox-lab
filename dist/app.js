@@ -186,7 +186,6 @@
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}
       if(p.charge>.05){ctx.strokeStyle='#a7d9e8';ctx.shadowColor='#9ad8e9';ctx.shadowBlur=10;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-8,-15);ctx.lineTo(4,-4);ctx.lineTo(-4,4);ctx.lineTo(7,17);ctx.stroke();ctx.shadowBlur=0;}
       ctx.restore();
-      if(b===state.selected){ctx.strokeStyle='#dfbd7d';ctx.lineWidth=1.5/camera.zoom;ctx.setLineDash([4/camera.zoom,3/camera.zoom]);ctx.strokeRect(b.bounds.min.x-5,b.bounds.min.y-5,b.bounds.max.x-b.bounds.min.x+10,b.bounds.max.y-b.bounds.min.y+10);ctx.setLineDash([]);}
     }
     for(const p of sim.particles){ctx.globalAlpha=clamp(p.life/p.maxLife,0,1);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*(p.type==='smoke'?2-p.life:.8),0,7);ctx.fill();}ctx.globalAlpha=1;
     for(const f of sim.flashes){const t=1-f.life/f.maxLife;ctx.strokeStyle=`rgba(236,192,116,${1-t})`;ctx.lineWidth=5*(1-t)+1;ctx.beginPath();ctx.arc(f.x,f.y,f.radius*t,0,7);ctx.stroke();const gradient=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,Math.max(1,f.radius*t));gradient.addColorStop(0,`rgba(255,220,156,${(1-t)*.55})`);gradient.addColorStop(1,'rgba(226,133,62,0)');ctx.fillStyle=gradient;ctx.fill();}
