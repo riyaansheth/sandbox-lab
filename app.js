@@ -19,12 +19,15 @@
     {id:'revive',name:'Revive',symbol:'♥',key:'9',title:'Back on your feet',desc:'Click a dead or collapsed ragdoll to bring it back to life and standing.'},
     {id:'regrow',name:'Regrow',symbol:'❋',key:'-',title:'Grow it back',desc:'Click a ragdoll to regrow every missing limb. The torn-off pieces stay where they fell.'},
     {id:'reattach',name:'Reattach',symbol:'⚭',key:'=',title:'Put it back',desc:'Click a severed limb to return it to its own body, or click the body to collect all its pieces.'},
+    {id:'graft',name:'Graft',symbol:'⚡',key:'[',title:'Build a better body',desc:'Click the body part to build on, then any loose limb — human or android, either side. It locks on with a surge of power.'},
+    {id:'dismember',name:'Dismember',symbol:'✂',key:']',title:'Take it off',desc:'Click a limb to cut it off at the joint nearest the body.'},
     {id:'delete',name:'Delete',symbol:'⌫',key:'0',title:'Clean up',desc:'Click an object to remove it and its connections.'}
   ];
   let width=0,height=0,dpr=1,toastTimer,lastShot=0,lastAction=0,lastTime=0,accumulator=0,frameCount=0,fpsTime=0,uiTime=0;
   let audio=null,lastImpact=0;
   function sound(type,volume=.2){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
     if(type==='thunder'){thunder(now,level);return;}
+    if(type==='grow'||type==='surge'){const rise=audio.createOscillator(),g=audio.createGain(),long=type==='surge'?.7:.22;rise.type=type==='surge'?'sawtooth':'sine';rise.frequency.setValueAtTime(type==='surge'?90:220+volume*260,now);rise.frequency.exponentialRampToValueAtTime(type==='surge'?1400:520+volume*400,now+long);g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(Math.min(.2,.09*level),now+long*.6);g.gain.exponentialRampToValueAtTime(.001,now+long);rise.connect(g);g.connect(audio.destination);rise.start(now);rise.stop(now+long+.02);if(type==='surge')shake=7*set.shake;return;}
     const gain=audio.createGain();gain.connect(audio.destination);gain.gain.setValueAtTime(Math.min(.2,volume*.15*level),now);gain.gain.exponentialRampToValueAtTime(.001,now+.18);
     const oscillator=audio.createOscillator();oscillator.type=type==='electric'?'sawtooth':'triangle';oscillator.frequency.setValueAtTime(type==='explosion'?70:type==='shot'?210:type==='electric'?650:160,now);oscillator.frequency.exponentialRampToValueAtTime(30,now+.2);oscillator.connect(gain);oscillator.start(now);oscillator.stop(now+.22);
   }catch{applySettings({sound:false});$('#sound-btn').textContent='Sound unavailable';}}
@@ -40,12 +43,12 @@
   function fit(){camera.x=1220;camera.y=390;camera.zoom=Math.min(width/1040,height/660);camera.zoom=clamp(camera.zoom,.25,1.6);updateZoom();}
   function updateZoom(){$('#zoom-reset').textContent=Math.round(camera.zoom*100)+'%';}
   function toWorld(point){return {x:(point.x-width/2)/camera.zoom+camera.x,y:(point.y-height/2)/camera.zoom+camera.y};}
-  function setTool(id){state.tool=id;state.ropeStart=null;sim.endDrag();document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===id);b.setAttribute('aria-pressed',String(b.dataset.tool===id));});const t=TOOLS.find(t=>t.id===id);$('#tool-caption-icon').textContent=t.symbol;$('#tool-caption-name').textContent=t.title;$('#tool-caption-desc').textContent=t.desc;canvas.style.cursor=id==='grab'?'grab':'crosshair';}
+  function setTool(id){state.tool=id;state.ropeStart=null;state.graftStump=null;sim.endDrag();document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===id);b.setAttribute('aria-pressed',String(b.dataset.tool===id));});const t=TOOLS.find(t=>t.id===id);$('#tool-caption-icon').textContent=t.symbol;$('#tool-caption-name').textContent=t.title;$('#tool-caption-desc').textContent=t.desc;canvas.style.cursor=id==='grab'?'grab':'crosshair';}
   function chooseSpawn(id){state.spawn=state.spawn===id?null:id;state.rotation=0;document.querySelectorAll('.object-card').forEach(b=>b.classList.toggle('active',b.dataset.object===state.spawn));if(state.spawn)toast(CATALOG.find(c=>c.id===id).name+' ready — Q / E places it at the cursor, facing left / right');}
   function temperature(c){const unit=sim.settings.tempUnit;return unit==='Fahrenheit'?Math.round(c*9/5+32)+'°F':unit==='Kelvin'?Math.round(c+273)+' K':Math.round(c)+'°C';}
   function select(body){state.selected=body;updateSelection();}
   function updateSelection(){const b=state.selected;if(!b||!sim.bodies.includes(b)){state.selected=null;$('#selection-panel').hidden=true;return;}$('#selection-panel').hidden=false;const p=b.plugin,c=CATALOG.find(c=>c.id===p.kind);$('#selection-name').textContent=(c?.name||'Fragment')+(p.part?' · '+p.part:'');$('#selection-info').innerHTML=`<div class="stat-row"><span>Integrity</span><b>${Math.round(p.hp/p.maxHp*100)}%</b></div><div class="health-bar"><i style="width:${clamp(p.hp/p.maxHp*100,0,100)}%"></i></div><div class="stat-row"><span>Temperature</span><b>${temperature(p.heat)}</b></div><div class="stat-row"><span>State</span><b>${b.isStatic?'Frozen':p.burning?'Burning':p.charge>.1?'Electrified':p.hp<=0?'Broken':p.active?'Active':'Dynamic'}</b></div>`;$('#freeze-selection').textContent=b.isStatic?'Unfreeze':'Freeze';$('#activate-selection').disabled=!['barrel','bomb','gun','thruster','wheel','battery'].includes(p.kind);}
-  function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh')return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Unresponsive':p.bleed>.05?'Bleeding':'Stable'}</b></div>`);}
+  function updateAnatomyInfo(){const b=state.selected;if(!b||b.plugin.material!=='flesh')return;const e=sim.getEntity(b),p=b.plugin;$('#selection-info').insertAdjacentHTML('beforeend',`<div class="stat-row"><span>Blood volume</span><b>${Math.round(e?.blood??100)}%</b></div><div class="stat-row"><span>Bone integrity</span><b>${Math.round(p.bone??100)}%</b></div><div class="stat-row"><span>Condition</span><b>${e?.alive===false?'Dead':e?.stun>0?'Knocked down':p.bleed>.05?'Bleeding':'Stable'}</b></div>`);}
   function roundRect(c,x,y,w,h,r=2){c.beginPath();c.roundRect(x,y,w,h,r);}
   function humanOutline(c,p){
     const w=p.w||14,h=p.h||30;c.beginPath();
@@ -170,31 +173,48 @@
   }else{const d=Sandbox.defs[kind],s=Math.min(1.3,120/(d.w||d.r*2),78/(d.h||d.r*2));c.scale(s,s);drawObject(c,kind,d);}c.restore();}
   function renderCatalog(){const query=$('#search').value.trim().toLowerCase();const list=CATALOG.filter(c=>(state.category==='all'||c.category===state.category)&&`${c.name} ${c.description}`.toLowerCase().includes(query));$('#catalog-count').textContent=list.length+' objects';$('#catalog').replaceChildren();for(const item of list){const button=document.createElement('button');button.className='object-card'+(state.spawn===item.id?' active':'');button.dataset.object=item.id;button.title=item.description;button.setAttribute('aria-label','Spawn '+item.name);const preview=document.createElement('canvas');preview.width=160;preview.height=114;preview.setAttribute('aria-hidden','true');button.appendChild(preview);const name=document.createElement('span');name.className='name';name.textContent=item.name;button.appendChild(name);if(item.id==='human'){const tag=document.createElement('span');tag.className='tag';tag.textContent='Start here';button.appendChild(tag);}button.addEventListener('click',()=>chooseSpawn(item.id));$('#catalog').appendChild(button);drawMini(preview.getContext('2d'),item.id);}if(!list.length){const p=document.createElement('p');p.className='no-results';p.textContent='No objects match your search.';$('#catalog').appendChild(p);}}
   for(const tool of TOOLS){const b=document.createElement('button');b.className='tool'+(tool.id==='grab'?' active':'');b.dataset.tool=tool.id;b.title=`${tool.title} (${tool.key})`;b.setAttribute('aria-label',tool.title);b.setAttribute('aria-pressed',String(tool.id==='grab'));b.innerHTML=`<span class="shortcut">${tool.key}</span><span class="symbol">${tool.symbol}</span><span class="tool-name">${tool.name}</span>`;b.addEventListener('click',()=>setTool(tool.id));$('#tools').appendChild(b);}
+  const hash=n=>{const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);};
+  // Fire. Flames are not particles: each burning body carries a row of tongues along its top, shaped by smooth noise so they lick and lean rather than blink.
+  // Two layers, drawn additively: a wide red-orange body and a narrow yellow-white core, over a glow on whatever is beneath.
+  const smooth=t=>{const i=Math.floor(t),f=t-i,u=f*f*(3-2*f);return hash(i)*(1-u)+hash(i+1)*u;};
+  // Performance: nothing here builds a gradient or blurs per frame. Flame tongues, glows and smoke are painted once into small sprites and stamped with drawImage.
+  const sprites={};
+  function sprite(name,w,h,paint){if(!sprites[name]){const c=document.createElement('canvas');c.width=w;c.height=h;paint(c.getContext('2d'),w,h);sprites[name]=c;}return sprites[name];}
+  const flameSprite=(name,inner,mid,tip)=>sprite(name,64,128,(c,w,h)=>{const g=c.createLinearGradient(0,h,0,0);g.addColorStop(0,inner);g.addColorStop(.45,mid);g.addColorStop(1,tip);c.fillStyle=g;c.beginPath();c.moveTo(6,h);c.bezierCurveTo(-4,h*.65,w*.32,h*.38,w/2,0);c.bezierCurveTo(w*.68,h*.42,w+4,h*.7,w-6,h);c.closePath();c.fill();});
+  const glowSprite=(name,rgb,alpha)=>sprite(name,128,128,c=>{const g=c.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,`rgba(${rgb},${alpha})`);g.addColorStop(1,`rgba(${rgb},0)`);c.fillStyle=g;c.fillRect(0,0,128,128);});
+  function stampTongue(image,x,base,w,h,lean){ctx.setTransform(view.a,0,-lean/h*view.a,view.a,view.a*x+view.e,view.a*base+view.f);ctx.drawImage(image,-w,-h,w*2,h);}
+  const view={a:1,e:0,f:0}; // the world transform (uniform scale + offset), kept so sprites can be placed without save/restore
+  function drawFlames(b){const p=b.plugin,t=sim.time,left=b.bounds.min.x,wide=b.bounds.max.x-left,base=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.55,power=clamp((p.heat-150)/380,.45,1.25),count=clamp(Math.round(wide/12),2,6);
+    const outer=flameSprite('flameOuter','rgba(255,120,30,.6)','rgba(240,70,20,.45)','rgba(160,20,5,0)'),inner=flameSprite('flameInner','rgba(255,245,200,.9)','rgba(255,190,70,.6)','rgba(255,120,20,0)'),reach=wide*.7+46*power;
+    ctx.globalAlpha=clamp(wide/80,.1,1);ctx.drawImage(glowSprite('fireGlow','255,130,40',.22),b.position.x-reach,base-reach,reach*2,reach*2);ctx.globalAlpha=1; // small parts glow faintly, or a burning ragdoll's 17 glows add up to white
+    for(let i=0;i<count;i++){const seed=b.id*7.3+i*13.7,x=left+(i+.5)/count*wide+(smooth(t*2.3+seed)-.5)*6,edge=1-Math.abs((i+.5)/count-.5)*.9,h=(20+34*smooth(t*5.5+seed)+10*smooth(t*13+seed*2))*power*edge+1,lean=(smooth(t*3.1+seed*.7)-.5)*16-b.velocity.x*2.5,w=wide/count*.62+2;
+      stampTongue(outer,x,base,w,h,lean);stampTongue(inner,x,base,w*.5,h*.62,lean*.6);}
+    ctx.setTransform(view.a,0,0,view.a,view.e,view.f);}
   // Lightning. A channel is a midpoint-displaced path that forks on the way down. The channel keeps its shape for the whole strike;
   // what changes is the light: a first return stroke, then one or two dimmer restrikes down the same path, each decaying fast. Forks only show on the first.
-  const hash=n=>{const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);};
   function jagged(from,to,roughness,depth,seed){let points=[from,to];for(let d=0;d<depth;d++){const next=[points[0]];for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],len=Math.hypot(b.x-a.x,b.y-a.y),nx=-(b.y-a.y)/(len||1),ny=(b.x-a.x)/(len||1),offset=(hash(seed+=1.7)-.5)*len*roughness;next.push({x:(a.x+b.x)/2+nx*offset,y:(a.y+b.y)/2+ny*offset},b);}points=next;}return points;}
   function boltShape(t){const seed=t.from.x*.37+t.to.y,main=jagged(t.from,t.to,.34,6,seed),forks=[],drop=t.to.y-t.from.y;
     for(let i=0;i<5;i++){const at=main[Math.floor((.12+hash(seed+i*9.1)*.6)*main.length)],side=hash(seed+i*3.3)<.5?-1:1,reach=drop*(.12+hash(seed+i*5.7)*.2),end={x:at.x+side*reach*(.45+hash(seed+i)*.5),y:at.y+reach};
       const fork=jagged(at,end,.4,4,seed+i*31);forks.push(fork);if(hash(seed+i*7.7)<.5){const twigFrom=fork[Math.floor(fork.length*.55)];forks.push(jagged(twigFrom,{x:twigFrom.x-side*reach*.3,y:twigFrom.y+reach*.4},.45,3,seed+i*57));}}
     return {main,forks};}
   function strokeLight(t){const age=t.maxLife-t.life;return Math.max(...[[0,1],[.13,.6],[.27,.38]].map(([start,power])=>age>=start?power*Math.exp(-(age-start)*17):0));}
-  function strokePath(points,width,color){ctx.lineWidth=width;ctx.strokeStyle=color;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();}
+  const pathOf=list=>{const path=new Path2D();for(const points of list)points.forEach((p,i)=>i?path.lineTo(p.x,p.y):path.moveTo(p.x,p.y));return path;};
+  function stroke(path,width,color){ctx.lineWidth=width;ctx.strokeStyle=color;ctx.stroke(path);}
   function drawElectric(t){ctx.lineJoin='round';ctx.lineCap='round';
-    if(t.bolt){t.shape??=boltShape(t);const light=strokeLight(t),first=t.maxLife-t.life<.12,z=1/Math.max(.5,camera.zoom);if(light<.02)return;ctx.shadowColor='#9fc0ff';ctx.shadowBlur=26;
-      strokePath(t.shape.main,15*z,`rgba(120,160,255,${.13*light})`);strokePath(t.shape.main,6*z,`rgba(175,205,255,${.4*light})`);ctx.shadowBlur=9;strokePath(t.shape.main,2.1*z,`rgba(255,255,255,${Math.min(1,light*1.25)})`);
-      if(first)for(const fork of t.shape.forks){strokePath(fork,3.2*z,`rgba(160,195,255,${.28*light})`);strokePath(fork,1*z,`rgba(240,246,255,${.85*light})`);}ctx.shadowBlur=0;ctx.lineCap='butt';return;}
+    if(t.bolt){if(!t.shape){const shape=boltShape(t);t.shape={main:pathOf([shape.main]),forks:pathOf(shape.forks)};}const light=strokeLight(t),first=t.maxLife-t.life<.12,z=1/Math.max(.5,camera.zoom);if(light<.02)return;
+      stroke(t.shape.main,26*z,`rgba(110,150,255,${.07*light})`);stroke(t.shape.main,12*z,`rgba(140,175,255,${.16*light})`);stroke(t.shape.main,5*z,`rgba(185,210,255,${.45*light})`);stroke(t.shape.main,2*z,`rgba(255,255,255,${Math.min(1,light*1.25)})`);
+      if(first){stroke(t.shape.forks,4*z,`rgba(150,185,255,${.22*light})`);stroke(t.shape.forks,1.1*z,`rgba(240,246,255,${.85*light})`);}ctx.lineCap='butt';return;}
     // Arcs between conductors are short-lived and restless: a new path several times a second.
-    const fade=t.life/t.maxLife,arc=jagged(t.from,t.to,.42,3,Math.floor(sim.time*28)+t.from.x);ctx.shadowColor='#8fd6ff';ctx.shadowBlur=10;strokePath(arc,4,`rgba(120,200,255,${.3*fade})`);strokePath(arc,1.3,`rgba(235,250,255,${fade})`);ctx.shadowBlur=0;ctx.lineCap='butt';}
+    const fade=t.life/t.maxLife,arc=pathOf([jagged(t.from,t.to,.42,3,Math.floor(sim.time*28)+t.from.x)]);stroke(arc,5,`rgba(120,200,255,${.22*fade})`);stroke(arc,1.4,`rgba(235,250,255,${fade})`);ctx.lineCap='butt';}
   // With the floodlights off the chamber is dark, and anything that burns, flashes or arcs cuts a hole in the dark.
   let shade=null;
   function darkness(){shade??=document.createElement('canvas');if(shade.width!==canvas.width||shade.height!==canvas.height){shade.width=canvas.width;shade.height=canvas.height;}
     const d=shade.getContext('2d'),toScreen=p=>({x:(p.x-camera.x)*camera.zoom+width/2,y:(p.y-camera.y)*camera.zoom+height/2});d.setTransform(dpr,0,0,dpr,0,0);d.globalCompositeOperation='source-over';d.clearRect(0,0,width,height);d.fillStyle='rgba(4,7,10,.86)';d.fillRect(0,0,width,height);d.globalCompositeOperation='destination-out';
-    const light=(point,radius,power=1)=>{const p=toScreen(point),r=radius*camera.zoom,g=d.createRadialGradient(p.x,p.y,0,p.x,p.y,r);g.addColorStop(0,`rgba(0,0,0,${power})`);g.addColorStop(1,'rgba(0,0,0,0)');d.fillStyle=g;d.beginPath();d.arc(p.x,p.y,r,0,7);d.fill();};
+    const hole=glowSprite('hole','0,0,0',1),light=(point,radius,power=1)=>{const p=toScreen(point),r=radius*camera.zoom;d.globalAlpha=Math.min(1,power);d.drawImage(hole,p.x-r,p.y-r,r*2,r*2);};
     for(const b of sim.bodies){const p=b.plugin;if(p.burning)light(b.position,150+Math.sin(sim.time*23+b.id)*12);else if(p.charge>.1)light(b.position,70,p.charge);else if(p.active&&p.kind==='thruster')light(b.position,110);}
     for(const f of sim.flashes)light(f,f.radius*2.2,f.life/f.maxLife);for(const t of sim.traces)if(t.bolt){const power=Math.min(1,strokeLight(t)*1.4);if(power>.02){light(t.to,520,power);light({x:(t.from.x+t.to.x)/2,y:(t.from.y+t.to.y)/2},620,power*.8);}}else if(t.electric)light(t.to,60,t.life/t.maxLife);
     if(state.inside)light(state.worldPointer,95,.55); // a little working light at the cursor, or the room is unusable
-    ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(shade,0,0);ctx.restore();}
+    d.globalAlpha=1;ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(shade,0,0);ctx.restore();}
   // Rain, snow and fog are stateless: every streak's position is a function of its index and the clock.
   function weather(){const set=sim.settings,time=sim.time;
     if(set.fog){const fog=ctx.createLinearGradient(0,height*.25,0,height);fog.addColorStop(0,'rgba(168,182,188,.05)');fog.addColorStop(1,'rgba(168,182,188,.4)');ctx.fillStyle=fog;ctx.fillRect(0,0,width,height);
@@ -204,7 +224,7 @@
   }
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
-    ctx.save();ctx.translate(width/2+(Math.random()-.5)*shake,height/2+(Math.random()-.5)*shake);ctx.scale(camera.zoom,camera.zoom);ctx.translate(-camera.x,-camera.y);shake*=.88;
+    ctx.save();ctx.translate(width/2+(Math.random()-.5)*shake,height/2+(Math.random()-.5)*shake);ctx.scale(camera.zoom,camera.zoom);ctx.translate(-camera.x,-camera.y);shake*=.88;{const m=ctx.getTransform();view.a=m.a;view.e=m.e;view.f=m.f;}
     const left=camera.x-width/2/camera.zoom,right=camera.x+width/2/camera.zoom,top=camera.y-height/2/camera.zoom,bottom=camera.y+height/2/camera.zoom;
     ctx.lineWidth=1/camera.zoom;
     const set=sim.settings;
@@ -223,26 +243,37 @@
     for(const b of [...sim.bodies].sort((a,b)=>(b.plugin.stuck!==undefined)-(a.plugin.stuck!==undefined))){const p=b.plugin;if(b.bounds.max.x<left||b.bounds.min.x>right||b.bounds.max.y<top||b.bounds.min.y>bottom)continue;
       // Contact shadow anchors objects in the chamber.
       if(set.shadows&&b.position.y>520){ctx.fillStyle='#10191d30';ctx.beginPath();ctx.ellipse(b.position.x,sim.groundY-1,Math.max(5,(p.w||p.r*2||20)*.5),3,0,0,7);ctx.fill();}
-      ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);drawObject(ctx,p.kind,p,sim.time);
+      ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);if(p.flip)ctx.scale(-1,1);const growing=p.grow!==undefined;
+      if(growing){const g=1-Math.pow(1-clamp(p.grow,.02,1),3),ax=p.flip?-p.growFrom.x:p.growFrom.x;ctx.translate(ax,p.growFrom.y);ctx.scale(g,g);ctx.translate(-ax,-p.growFrom.y);}
+      drawObject(ctx,p.kind,p,sim.time);
+      // A growing part starts raw and wet and settles into skin; a grafted body glows while the surge runs through it.
+      if(growing){ctx.globalAlpha=(1-p.grow)*.7;ctx.fillStyle=p.kind==='human'?'#b8323c':'#7fe3ff';ctx.beginPath();ctx.roundRect(-p.w/2,-p.h/2,p.w,p.h,4);ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle=`rgba(150,255,210,${(1-p.grow)*.3})`;ctx.lineWidth=6;ctx.stroke();ctx.strokeStyle=`rgba(190,255,230,${1-p.grow})`;ctx.lineWidth=1.5;ctx.stroke();}
+      if(p.surge){const pulse=p.surge*(.65+.35*Math.sin(sim.time*40));ctx.beginPath();ctx.roundRect(-(p.w||20)/2-1,-(p.h||20)/2-1,(p.w||20)+2,(p.h||20)+2,4);ctx.strokeStyle=`rgba(120,230,255,${Math.min(.35,pulse*.35)})`;ctx.lineWidth=8;ctx.stroke();ctx.strokeStyle=`rgba(200,250,255,${Math.min(1,pulse)})`;ctx.lineWidth=2;ctx.stroke();}
+      if(p.char&&p.kind!=='human'){ctx.fillStyle=`rgba(14,11,9,${Math.min(.8,p.char*.85)})`;ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,2);ctx.fill();}
       if(p.heat>100&&p.kind!=='human'){ctx.fillStyle=`rgba(219,99,49,${Math.min(.55,(p.heat-100)/1000)})`;ctx.fillRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24);}
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}
-      if(p.charge>.05){ctx.strokeStyle='#a7d9e8';ctx.shadowColor='#9ad8e9';ctx.shadowBlur=10;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-8,-15);ctx.lineTo(4,-4);ctx.lineTo(-4,4);ctx.lineTo(7,17);ctx.stroke();ctx.shadowBlur=0;}
+      if(p.charge>.05){ctx.strokeStyle='#a7d9e8';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-8,-15);ctx.lineTo(4,-4);ctx.lineTo(-4,4);ctx.lineTo(7,17);ctx.stroke();}
       ctx.restore();
     }
-    if(set.particles!=='Off')for(let i=0;i<sim.particles.length;i++){const p=sim.particles[i];if((set.particles==='Low'&&i%2)||(set.noGore&&p.type==='blood'))continue;ctx.globalAlpha=clamp(p.life/p.maxLife,0,1);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*(p.type==='smoke'?2-p.life:.8),0,7);ctx.fill();}ctx.globalAlpha=1;
-    for(const f of sim.flashes){const t=1-f.life/f.maxLife;ctx.strokeStyle=`rgba(236,192,116,${1-t})`;ctx.lineWidth=5*(1-t)+1;ctx.beginPath();ctx.arc(f.x,f.y,f.radius*t,0,7);ctx.stroke();const gradient=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,Math.max(1,f.radius*t));gradient.addColorStop(0,`rgba(255,220,156,${(1-t)*.55})`);gradient.addColorStop(1,'rgba(226,133,62,0)');ctx.fillStyle=gradient;ctx.fill();}
+    ctx.globalCompositeOperation='lighter';for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left&&b.bounds.min.x<right)drawFlames(b);ctx.globalCompositeOperation='source-over';
+    if(set.particles!=='Off')for(let i=0;i<sim.particles.length;i++){const p=sim.particles[i];if((set.particles==='Low'&&i%2)||(set.noGore&&p.type==='blood'))continue;const age=1-clamp(p.life/p.maxLife,0,1);
+      if(p.type==='smoke'){const r=p.size*(1+2.2*age);ctx.globalAlpha=1-age;ctx.drawImage(glowSprite('smoke','38,38,40',.36),p.x-r,p.y-r,r*2,r*2);ctx.globalAlpha=1;continue;}
+      if(p.type==='ember'){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=1-age*age;ctx.fillStyle=age<.5?'#ffd98a':'#ff8a3c';ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;continue;}
+      ctx.globalAlpha=1-age;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*.8,0,7);ctx.fill();}ctx.globalAlpha=1;
+    for(const f of sim.flashes){const t=1-f.life/f.maxLife;if(f.grow||f.surge){const tint=f.grow?'150,255,205':'130,235,255';for(const lag of f.surge?[]:[0]){ // the graft surge has no ring: just the core flash, arcs and sparks
+      const k=clamp(t-lag,0,1);if(!k)continue;ctx.strokeStyle=`rgba(${tint},${(1-k)*.9})`;ctx.lineWidth=(f.surge?7:3)*(1-k)+1;ctx.beginPath();ctx.arc(f.x,f.y,f.radius*(1-Math.pow(1-k,3)),0,7);ctx.stroke();ctx.strokeStyle=`rgba(${tint},${(1-k)*.18})`;ctx.lineWidth*=3.5;ctx.stroke();}const core=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.radius*.6);core.addColorStop(0,`rgba(255,255,255,${(1-t)*(f.surge?.7:.35)})`);core.addColorStop(1,`rgba(${tint},0)`);ctx.fillStyle=core;ctx.beginPath();ctx.arc(f.x,f.y,f.radius*.6,0,7);ctx.fill();continue;}ctx.strokeStyle=`rgba(236,192,116,${1-t})`;ctx.lineWidth=5*(1-t)+1;ctx.beginPath();ctx.arc(f.x,f.y,f.radius*t,0,7);ctx.stroke();const gradient=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,Math.max(1,f.radius*t));gradient.addColorStop(0,`rgba(255,220,156,${(1-t)*.55})`);gradient.addColorStop(1,'rgba(226,133,62,0)');ctx.fillStyle=gradient;ctx.fill();}
     for(const t of sim.traces){if(t.bolt)continue;if(t.electric){drawElectric(t);continue;}if(!set.tracers)continue;ctx.globalAlpha=t.life/t.maxLife;ctx.strokeStyle='#f0cd84';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(t.from.x,t.from.y);ctx.lineTo(t.to.x,t.to.y);ctx.stroke();}ctx.globalAlpha=1;
     if(sim.drag){ctx.strokeStyle='#cbb78588';ctx.lineWidth=1;const p=Constraint.pointBWorld(sim.drag);ctx.beginPath();ctx.moveTo(sim.drag.pointA.x,sim.drag.pointA.y);ctx.lineTo(p.x,p.y);ctx.stroke();}
+    if(state.graftStump&&sim.bodies.includes(state.graftStump)){const g=state.graftStump.position,pulse=10+Math.sin(sim.time*9)*3;ctx.strokeStyle='#8fe9ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(g.x,g.y,pulse+8,0,7);ctx.stroke();ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.ropeStart){ctx.strokeStyle='#dec58e';ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(state.ropeStart.point.x,state.ropeStart.point.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.inside&&state.spawn&&!state.down){ctx.save();ctx.globalAlpha=.3;ctx.translate(state.worldPointer.x,state.worldPointer.y);ctx.rotate(state.rotation);if(state.spawn==='human'||state.spawn==='android'){for(const [part,x,y,w,h] of Sandbox.ANATOMY){ctx.save();ctx.translate(x,y);drawObject(ctx,state.spawn,{part,w,h,hp:100});ctx.restore();}}else drawObject(ctx,state.spawn);ctx.restore();}
-    if(state.inside&&['blast','fire','shock','heal','revive','regrow','reattach'].includes(state.tool)){ctx.strokeStyle=state.tool==='blast'?'#e3b07966':'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:24,0,7);ctx.stroke();ctx.setLineDash([]);}
+    if(state.inside&&['blast','fire','shock','heal','revive','regrow','reattach','graft','dismember'].includes(state.tool)){ctx.strokeStyle=state.tool==='blast'?'#e3b07966':'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:24,0,7);ctx.stroke();ctx.setLineDash([]);}
     if(!set.floodlights)darkness();
     ctx.restore();weather();
     // Gentle edge falloff adds depth without obscuring the simulation.
     if(set.vignette){const vignette=ctx.createRadialGradient(width/2,height/2,Math.min(width,height)*.25,width/2,height/2,Math.max(width,height)*.7);vignette.addColorStop(0,'#101a2000');vignette.addColorStop(1,'#101a2044');ctx.fillStyle=vignette;ctx.fillRect(0,0,width,height);}
     // A strike lights the sky, brightest around the channel, and the channel itself is drawn last so rain, fog and the dark never bury it.
-    for(const t of sim.traces){if(!t.bolt)continue;const light=strokeLight(t);if(light<.02)continue;const x=(t.to.x-camera.x)*camera.zoom+width/2,reach=Math.max(width,height)*1.1,glow=ctx.createRadialGradient(x,height*.3,0,x,height*.3,reach);
-      glow.addColorStop(0,`rgba(200,218,255,${Math.min(.5,light*.5)})`);glow.addColorStop(.35,`rgba(170,195,255,${light*.16})`);glow.addColorStop(1,`rgba(150,180,255,${light*.04})`);ctx.fillStyle=glow;ctx.fillRect(0,0,width,height);
+    for(const t of sim.traces){if(!t.bolt)continue;const light=strokeLight(t);if(light<.02)continue;const x=(t.to.x-camera.x)*camera.zoom+width/2,reach=Math.max(width,height)*1.3;ctx.globalAlpha=Math.min(1,light);ctx.drawImage(glowSprite('sky','195,215,255',.55),x-reach,height*.3-reach,reach*2,reach*2);ctx.globalAlpha=Math.min(.12,light*.1);ctx.fillStyle='#b4c8ff';ctx.fillRect(0,0,width,height);ctx.globalAlpha=1;
       ctx.save();ctx.translate(width/2,height/2);ctx.scale(camera.zoom,camera.zoom);ctx.translate(-camera.x,-camera.y);drawElectric(t);ctx.restore();}
   }
   const spawned=[];
@@ -257,8 +288,11 @@
       case'blast':if(!continuous)sim.explode(point.x,point.y);break;
       case'heal':if(body){sim.heal(body);select(body);}break;
       case'revive':if(body&&!continuous){toast(sim.revive(body)?'Revived':'Only humans and androids can be revived');select(body);}break;
-      case'regrow':if(body&&!continuous){const n=sim.regenerate(body);toast(n?`Regrew ${n} part${n>1?'s':''}`:body.plugin.part?'Nothing is missing':'Only ragdolls regrow');}break;
+      case'regrow':if(body&&!continuous){const n=sim.regenerate(body);toast(n?`Regrowing ${n} part${n>1?'s':''}…`:body.plugin.part?'Nothing is missing':'Only ragdolls regrow');}break;
       case'reattach':if(body&&!continuous){const n=sim.reattach(body);toast(n?`Reattached ${n} piece${n>1?'s':''}`:body.plugin.part?'Nothing to reattach here — the place may already be taken':'Only ragdoll parts reattach');}break;
+      case'graft':if(!continuous){if(!body?.plugin.part){state.graftStump=null;toast('Click a ragdoll part to build on.');}else if(!state.graftStump||!sim.bodies.includes(state.graftStump)){state.graftStump=body;toast('Now click the loose limb to graft on.');}
+        else{const problem=sim.graft(state.graftStump,body);toast(problem||'Grafted. Power surge!');state.graftStump=null;}}break;
+      case'dismember':if(body&&!continuous){const cut=sim.dismember(body);toast(cut?`Severed at the ${cut}`:body.plugin.part?'Nothing left to cut there':'Only ragdoll limbs come off');}break;
       case'delete':if(body){sim.removeEntity(body);select(null);}break;
     }
   }

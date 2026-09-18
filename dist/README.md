@@ -20,7 +20,7 @@ npm run dev
 - Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
 - Localized bullet wounds, bruising, cuts, bleeding, blood loss, charred skin, exposed ribs and bone at severed endpoints
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
-- Revive, Regrow (grows back every missing limb; the torn-off pieces stay as remains) and Reattach (returns a severed limb to its own body) tools
+- Revive, Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
 - Damage-driven collapse and breakable joints
 - 16 spawnable objects with material properties
 - Dragging and throwing, rotation, fixed objects, and ropes
@@ -32,6 +32,8 @@ npm run dev
   - Ragdolls: auto-balance, leg strength, get-up time, knockdown length, brain damage, slow injury healing
   - Gore: fragility multiplier, joint strength, bleeding rate, limb crushing + sensitivity, procedural fragments, extra gunshot particles, no gore
   - Weapons, Physics, Visuals, Interface, Audio: bullet damage and knockback, explosion power, piercing speed, blade grip, solver iterations, air resistance, grab strength, object limit, slow-motion speed, decals, tracers, particles, screen shake, grid, shadows, vignette, temperature unit, FPS, hints, zoom and pan speed, sound and volume
+- Fire: noise-driven flame tongues with a bright core, embers, rolling smoke, a glow on the surroundings, and charring that stays on what burned
+- Rendering never builds gradients or blurs per frame: flames, glows and smoke are pre-painted sprites and lightning channels are cached paths (measured: no frame over 20 ms with a burning scene, a storm and the lights off, also at 4× CPU throttle)
 - Lightning: forked, glowing channels with restrikes, sky flash, thunder, scorch marks; strikes hit the highest thing under them, shock through conductors, burn and ignite
 - Four starter scenes, pause, frame stepping, slow motion, and adjustable gravity
 - Pan and zoom, object inspection, search and categories
@@ -54,7 +56,7 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
-| 1–9, -, =, 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, regrow, reattach, delete |
+| 1–9, -, =, [, ], 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, regrow, reattach, graft, dismember, delete |
 
 Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores tissue and extinguishes fire, but does not bring anyone back or recreate severed joints. Revive brings a dead or collapsed ragdoll back to life; it stands up again if it still has a spine and at least one whole leg. Saves use one device-local browser slot; loading pauses simulation.
 

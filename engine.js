@@ -91,6 +91,7 @@
     {id:'sound',section:'Audio',label:'Sound',help:'Synthesized impacts, shots, explosions and thunder.',type:'toggle',def:false},
     {id:'volume',section:'Audio',label:'Volume',help:'Master volume.',type:'range',min:0,max:100,step:5,def:60,unit:'%'}
   ];
+  const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
   const defaults=()=>Object.fromEntries(SETTINGS.map(s=>[s.id,s.def]));
   // Saved settings come from localStorage or an imported file, so every value is checked against the table before it is used.
   const sanitize=(input={})=>{const out={};for(const s of SETTINGS){const v=input?.[s.id];
@@ -103,12 +104,12 @@
     [4,11,{x:-10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[11,12,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[12,13,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle'],
     [4,14,{x:10,y:11},{x:0,y:-22},-1.3,1.3,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.06,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.7,'ankle']
   ];
-  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
+  const LIMIT_GAIN=.4,LIMIT_SPEED=.3,REST_SPEED=.8,REST_DELAY=1,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
-      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.settings=defaults();
+      this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
@@ -164,6 +165,38 @@
       while(queue.length){const current=queue.shift();for(const c of links){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!whole.has(other)){whole.add(other);queue.push(other);}}}
       return whole;
     }
+    // Join a loose piece to a body wherever the anatomy allows: find a template joint with one end on each, swing the piece to the stump's angle, slide the anchors together, pin it.
+    seat(main,owner,piece,links,prefer) {
+      const slotOf=set=>new Map([...set].map(b=>[b.plugin.slot,b])),have=slotOf(main),bring=slotOf(piece);if([...bring.keys()].some(slot=>have.has(slot)))return false; // that place is already taken
+      const fits=([pa,pb])=>(have.has(pa)&&bring.has(pb))||(have.has(pb)&&bring.has(pa)),t=JOINTS.find(j=>fits(j)&&(!prefer||j[0]===prefer.plugin.slot||j[1]===prefer.plugin.slot))||JOINTS.find(fits);if(!t)return false;
+      const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip,anchor=x=>Vector.add(x.position,Vector.rotate(x===a?t[2]:t[3],x.angle));
+      const turn=stump.angle-limb.angle,pivot=anchor(limb);for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
+      const to=anchor(stump),move=Vector.sub(to,anchor(limb));for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
+      const joint=this.makeJoint(owner.kind,flip,a,b,t);if(a.plugin.kind==='android'||b.plugin.kind==='android')joint.plugin.breakForce=45;Composite.add(this.world,joint);links.push(joint);
+      for(const x of [a,b]){x.plugin.severed=[];x.plugin.bleed=Math.min(x.plugin.bleed||0,.3);}
+      for(const x of piece){const old=this.getEntity(x);if(old&&old!==owner){old.bodies=old.bodies.filter(o=>o!==x);old.joints=old.joints.filter(c=>c.bodyA!==x&&c.bodyB!==x);}if(!owner.bodies.includes(x))owner.bodies.push(x);
+        x.plugin.entityId=owner.id;x.collisionFilter.group=stump.collisionFilter.group;if(flip)x.plugin.flip=true;else delete x.plugin.flip;main.add(x);}
+      owner.bodies.sort((x,y)=>x.plugin.slot-y.plugin.slot);owner.joints=links.filter(c=>main.has(c.bodyA));this.entities=this.entities.filter(e=>e.bodies.length);owner.restTime=0;this.burst(to.x,to.y,8,'#9fcbb1',2);return to;
+    }
+    // Dismember: cut the clicked part off at the joint that ties it to the rest of the body (the side nearer the chest). The chest has no such joint, so it loses everything attached to it.
+    dismember(body) {
+      if(body?.plugin.slot===undefined)return '';const joints=this.joints.filter(c=>c.plugin.joint&&(c.bodyA===body||c.bodyB===body)),inward=joints.filter(c=>c.bodyB===body),cut=inward.length?inward:joints;
+      for(const c of cut)this.sever(c);const e=this.getEntity(body);if(e&&cut.length)e.stun=Math.max(e.stun||0,1.2*this.settings.stunScale);return cut.map(c=>c.plugin.name).join(', ');
+    }
+    // Graft: put any ragdoll's loose limb on any ragdoll's stump, human or android, left or right. A limb from the other side is mirrored to fit.
+    graft(stump,limb) {
+      if(stump?.plugin.slot===undefined||limb?.plugin.slot===undefined)return 'Pick a ragdoll part, then a loose limb.';
+      const links=this.joints.filter(c=>c.plugin.joint),main=this.connected(stump,links),piece=this.connected(limb,links),owner=this.getEntity(stump);
+      if(main.has(limb))return 'That limb is already part of this body.';if(!owner)return 'That body is gone.';if(piece.size>main.size)return 'Graft the smaller piece onto the larger one.';
+      let at=this.seat(main,owner,piece,links,stump);
+      if(!at){const original=[...piece].map(b=>b.plugin.slot);for(const b of piece)b.plugin.slot=MIRROR[b.plugin.slot]??b.plugin.slot;at=this.seat(main,owner,piece,links,stump);if(!at)[...piece].forEach((b,i)=>b.plugin.slot=original[i]);}
+      if(!at)return 'It does not fit there: that place is taken, or the two do not join.';
+      // The surge: a jolt of power through the whole body, which also gets it back on its feet.
+      for(const b of owner.bodies)b.plugin.surge=piece.has(b)?1:.55;owner.surge=3;owner.stun=0;owner.effort=1;if(owner.alive===false&&owner.bodies.some(b=>b.plugin.slot===2)&&owner.bodies.some(b=>b.plugin.slot===0)){owner.alive=true;owner.upright=true;owner.blood=Math.max(owner.blood||0,60);}
+      this.flashes.push({x:at.x,y:at.y,radius:150,life:.7,maxLife:.7,surge:true});this.burst(at.x,at.y,40,'#8fe9ff',9);this.burst(at.x,at.y,18,'#ffffff',5);
+      for(let i=0;i<7;i++){const angle=i/7*Math.PI*2+rnd(-.3,.3),reach=rnd(60,130);this.traces.push({from:{...at},to:{x:at.x+Math.cos(angle)*reach,y:at.y+Math.sin(angle)*reach},life:rnd(.25,.5),maxLife:.5,electric:true});}
+      this.onEffect('surge',1);return '';
+    }
     // Put torn-off pieces back where they came from. Parts of one ragdoll share a collision group, which is how a loose limb finds its owner.
     // Click the loose piece to reattach just that; click the body to collect everything that still fits.
     reattach(body) {
@@ -172,37 +205,36 @@
       const main=chest&&!clicked.has(chest)?this.connected(chest,links):clicked,owner=this.getEntity([...main][0]);if(!owner)return 0;
       const loose=[];for(const b of parts)if(!main.has(b)&&!loose.some(set=>set.has(b)))loose.push(this.connected(b,links));
       let attached=0;for(let progress=true;progress;){progress=false;for(const piece of main===clicked?loose:loose.filter(set=>set.has(body))){
-        if(piece.done||[...piece].some(b=>[...main].some(m=>m.plugin.slot===b.plugin.slot)))continue; // that place is already taken, e.g. by a regrown limb
-        const slotOf=set=>new Map([...set].map(b=>[b.plugin.slot,b])),have=slotOf(main),bring=slotOf(piece),t=JOINTS.find(([pa,pb])=>(have.has(pa)&&bring.has(pb))||(have.has(pb)&&bring.has(pa)));if(!t)continue;
-        const a=have.get(t[0])||bring.get(t[0]),b=have.get(t[1])||bring.get(t[1]),stump=main.has(a)?a:b,limb=stump===a?b:a,flip=!!stump.plugin.flip;
-        // Swing the whole piece to the stump's angle about its own anchor, then slide it until the two anchors meet.
-        const turn=stump.angle-limb.angle,pivot=Vector.add(limb.position,Vector.rotate(limb===a?t[2]:t[3],limb.angle));for(const x of piece){if(x.isStatic)Body.setStatic(x,false);Body.rotate(x,turn,pivot);}
-        const from=Vector.add(limb.position,Vector.rotate(limb===a?t[2]:t[3],limb.angle)),to=Vector.add(stump.position,Vector.rotate(stump===a?t[2]:t[3],stump.angle)),move=Vector.sub(to,from);
-        for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
-        const joint=this.makeJoint(owner.kind,flip,a,b,t);Composite.add(this.world,joint);links.push(joint);
-        for(const x of [a,b]){x.plugin.severed=[];x.plugin.bleed=Math.min(x.plugin.bleed||0,.3);}
-        for(const x of piece){const old=this.getEntity(x);if(old&&old!==owner){old.bodies=old.bodies.filter(o=>o!==x);old.joints=old.joints.filter(c=>c.bodyA!==x&&c.bodyB!==x);}if(!owner.bodies.includes(x))owner.bodies.push(x);x.plugin.entityId=owner.id;main.add(x);}
-        owner.joints=links.filter(c=>main.has(c.bodyA));piece.done=true;attached++;progress=true;this.burst(to.x,to.y,8,'#9fcbb1',2);}}
+        if(piece.done||!this.seat(main,owner,piece,links))continue;piece.done=true;attached++;progress=true;}}
       this.entities=this.entities.filter(e=>e.bodies.length);owner.restTime=0;return attached;
     }
     // Regrow whatever is missing from the body the clicked part belongs to. Torn-off pieces stay where they fell, as remains.
+    // Growth is staged: one part at a time, spreading outward from the clicked part, so a lone head grows a neck, then a chest, then the rest.
     regenerate(body) {
       const e=this.getEntity(body);if(!e||e.blood===undefined||body.plugin.slot===undefined)return 0;
-      const links=this.joints.filter(c=>c.plugin.joint),whole=this.connected(body,links);
-      const slots=new Map([...whole].map(b=>[b.plugin.slot,b])),flip=!!body.plugin.flip,group=body.collisionFilter.group,grown=[],joints=[];
-      for(let changed=true;changed;){changed=false;for(const t of JOINTS){const [pa,pb]=t;if(slots.has(pa)===slots.has(pb))continue;
-        const have=slots.has(pa)?pa:pb,need=have===pa?pb:pa,stump=slots.get(have),offset=Vector.rotate({x:ANATOMY[need][1]-ANATOMY[have][1],y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
-        const part=this.makePart(e.kind,need,stump.position.x+offset.x,stump.position.y+offset.y,stump.angle,group,flip);Body.setVelocity(part,stump.velocity);
-        slots.set(need,part);grown.push(part);joints.push(this.makeJoint(e.kind,flip,slots.get(pa),slots.get(pb),t));changed=true;}}
-      if(!grown.length)return 0;
-      for(const b of whole){b.plugin.severed=[];b.plugin.bleed=Math.min(b.plugin.bleed||0,.2);}
-      // The clicked body keeps the identity only if it still has its chest; a regrown stray limb becomes a new person, and what is left behind is remains.
+      const links=this.joints.filter(c=>c.plugin.joint),whole=this.connected(body,links),missing=ANATOMY.length-whole.size;if(!missing)return 0;
+      if(this.regrowing.some(job=>whole.has(job.root)))return missing;
+      // The clicked body keeps the identity only if it still has its chest; a regrowing stray limb becomes a new person, and what is left behind is remains.
       const remains=e.bodies.filter(b=>!whole.has(b)),keeps=[...whole].some(b=>b.plugin.slot===2),owner=keeps?e:{id:this.nextId++,kind:e.kind,bodies:[],joints:[],upright:true,blood:100,alive:true};
       if(!keeps){this.entities.push(owner);e.bodies=remains;e.joints=e.joints.filter(c=>remains.includes(c.bodyA));e.alive=false;e.upright=false;}
       else if(remains.length){const left={id:this.nextId++,kind:e.kind,bodies:remains,joints:e.joints.filter(c=>remains.includes(c.bodyA)),upright:false,blood:0,alive:false};this.entities.push(left);for(const b of remains)b.plugin.entityId=left.id;}
-      owner.bodies=[...whole,...grown].sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints=[...links.filter(c=>whole.has(c.bodyA)),...joints];for(const b of owner.bodies)b.plugin.entityId=owner.id;
-      this.entities=this.entities.filter(x=>x.bodies.length);Composite.add(this.world,[...grown,...joints]);owner.restTime=0;owner.effort=0;
-      for(const b of grown)this.burst(b.position.x,b.position.y,6,'#9fcbb1',2);return grown.length;
+      owner.bodies=[...whole].sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints=links.filter(c=>whole.has(c.bodyA));for(const b of owner.bodies)b.plugin.entityId=owner.id;
+      this.entities=this.entities.filter(x=>x.bodies.length);for(const b of whole){b.plugin.severed=[];b.plugin.bleed=Math.min(b.plugin.bleed||0,.2);}
+      this.regrowing.push({root:body,wait:0});owner.restTime=0;return missing;
+    }
+    // One part per beat. The new part is full size to the physics at once; plugin.grow (0..1) lets the renderer swell it out of the stump.
+    growNext(job) {
+      const owner=this.getEntity(job.root);if(!owner||!this.bodies.includes(job.root))return false;
+      const whole=this.connected(job.root),slots=new Map([...whole].map(b=>[b.plugin.slot,b]));
+      for(const stump of whole)for(const t of JOINTS){const [pa,pb]=t,have=stump.plugin.slot;if((pa!==have&&pb!==have)||slots.has(pa)===slots.has(pb))continue;
+        const need=have===pa?pb:pa,flip=!!stump.plugin.flip,offset=Vector.rotate({x:ANATOMY[need][1]-ANATOMY[have][1],y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
+        const part=this.makePart(owner.kind,need,stump.position.x+offset.x,stump.position.y+offset.y,stump.angle,stump.collisionFilter.group,flip);Body.setVelocity(part,stump.velocity);
+        part.plugin.grow=0;part.plugin.growFrom={...(need===pb?t[3]:t[2])};part.plugin.entityId=owner.id;slots.set(need,part);
+        const joint=this.makeJoint(owner.kind,flip,slots.get(pa),slots.get(pb),t);Composite.add(this.world,[part,joint]);
+        owner.bodies.push(part);owner.bodies.sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints.push(joint);owner.restTime=0;owner.effort=Math.min(owner.effort??1,.4);
+        const at=Vector.add(stump.position,Vector.rotate(need===pb?t[2]:t[3],stump.angle));this.burst(at.x,at.y,14,'#9fe0c0',3.5);this.burst(part.position.x,part.position.y,8,owner.kind==='human'?'#c9545a':'#9fd8e8',2.5);
+        this.flashes.push({x:part.position.x,y:part.position.y,radius:34,life:.4,maxLife:.4,grow:true});this.onEffect('grow',.25+.5*(1-whole.size/ANATOMY.length));return true;}
+      return false;
     }
     // upright = wants to stand. Whether it can is derived from what is left of the body, so losing an arm never drops it but losing the spine does.
     canStand(e){
@@ -230,7 +262,7 @@
         b.torque+=clamp(wrap(-b.angle),-.5,.5)*b.inertia*strength-b.angularVelocity*b.inertia*(foot?.003:.002);}
       if(!feet.length||!pelvis||!free(chest))return;
       const mass=e.bodies.reduce((n,b)=>n+b.mass,0),weight=mass*.001*Math.max(this.gravity,.2),footX=feet.reduce((n,f)=>n+f.position.x,0)/feet.length,footY=Math.max(...feet.map(f=>f.position.y));
-      const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength)*weight*e.effort;
+      const lift=clamp((STAND_HEIGHT-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort;
       const lean=clamp((footX-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort;
       for(const [b,share] of [[chest,.6],[pelvis,.4]])if(free(b))b.force={x:b.force.x+lean*share,y:b.force.y-lift*share};
       for(const f of feet)if(free(f))f.force={x:f.force.x-lean/feet.length,y:f.force.y+lift/feet.length};
@@ -245,7 +277,7 @@
       this.entities=this.entities.filter(e=>e.bodies.length);
     }
     removeEntity(body){const e=this.getEntity(body);if(e)for(const b of [...e.bodies])this.removeBody(b);}
-    clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];Engine.clear(this.engine);}
+    clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
     freeze(body){if(!body)return;Body.setStatic(body,!body.isStatic);return body.isStatic;}
     beginDrag(body,point) {
       this.endDrag();if(!body)return;
@@ -323,7 +355,7 @@
       if(this.bodies.length>this.settings.maxObjects-20)return;
       const fragments=[];for(let i=0;i<5;i++){
         const w=rnd(6,16),h=rnd(5,14),b=Bodies.rectangle(x+rnd(-15,15),y+rnd(-15,15),w,h,{density:.001,friction:.6});
-        this.meta(b,p.kind,{material:p.material,w,h,hp:10,maxHp:10,debris:true});Body.setVelocity(b,{x:vel.x+rnd(-3,3),y:vel.y+rnd(-4,1)});Body.setAngularVelocity(b,rnd(-.15,.15));fragments.push(b);
+        this.meta(b,p.kind,{material:p.material,w,h,hp:10,maxHp:10,debris:true,char:p.char});Body.setVelocity(b,{x:vel.x+rnd(-3,3),y:vel.y+rnd(-4,1)});Body.setAngularVelocity(b,rnd(-.15,.15));fragments.push(b);
       }this.entity('debris',fragments);this.onEffect('break',.3);
     }
     explode(x,y,radius=175,power=1) {
@@ -364,7 +396,7 @@
         for(const other of this.bodies)if(!touched.has(other)&&['flesh','metal'].includes(other.plugin.material)&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
     }
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined)e.blood=100;for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined)e.blood=100;for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';const p=body.plugin;
       if(p.kind==='barrel'){this.detonate(body);return 'Fuel barrel detonated';}
@@ -423,14 +455,14 @@
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.kind==='human'){const bleeding=e.bodies.reduce((n,b)=>n+(b.plugin.bleed||0),0);e.blood=Math.max(0,(e.blood??100)-bleeding*seconds*.5*this.settings.bleedRate);if(e.blood<25){e.alive=false;e.upright=false;}}
         if(e.alive)this.vitals(e,seconds);
-        e.stun=Math.max(0,(e.stun||0)-seconds);if(!this.balancing(e)){e.effort=0;continue;}
+        e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(!this.balancing(e)){e.effort=0;continue;}
         e.effort=Math.min(1,(e.effort??1)+seconds/this.settings.getUpTime); // strength returns gradually, so getting up is a push rather than a snap
         this.balance(e);
       }
       for(const b of bodies){const p=b.plugin;
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
-        p.charge=Math.max(0,p.charge-seconds*1.5);
+        p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&p.bleed>.02){
           const e=this.getEntity(b);if((e?.blood??100)>0&&Math.random()<p.bleed*seconds*5*Math.min(2,this.settings.bleedRate)){
             const source=p.severed?.[0]||p.wounds?.[p.wounds.length-1]||{x:0,y:0};const pos=Vector.add(b.position,Vector.rotate({x:p.flip?-source.x:source.x,y:source.y},b.angle));
@@ -438,8 +470,11 @@
           }p.bleed=Math.max(0,p.bleed-seconds*.009);
         }
         if(p.heat>170&&['wood','flesh','rubber'].includes(p.material))p.burning=true;
-        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);
-          if(Math.random()<dt/25){const x=b.position.x+rnd(-10,10),y=b.position.y;this.particles.push({x,y,vx:rnd(-.8,.8),vy:rnd(-3,-1),life:rnd(.25,.7),maxLife:.7,color:Math.random()>.4?'#e5b660':'#c86943',size:rnd(3,7),type:'fire'});}
+        if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*.06);
+          // Embers and smoke come off the top of the body, more of both the hotter it burns.
+          const hot=clamp((p.heat-150)/400,.3,1.2),wide=b.bounds.max.x-b.bounds.min.x,top=b.bounds.min.y+(b.position.y-b.bounds.min.y)*.4;
+          if(Math.random()<seconds*9*hot)this.particles.push({x:b.position.x+rnd(-.5,.5)*wide,y:top,vx:rnd(-.6,.6),vy:rnd(-2.6,-1.2),life:rnd(.5,1.4),maxLife:1.4,color:'#ffcf7a',size:rnd(.7,1.8),type:'ember'});
+          if(Math.random()<seconds*5*hot)this.particles.push({x:b.position.x+rnd(-.4,.4)*wide,y:top-rnd(14,30),vx:rnd(-.3,.3),vy:rnd(-1.3,-.6),life:rnd(1.2,2.4),maxLife:2.4,color:'#1c1d1f',size:rnd(5,10),type:'smoke'});
           if(Math.random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
           if(p.hp<=0)this.damage(b,.1);
         }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
@@ -476,9 +511,11 @@
       }
       for(const c of [...this.joints])if(c.plugin.joint&&Constraint.currentLength(c)>c.plugin.breakForce*this.settings.jointStrength)this.sever(c);
       this.blades();
+      this.regrowing=this.regrowing.filter(job=>{job.wait-=seconds;if(job.wait>0)return true;job.wait=REGROW_BEAT;return this.growNext(job);});
       const pending=this.damageQueue.splice(0);for(const fn of pending)fn();
       for(const p of this.particles){p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;
         if(p.type==='blood'||p.type==='spark')p.vy+=seconds*12;
+        else if(p.type==='ember'){p.vx+=Math.sin(this.time*9+p.y*.05)*seconds*5;p.vy-=seconds*.6;}else if(p.type==='smoke'){p.vx+=seconds*.35;p.vy*=1-seconds*.5;}
         if(p.type==='blood'&&p.y>=this.groundY){this.stains.push({x:p.x,y:this.groundY-1,r:rnd(2,8),wet:1});p.life=0;}
       }
       this.particles=this.particles.filter(p=>p.life>0).slice(-900);this.stains=this.stains.slice(-300);

@@ -179,7 +179,8 @@ test('limb crushing removes a destroyed limb and leaves fragments; healing and b
 test('regenerate regrows severed limbs on the clicked body and leaves the old pieces as remains',()=>{
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);const cut=name=>s.sever(s.joints.find(c=>c.plugin.name===name));cut('elbow');cut('knee');
   assert.equal(s.joints.filter(c=>c.plugin.joint).length,14);
-  assert.equal(s.regenerate(e.bodies[2]),4,'forearm + hand, shin + foot');
+  assert.equal(s.regenerate(e.bodies[2]),4,'forearm + hand, shin + foot');s.step();assert.equal(e.bodies.length,14,'growth is staged: one part on the first beat');assert.ok(e.bodies.some(b=>b.plugin.grow!==undefined));
+  assert.equal(s.regenerate(e.bodies[2]),3,'a second click does not start a second job');assert.equal(s.regrowing.length,1);advance(s,150);assert.equal(s.regrowing.length,0);assert.ok(s.bodies.every(b=>b.plugin.grow===undefined),'swelling finishes');
   assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id).length,16);assert.equal(e.joints.length,16);assert.equal(e.bodies.length,17);assert.equal(new Set(e.bodies.map(b=>b.plugin.slot)).size,17);
   const remains=s.entities.find(x=>x!==e&&x.kind==='human');assert.equal(remains.bodies.length,4);assert.equal(remains.alive,false);
   assert.ok(e.bodies.every(b=>b.plugin.severed.length===0));advance(s,600);for(const b of s.bodies)assert.ok(Number.isFinite(b.position.x));assert.ok(s.canStand(e)&&e.bodies[2].position.y<505,'regrown body should stand');
@@ -194,10 +195,27 @@ test('reattach puts a severed limb back on its own ragdoll, from either end',()=
     const elbow=s.joints.find(c=>c.bodyB===forearm&&c.plugin.name==='elbow');assert.ok(elbow&&Constraint.currentLength(elbow)<1,'elbow anchors should meet');assert.equal(forearm.plugin.severed.length,0);
     advance(s,300);assert.ok(Constraint.currentLength(elbow)<3);assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===other.id).length,16,'the bystander is untouched');
     assert.equal(s.reattach(hand),0,'already whole');}
-  const s=new Simulation();const e=s.spawn('human',1000,555);s.sever(s.joints.find(c=>c.plugin.name==='wrist'));const oldHand=e.bodies[7];s.regenerate(e.bodies[2]);assert.equal(s.reattach(oldHand),0,'the place is taken by the regrown hand');
+  const s=new Simulation();const e=s.spawn('human',1000,555);s.sever(s.joints.find(c=>c.plugin.name==='wrist'));const oldHand=e.bodies[7];s.regenerate(e.bodies[2]);advance(s,60);assert.equal(s.reattach(oldHand),0,'the place is taken by the regrown hand');
 });
 test('a lodged blade slides out with a light pull, and grip is adjustable',()=>{
   const pull=grip=>{const s=new Simulation();s.gravity=0;s.configure({bladeGrip:grip,gravity:0});const e=s.spawn('human',1000,400);e.alive=false;const chest=e.bodies[2],sword=s.spawn('sword',880,chest.position.y).bodies[0];thrust(s,sword,14);advance(s,40);
     assert.notEqual(sword.plugin.stuck,undefined);s.freeze(chest);s.beginDrag(sword,{...sword.position});let steps=0;const hold={x:sword.position.x-60,y:sword.position.y};for(;steps<400&&s.joints.some(c=>c.plugin.pierce);steps++){s.moveDrag(hold);s.step();}return steps;};
   const easy=pull(5),firm=pull(30);assert.ok(easy<60&&firm===400,`a 60px pull should free the blade within a second, took ${easy} steps`);assert.ok(firm>easy,'a higher grip should hold longer');
+});
+test('a lone head regrows a whole body outward from itself: neck, then chest, then the rest',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);const head=e.bodies[0];s.sever(s.joints.find(c=>c.plugin.name==='atlas'));
+  assert.equal(s.regenerate(head),16);const order=[];for(let i=0;i<1200&&s.regrowing.length;i++){const before=s.connected(head).size;s.step();if(s.connected(head).size>before)order.push([...s.connected(head)].pop().plugin.part);}
+  assert.deepEqual(order.slice(0,3),['neck','chest','abdomen']);assert.equal(order.length,16);const grown=s.getEntity(head);assert.ok(grown.alive&&grown!==e&&grown.bodies.length===17);assert.equal(e.alive,false);assert.equal(e.bodies.length,16);
+});
+test('fire chars what it burns and throws embers and smoke',()=>{
+  const s=new Simulation();const b=s.spawn('crate',1000,620).bodies[0];s.ignite(b);advance(s,180);assert.ok(b.plugin.char>.1);assert.ok(s.particles.some(p=>p.type==='ember')&&s.particles.some(p=>p.type==='smoke'));s.heal(b);assert.equal(b.plugin.char,0);
+});
+test('graft puts an android arm on a human stump, mirrors a limb from the other side, and refuses what does not fit',()=>{
+  const s=new Simulation();const human=s.spawn('human',1000,555),bot=s.spawn('android',1400,555);advance(s,30);
+  const elbow=(e,side)=>s.joints.filter(c=>c.plugin.name==='elbow'&&c.bodyA.plugin.entityId===e.id)[side];s.sever(elbow(human,1));s.sever(elbow(bot,0)); // human loses the right forearm, the android its LEFT one
+  const lost=human.bodies.filter(b=>[9,10].includes(b.plugin.slot));lost.forEach(b=>s.removeBody(b));const stump=human.bodies.find(b=>b.plugin.slot===8),metal=bot.bodies.find(b=>b.plugin.slot===6);
+  assert.equal(s.graft(stump,metal),'');assert.equal(metal.plugin.slot,9,'left forearm mirrored to the right side');assert.equal(metal.plugin.entityId,human.id);assert.equal(metal.collisionFilter.group,stump.collisionFilter.group);
+  assert.equal(human.bodies.length,17);assert.equal(bot.bodies.length,15);assert.equal(metal.plugin.kind,'android','it stays a metal arm');assert.ok(metal.plugin.surge>0&&human.surge>0);
+  const seam=s.joints.find(c=>c.bodyB===metal&&c.plugin.name==='elbow');assert.ok(seam&&Constraint.currentLength(seam)<1);advance(s,300);assert.ok(Constraint.currentLength(seam)<3);for(const b of s.bodies)assert.ok(Number.isFinite(b.position.x));
+  assert.notEqual(s.graft(stump,metal),'','already attached');assert.notEqual(s.graft(human.bodies[2],bot.bodies.find(b=>b.plugin.slot===2)),'','a whole android is not a limb');assert.notEqual(s.graft(stump,s.spawn('crate',300,300).bodies[0]),'');
 });
