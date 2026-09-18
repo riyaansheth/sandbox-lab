@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#202326"><title>Sandbox Lab — Physics, without rules.</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon">⊞</span><div>Sandbox<span class="brand-light"> Lab</span><small>Physics, without rules.</small></div></div>
+    <div class="workspace-label"><span class="live-dot"></span> Test chamber <span class="label-divider">/</span> <span id="scene-name">The workshop</span></div>
+    <div class="top-actions"><button id="save-btn" title="Save scene on this device">Save scene</button><button id="load-btn">Load scene</button><button id="help-btn" class="square" title="Controls and help (?)" aria-label="Controls and help">?</button></div>
+  </header>
+  <main class="app">
+    <aside class="library">
+      <div class="library-heading"><h1>Object library</h1><span id="catalog-count">16 objects</span></div>
+      <label class="search"><span>⌕</span><input id="search" placeholder="Find an object…" aria-label="Find an object"><kbd>/</kbd></label>
+      <div class="categories" role="group" aria-label="Object categories"><button data-category="all" class="active">All</button><button data-category="living">Living</button><button data-category="props">Props</button><button data-category="devices">Devices</button></div>
+      <div id="catalog" class="catalog"></div>
+      <div class="spawn-note"><span class="note-cross">＋</span><div><strong>Make something happen.</strong><p>Select an object, then click the chamber to place it.</p></div></div>
+      <div class="library-footer"><span class="version-dot"></span> Local sandbox <span>v1.0</span></div>
+    </aside>
+    <section class="workspace" aria-label="Physics sandbox">
+      <div class="scene-bar"><div class="scene-select"><span>▧</span><select id="scene-select" aria-label="Choose a scene"><option value="workshop">The workshop</option><option value="tower">Demolition tower</option><option value="swing">Pendulum experiment</option><option value="empty">Empty chamber</option></select></div><div class="scene-actions"><button id="reset-btn" title="Reset this scene">↻ <span>Reset</span></button><button id="clear-btn" title="Remove everything">⌫ <span>Clear</span></button></div></div>
+      <div id="stage" class="stage">
+        <canvas id="world" aria-label="Interactive physics chamber. Select an object to spawn, or drag an existing object." tabindex="0"></canvas>
+        <div class="chamber-label"><span class="corner-mark"></span><span>Chamber 01<small>Experimental physics environment</small></span></div>
+        <div class="stage-badges"><span id="simulation-badge"><i></i> Simulation live</span><span id="fps">60 fps</span></div>
+        <div id="tool-caption" class="tool-caption"><span id="tool-caption-icon">↖</span><div><strong id="tool-caption-name">Grab & move</strong><span id="tool-caption-desc">Drag anything. See what happens.</span></div></div>
+        <div id="selection-panel" class="selection-panel" hidden><div class="selection-top"><strong id="selection-name">Object</strong><button id="deselect-btn" aria-label="Deselect">×</button></div><div id="selection-info"></div><div class="selection-actions"><button id="freeze-selection">Freeze</button><button id="activate-selection">Activate</button><button id="delete-selection">Delete</button></div></div>
+        <div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-reset" title="Fit chamber">100%</button><button id="zoom-in" aria-label="Zoom in">+</button></div>
+        <div id="toast" role="status" class="toast"></div>
+        <div id="pause-overlay" hidden>Ⅱ <span>Paused</span><small>Build your experiment. Press Space to run.</small></div>
+      </div>
+      <div class="tool-tray"><div class="tray-label">Tools</div><div id="tools" class="tools" role="group" aria-label="Sandbox tools"></div><button id="more-help" class="key-help" title="All keyboard controls">Keyboard shortcuts <kbd>?</kbd></button></div>
+      <div class="transport"><div class="play-controls"><button id="play-btn" class="play-button" title="Pause / play (Space)" aria-label="Pause simulation">Ⅱ</button><button id="step-btn" title="Advance one frame while paused" aria-label="Step simulation">▸│</button><div class="speed-control" role="group" aria-label="Simulation speed"><button data-speed="0.1">0.1×</button><button data-speed="0.5">0.5×</button><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button></div></div><div class="world-settings"><label>Gravity <select id="gravity" aria-label="Gravity"><option value="1">Earth</option><option value="0.17">Moon</option><option value="0">Zero G</option><option value="2">Heavy</option></select></label><button id="sound-btn" title="Toggle synthesized sound" aria-pressed="false">Sound off</button></div></div>
+      <footer class="statusbar"><span><i class="status-dot"></i><span id="object-count">0 objects</span><span class="status-separator">·</span><span id="joint-count">0 joints</span></span><span id="interaction-hint">Drag to move <span>·</span> Right-drag to pan <span>·</span> Scroll to zoom</span><span id="coordinates">x 0 : y 0</span></footer>
+    </section>
+  </main>
+  <dialog id="help-dialog"><div class="dialog-head"><div><small>Field guide</small><h2>Your own little chaos.</h2></div><button id="close-help" aria-label="Close help">×</button></div><p>Spawn objects, build contraptions, and explore how they react. Every experiment starts with a little curiosity.</p><div class="help-grid"><div><h3>Move & build</h3><p><kbd>1</kbd> Grab and throw objects</p><p><kbd>2</kbd> Connect two objects with a rope</p><p><kbd>3</kbd> Freeze / unfreeze a body</p><p><kbd>Q</kbd> / <kbd>E</kbd> Rotate selected body</p><p><kbd>F</kbd> Activate selected device</p><p><kbd>⌫</kbd> Delete selected object</p></div><div><h3>Experiment</h3><p><kbd>4</kbd> Shoot toward the cursor</p><p><kbd>5</kbd> Ignite objects</p><p><kbd>6</kbd> Electrical shock</p><p><kbd>7</kbd> Explosion</p><p><kbd>8</kbd> Heal / extinguish</p><p><kbd>9</kbd> Delete objects</p></div></div><div class="help-bottom"><p><kbd>Space</kbd> Pause · <kbd>Esc</kbd> Grab tool · <kbd>Shift</kbd> + drag to pan<br>Scroll to zoom. Double-click a device to activate it. Use Save scene to keep an experiment in this browser.</p><button id="start-btn" class="primary">Let’s experiment <span>↗</span></button></div><small class="help-credit">An original physics sandbox inspired by People Playground. Best with a mouse or trackpad.</small></dialog>
+  <script src="./vendor/matter.min.js"></script>
+  <script src="./engine.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

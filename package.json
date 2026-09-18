@@ -1,0 +1,9 @@
+{
+  "name": "sandbox-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An original ragdoll physics sandbox for the browser",
+  "scripts": { "dev": "vite --host 127.0.0.1", "build": "node build.cjs", "test": "node --test tests/*.test.cjs" },
+  "dependencies": { "matter-js": "0.20.0" },
+  "devDependencies": { "vite": "^6.0.0" }
+}
