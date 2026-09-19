@@ -1062,6 +1062,10 @@ test('Storm: while he has charge he cannot die; each death he cheats costs charg
   e.power=0;e.pain=99;e.blood=35;advance(s,30);assert.ok(e.alive&&e.consciousness==='dazed','empty and hurt, he never faints');
   e.power=0;s.kill(e,'test');assert.ok(!e.alive,'empty, he dies');
 });
+test('Storm: electricity regrows what was cut off him',()=>{
+  const s=new Simulation().seed(5);const e=s.spawn('storm',900,555);advance(s,30);const arm=e.bodies.find(b=>b.plugin.slot===6);s.sever(e.joints.find(c=>c.bodyB===arm||c.bodyA===arm&&c.bodyB.plugin.slot<arm.plugin.slot)||e.joints.find(c=>c.bodyA===arm||c.bodyB===arm));advance(s,10);assert.ok(e.bodies.length<17,'an arm off');
+  s.shock(e.bodies[2]);advance(s,60*6);assert.equal(e.bodies.length,17,'a shock grows it back');assert.ok(e.conduit&&e.alive);
+});
 test('Storm: electricity charges him instead of hurting him; he spends it on lightning from the hands and beams from the eyes; empty, nothing',()=>{
   const s=new Simulation().seed(3);s.configure({organDamage:false});const e=s.spawn('storm',900,555),target=s.spawn('human',1150,555),crate=s.spawn('crate',1150,300).bodies[0];advance(s,60);const hp=()=>e.bodies.reduce((n,b)=>n+b.plugin.hp,0),full=hp();
   assert.equal(e.power,0);assert.equal(s.activate(e.bodies[10]),'Out of charge: hit him with electricity first');s.shock(e.bodies[2]);assert.ok(e.power>20&&e.power<60,`one shock: ${e.power.toFixed(0)}%`);assert.equal(hp(),full,'and not a scratch');assert.ok(e.alive&&!(e.shockDose>0));
