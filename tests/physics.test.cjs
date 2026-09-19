@@ -623,7 +623,7 @@ test('a burnt ragdoll writhing in pain stays in the world after the fire is put 
 test('one bullet cannot kill outside the fatal spots (head, neck, upper torso), whatever fired it; several can, and one in a fatal spot can',()=>{
   const once=(slot,mult,n=1)=>{const s=new Simulation().seed(3);const e=s.spawn('human',1000,555);advance(s,60);const part=e.bodies[slot];for(let i=0;i<n;i++){const y=part.position.y+(i-(n-1)/2)*5;s.shoot({x:part.position.x-200,y},{x:part.position.x,y},null,{damage:mult});}
     let low=100;for(let i=0;i<7200&&e.alive;i++){s.step();low=Math.min(low,e.blood);if(i>60&&!e.bodies.some(b=>b.plugin.bleed>.01||b.plugin.internal>.01))break;} /* until it is dead or has stopped bleeding */return {alive:e.alive,low,cause:e.causeOfDeath};};
-  for(const slot of [3,4,9,14,15,16])for(const mult of [1,5]){ /* not the upper arm: in profile it lies over the chest, and a round that carries on into the upper torso has found a fatal spot */const r=once(slot,mult);assert.ok(r.alive,`slot ${slot} x${mult}: died of ${r.cause}`);assert.ok(r.low>30,`slot ${slot} x${mult}: blood fell to ${r.low.toFixed(0)}`);}
+  for(const slot of [3,4,9,14,15,16])for(const mult of [1,3.5]){ /* a pistol and a rifle round. A heavier round can take a limb off (ballistics phase 2), and a leg taken off at the hip bleeds like the artery it is */ /* not the upper arm: in profile it lies over the chest, and a round that carries on into the upper torso has found a fatal spot */const r=once(slot,mult);assert.ok(r.alive,`slot ${slot} x${mult}: died of ${r.cause}`);assert.ok(r.low>30,`slot ${slot} x${mult}: blood fell to ${r.low.toFixed(0)}`);}
   assert.ok(!once(14,2,6).alive,'six rounds through a thigh do kill');assert.ok(!once(0,5).alive,'a .50 to the head kills');assert.ok(!once(2,5).alive||once(2,5).low<60,'the upper torso is a fatal spot');
 });
 
@@ -921,7 +921,7 @@ test('falling follows real physics: 9.81 m/s2, the speed of impact grows with th
 });
 
 // ---- ballistics, phase 1: energy
-const range=(kind,set={})=>{const s=new Simulation().seed(2);s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,...set});return s;};
+const range=(set={})=>{const s=new Simulation().seed(2);s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,...set});return s;};
 const round=kind=>{const f=require('../items.js').ITEMS.find(i=>i.id===kind).firearm;return {energy:f.energy,diameter:f.diameter};};
 const fire=(s,kind,y,x=600)=>{s.shotLog=[];const spec=round(kind);s.shoot({x,y},{x:x+100,y},null,spec);return s.shotLog;};
 
@@ -938,4 +938,16 @@ test('energy: it only ever falls along the path, and the damage done is exactly 
     const log=fire(s,kind,y);for(let i=1;i<log.length;i++)assert.ok(log[i].E<=log[i-1].E-log[i-1].use+1e-9,`${kind}: energy falls along the path`);const spent=log.reduce((n,h)=>n+h.use,0);assert.ok(spent>0);assert.ok(Math.abs(dealt-spent*s.settings.bulletDamage)<1e-6,`${kind}: damage ${dealt.toFixed(2)} = energy spent ${(spent*s.settings.bulletDamage).toFixed(2)}`);}
   const big=range(),small=range();for(const s of [big,small])s.spawn('human',1000,400);const hitBig=fire(big,'sniper',big.bodies[3].position.y),hitSmall=fire(small,'gun',small.bodies[3].position.y);assert.ok(hitBig[0].use>hitSmall[0].use*3,'a heavier round spends more of itself in the same flesh');
   const wood=range(),plank=wood.spawn('crate',1000,400).bodies[0];wood.freeze(plank);const w=fire(wood,'gun',400);assert.ok(w[0].through&&w[0].use<.5,'a pistol round goes through a crate, losing some of itself');const steel=range(),beam=steel.spawn('metal',1000,400).bodies[0];Body.setAngle(beam,Math.PI/2);steel.freeze(beam);assert.ok(!fire(steel,'gun',400)[0].through,'and stops in steel');
+});
+
+// ---- ballistics, phase 2: heavy rounds take limbs off
+test('limbs: a pistol never takes one off at range; a rifle takes a hand; a .50 takes a thigh, the head (and the life), and cuts the body at the waist; no gibs with the gib count at 0',()=>{
+  const at=(s,e,slot)=>e.bodies.find(b=>b.plugin.slot===slot)||s.bodies.find(b=>b.plugin.slot===slot);
+  for(const slot of [10,9,14,15,0]){const s=range({organDamage:true});const e=s.spawn('human',1000,400);const part=at(s,e,slot);for(let i=0;i<8;i++)fire(s,'gun',part.position.y,part.position.x-300);s.step();assert.ok(e.bodies.includes(part)&&s.bodies.includes(part),`8 pistol rounds at range leave the ${part.plugin.part} on`);}
+  const hand=range(),h=hand.spawn('human',1000,400),palm=at(hand,h,10),arm=h.bodies.filter(b=>b.plugin.slot>=8&&b.plugin.slot<=10);for(const b of arm)Body.rotate(b,-Math.PI/2,at(hand,h,8).position); /* the arm held out in front, clear of the legs it hangs beside */
+  fire(hand,'rifle',palm.position.y,palm.position.x-300);hand.step();assert.ok(!hand.bodies.includes(palm)||!h.bodies.includes(palm),'a 5.56 takes the hand');const thighR=range(),tr=thighR.spawn('human',1000,400),th=at(thighR,tr,14);fire(thighR,'rifle',th.position.y,th.position.x-300);thighR.step();assert.ok(tr.bodies.includes(th),'but not a whole thigh');
+  const leg=range(),l=leg.spawn('human',1000,400),thigh=at(leg,l,14);fire(leg,'sniper',thigh.position.y,thigh.position.x-300);leg.step();assert.ok(!l.bodies.includes(thigh),'a .50 takes the thigh');assert.ok(l.bodies.some(b=>b.plugin.severed?.length),'and leaves a stump');
+  const head=range({organDamage:true}),hd=head.spawn('human',1000,400),skull=at(head,hd,0);fire(head,'sniper',skull.position.y,skull.position.x-300);head.step();assert.ok(!head.bodies.includes(skull)&&!hd.alive,'a .50 to the head kills');assert.match(hd.causeOfDeath,/head|brain/,'with its cause');
+  const waist=range(),w=waist.spawn('human',1000,400),belly=at(waist,w,3);fire(waist,'sniper',belly.position.y,belly.position.x-300);waist.step();assert.ok(!waist.joints.some(c=>c.plugin.name==='waist'&&(c.bodyA.plugin.entityId===w.id||c.bodyB.plugin.entityId===w.id)),'and cuts the body in two at the waist');
+  const none=range({gibCount:0}),n=none.spawn('human',1000,400),t=at(none,n,14);fire(none,'sniper',t.position.y,t.position.x-300);none.step();assert.ok(!n.bodies.includes(t),'the thigh still goes');assert.equal(none.bodies.filter(b=>b.plugin.gib).length,0,'with no gibs');
 });

@@ -142,6 +142,9 @@
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
   // Bullets: x1.4 at the muzzle, full damage out to RANGE_NEAR px, then falling by one for every RANGE_FALLOFF px down to RANGE_MIN. A round that still carries THROUGH damage goes clean through fresh flesh.
   const CONTACT_SHOT=2,BULLET_FLOOR=8;
+  // Heavy rounds. Pistol-class rounds (under RIFLE_E) never take a part off except pressed against it. Rifle rounds (under HEAVY_E) can take a hand or a foot, or a limb whose bone is already broken. Heavier rounds can take any limb,
+  // and the .50 class (FIFTY_E and up) anything: the head, the chest, and it cuts the body in two at the waist. What decides it is the energy spent in the part against RUIN_E for that part, x the Joint strength setting.
+  const RIFLE_E=2,HEAVY_E=5,FIFTY_E=20,RUIN_E={hand:.6,foot:.6,forearm:1.3,shin:1.3,'upper arm':1.3,thigh:1.3,neck:1.2,head:2.5,abdomen:4,pelvis:5,chest:6},GIB_EXIT_E=3,CHIP_E=2;
   const G_SCALE=9.81*110/1e6,RAGDOLL_TERMINAL=55,SPIN_AIR={part:.015,other:.006}; // Matter's gravity scale for 9.81 m/s2 at 110 px to the metre (its acceleration is gravity.y x scale, in px per ms2); a body falling belly-down tops out at about 55 m/s; how much of its spin a body loses to the air each 1/60 s
   const PX_PER_M=110,SHOT_SCALE=.1,SHOT_REACH=2500; // a standing body is about 1.8 m; rounds fly at this fraction of their real speed; how far a round goes
   const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3;
@@ -172,7 +175,7 @@
   const BATTERY_EVERY=1.2; // seconds between a battery's discharges: a short burst, then quiet. (The shock power is the continuous one.)
   const SHOCK_CHAIN_HELD=12,SHOCK_TICK=.08,SHOCK_DOSE=.44,SHOCK_ARCS=3,HEAL_HP=35,HEAL_WOUND=7,HEAL_BLOOD=14,HEAL_PAIN=45,HEAL_ORGAN=18,HEAL_TEMP=260; // a held shock is one tick every 80 ms at the dose that matches the old one-a-click rate; heal: hp and bone per second, px of wound closed per second, and the body's blood, pain and organs
   const GARMENT_TOUCH={top:['chest','abdomen','upper arm','forearm'],pants:['pelvis','thigh','shin'],hat:['head'],mask:['head','neck'],shoes:['foot'],gloves:['hand']},GARMENT_NEEDS={top:'chest',pants:'pelvis',hat:'head',mask:'head',shoes:'foot',gloves:'hand'},GARMENT_ORDER=['hat','top','mask','pants','shoes','gloves'],REDRESS_WAIT=1.2; // the parts a garment must touch to be put on; the part a body must have to wear it; which comes off first where a part wears two; seconds before a garment just taken off can be put on again
-  const SHOT_ENTRY=.7,CHANNEL_NEAR=4,CHANNEL_EASE=.3; // of the energy a round spends in a part it passes through, the share that goes into the entry wound; the rest makes the exit
+  const ARTERIAL_JOINT=new Set(['hip','shoulder','neck','atlas','waist','spine']),RUIN_JOINT=.55,SHOT_ENTRY=.7,CHANNEL_NEAR=4,CHANNEL_EASE=.3; // of the energy a round spends in a part it passes through, the share that goes into the entry wound; the rest makes the exit
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
@@ -789,7 +792,7 @@
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
       const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
       // A bullet wounds. It never takes a limb off, and it only destroys the part it hits when the muzzle is pressed against it (a contact shot, within CONTACT_SHOT px).
-      const gunshot=type==='bullet'||type==='exit',spared=!!p.part&&(this.falling||gunshot&&!this.contactShot);
+      const gunshot=type==='bullet'||type==='exit',spared=!!p.part&&(this.falling||gunshot&&!this.contactShot); /* a round never takes a part to nothing by its damage alone: whether it destroys or severs a part is decided by the energy it spends there (see ruin()); a fall never does */
       p.hp=spared?Math.max(Math.min(p.hp,this.falling?FALL_FLOOR:BULLET_FLOOR),p.hp-amount):Math.max(0,p.hp-amount);
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
@@ -951,9 +954,23 @@
           if(through&&this.bodies.includes(body)){this.woundRadius=clamp(2.6+left*1.4,2.6,11);this.damage(body,use*bd*(1-SHOT_ENTRY),exitAt,'exit',direction);for(let i=0;i<8;i++)this.emit(exitAt.x,exitAt.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');} /* out the far side: small from a pistol, ragged from a rifle */
           this.woundRadius=null;}
         else this.damage(body,use*bd,stop,'bullet',direction);
+        if(flesh&&p.part&&!this.contactShot)this.ruin(body,use,shot,stop,exitAt,direction,bone>0,through,left);
         if(!through){spent=true;stop={x:stop.x+direction.x*chord*(use/need||0),y:stop.y+direction.y*chord*(use/need||0)};break;}stop=exitAt;}
       this.contactShot=false;this.shotPool=null;this.woundRadius=null;const to=spent||grazed?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};if(grazed)L=grazed;this.traces.push({from,to,life:glow,maxLife:glow});
       shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH;
+    }
+    // What a heavy round does to the part it spent energy in, beyond the wound: bone chips where it crossed a bone hard, flesh thrown out of a big exit, and - if the part is within the round's class and took more than it can -
+    // the part destroyed, or severed at the joint it was hit near. Deferred to after the step's contacts, since it removes bodies.
+    ruin(body,use,shot,at,exit,dir,bone,through,left) {
+      const p=body.plugin,set=this.settings;if(bone&&shot.E0>=CHIP_E&&set.fragments)for(let i=0;i<Math.min(6,Math.round(use*2));i++)this.emit(at.x,at.y,dir.x*rnd(1,4)+rnd(-1.5,1.5),dir.y*rnd(1,4)+rnd(-2,.5),rnd(.4,.8),.8,'#e8dfc8',rnd(.9,1.6),'spark');
+      if(through&&left>=GIB_EXIT_E){const v={x:dir.x*Math.min(12,4+left*.4),y:dir.y*Math.min(12,4+left*.4)};this.damageQueue.push(()=>this.gibs(exit.x,exit.y,'flesh',v,.35));} /* a big exit throws flesh out along the round's line */
+      const E0=shot.E0,part=p.part,limb=p.slot>=5,small=part==='hand'||part==='foot';if(E0<RIFLE_E||p.ruined)return;
+      const allowed=E0>=FIFTY_E||(E0>=HEAVY_E&&limb)||(limb&&(small||this.fractured(body)));if(!allowed||use<RUIN_E[part]*set.jointStrength*(this.fractured(body)?.5:1))return;
+      p.ruined=true;const pool=this.shotPool,local=Vector.rotate(Vector.sub(at,body.position),-body.angle),end=limb?local.y/(p.h/2):0;
+      this.damageQueue.push(()=>{if(!this.bodies.includes(body))return;const cut=c=>{const before=[c.bodyA,c.bodyB].map(b=>(b.plugin.severed||[]).length);this.sever(c);if(!ARTERIAL_JOINT.has(c.plugin.name))[c.bodyA,c.bodyB].forEach((b,i)=>{for(const st of (b.plugin.severed||[]).slice(before[i]))if(pool)st.pool=pool;});}; /* a stump at a knee, an elbow, a wrist or an ankle draws on the round's blood allowance; one at the hip or the shoulder is the femoral or the brachial artery, and bleeds until it is stopped */
+        if(part==='abdomen'){const waist=this.joints.find(c=>c.plugin.joint&&c.plugin.name==='waist'&&(c.bodyA===body||c.bodyB===body));if(waist){cut(waist);this.spray(at,dir,24,6,.8);return;}} /* cut in two at the waist */
+        if(limb&&!small&&Math.abs(end)>RUIN_JOINT){const c=this.joints.find(c=>c.plugin.joint&&(end<0?c.bodyB===body:c.bodyA===body));if(c){cut(c);this.spray(at,dir,18,6,.8);return;}} /* hit near a joint: it comes off there */
+        for(const c of this.joints.filter(c=>c.plugin.joint&&(c.bodyA===body||c.bodyB===body)))cut(c);this.crush(body);}); /* anywhere else, the part is destroyed - its joints torn first, so what is left has stumps - with gibs, spray and fragments; a head or a chest kills */
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
     // A strike takes the highest thing under it. It is a massive shock: current jumps through conductors, flesh burns, flammables catch.
