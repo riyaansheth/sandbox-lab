@@ -19,6 +19,7 @@ npm run dev
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
 - Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
 - Hands: select a ragdoll's hand (click it or press S over it) and it takes the nearest loose object within 30 px. The pistol is sized to the body (about 20 cm against a 214 px ragdoll). It is raised and held level; F over any part of an armed ragdoll fires what it holds, and it never hits its own holder; grab the object with the cursor to take it back; it is dropped on death. Held blades slash but do not pierce
+- The neck holds. The neck part carries the inertia of the column of muscle it stands for rather than of a bare 11 × 14 box (which let it be whipped right round between the head and the chest), both neck joints lose a share of their relative spin every step whether or not anyone is awake or alive, and every joint stops dead a fixed margin past its limit instead of relying on a push that a hard yank could outrun. A shove nods the head a twentieth of a radian, and a body swung about by the chest keeps its head in line
 - Going down: legs that go limp under a standing body give way at the knee, so it drops to its knees and slumps forward instead of folding at the hips over locked legs; a conscious body whose legs can no longer hold it goes down onto its front in one piece, legs trailing, ready to crawl
 - Balance: a staggering body throws its arms out for balance — both forward when going over backwards, one ahead and one behind when stumbling forward. When the chest gets ahead of the feet (or is about to) the body takes a real recovery step — the foot is unloaded, lifted and placed under where the body is going — instead of tipping like a plank. Falls are landed in a crouch that the legs push out of; nothing dies perfectly balanced, a body going limp buckles to one side
 - Carrying: held off the ground and awake, a ragdoll kicks and its arms go for whatever has hold of it. Off the ground a ragdoll keeps its muscle tone, so it holds itself together and swings from wherever it is held rather than folding like a rag; only the pull toward upright needs the ground. Letting go is a throw: the body, and everything jointed to it, leaves with the cursor's velocity
@@ -111,7 +112,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 112 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 113 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

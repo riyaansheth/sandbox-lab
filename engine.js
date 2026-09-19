@@ -141,6 +141,7 @@
   const CONTACT_SHOT=2,BULLET_FLOOR=8;
   const PX_PER_M=110,SHOT_SCALE=.1,SHOT_REACH=2500; // a standing body is about 1.8 m; rounds fly at this fraction of their real speed; how far a round goes
   const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
+  const NECK_INERTIA=14,NECK_DAMP={atlas:.3,neck:.3},HARD_STOP={atlas:.1,neck:.1,other:.3}; // share of the relative spin a neck joint loses each substep; rad past its limit at which a joint stops dead
   const WRENCH_PULL=70,WRENCH_BLOW=45,VITAL_JOINT={atlas:4,neck:4,spine:3,waist:3}; // px the cursor must be hauling from the body; damage a blow must do; how much longer the neck and spine hold out than a limb
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
   // Balance and landing. STEP_*: how far ahead of its feet (px, with velocity looked ahead) the chest may get before a recovery step, and the pause between steps.
@@ -222,6 +223,7 @@
       const robot=kind==='android',[name,,,w,h]=ANATOMY[slot],density=(robot?.0036:.0018)*(name==='head'?1.15:name==='chest'?1.3:1);
       const b=Bodies.rectangle(x,y,w,h,{collisionFilter:{group},density,friction:.8,frictionStatic:1,restitution:0,frictionAir:.015*this.settings.airDrag,chamfer:{radius:Math.min(w/2-1,name==='head'?8:4)}});
       this.meta(b,kind,{part:name,slot,w,h,r:0,material:robot?'metal':'flesh',hp:robot?230:100,maxHp:robot?230:100,wounds:[],severed:[],bleed:0,bone:100,...(flip?{flip:true}:{})});
+      if(name==='neck')Body.setInertia(b,b.inertia*NECK_INERTIA); /* as a bare 11 x 14 box the neck has a twenty-seventh of the head's inertia: pinned between the head and the chest it is whipped right round by any sideways tug. It is given the inertia of the column of muscle it stands for */
       if(angle)Body.setAngle(b,angle);return b;
     }
     makeJoint(kind,flip,a,b,[,,pa,pb,min,max,name]) {
@@ -1014,8 +1016,13 @@
       for(const c of this.joints){if(!c.plugin.joint||c.plugin.min===undefined)continue;const a=c.bodyA,b=c.bodyB,slack=this.fractured(a)||this.fractured(b)||c.plugin.broken?FRACTURE_SLACK:0,relative=wrap(b.angle-a.angle),error=relative-clamp(relative,c.plugin.min-slack,c.plugin.max+slack);
         // Breaking takes force from outside: the cursor wrenching the body about, or a blow in the last moments. A body folding under its own weight, or pushing itself up off its face, does not snap its own neck.
         const limp=this.getEntity(a)?.alive===false;if(Math.abs(error)>BREAK_BEND*(VITAL_JOINT[c.plugin.name]?1.5:1)&&!slack&&(limp||this.forced(a))){c.plugin.strain=(c.plugin.strain||0)+seconds;if(c.plugin.strain>(limp&&!this.forced(a)?BREAK_TIME*8:BREAK_TIME)*(VITAL_JOINT[c.plugin.name]||1))this.snap(c);} /* a dead body that lands with a limb folded the wrong way under it breaks it too, given a moment */ else if(c.plugin.strain)c.plugin.strain=0;
-        if(Math.abs(error)<.005)continue;
         const ia=a.isStatic?0:a.inverseInertia,ib=b.isStatic?0:b.inverseInertia,total=ia+ib;if(!total)continue;
+        // A neck is not a hinge with nothing in it: ligaments and muscle tone damp it whether or not anyone is awake, or alive. Without this the head - a light body on a lighter one - nods and rattles after every knock.
+        if(NECK_DAMP[c.plugin.name]){const ease=(b.angularVelocity-a.angularVelocity)*NECK_DAMP[c.plugin.name];Body.setAngularVelocity(a,a.angularVelocity+ease*ia/total);Body.setAngularVelocity(b,b.angularVelocity-ease*ib/total);}
+        if(Math.abs(error)<.005)continue;
+        // The soft limit below is a push, and a hard yank outruns it: a head could be swung right round its neck, after which the shortest way back is the wrong way. Past a margin the joint simply stops: the parts are turned back about the joint, each by its share.
+        {const hard=HARD_STOP[c.plugin.name]??HARD_STOP.other;if(Math.abs(error)>hard){const excess=error-Math.sign(error)*hard;if(ia)Body.rotate(a,excess*ia/total,Constraint.pointAWorld(c));if(ib)Body.rotate(b,-excess*ib/total,Constraint.pointBWorld(c));
+          const closing=(b.angularVelocity-a.angularVelocity)*Math.sign(error);if(closing>0){if(ia)Body.setAngularVelocity(a,a.angularVelocity+Math.sign(error)*closing*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity-Math.sign(error)*closing*ib/total);}}} /* and whatever was still carrying it outward is stopped */
         const velocity=b.angularVelocity-a.angularVelocity,target=clamp(-error*LIMIT_GAIN,-LIMIT_SPEED,LIMIT_SPEED),impulse=(target-velocity)*LIMIT_SHARE; // only part of the correction per step: the muscles across the same joint damp it too, and together a full correction overshoots and rings
         if(Math.sign(impulse)===Math.sign(error))continue; // already returning faster than required
         if(ia)Body.setAngularVelocity(a,a.angularVelocity-impulse*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity+impulse*ib/total);

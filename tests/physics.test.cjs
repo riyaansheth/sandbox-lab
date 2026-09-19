@@ -689,3 +689,10 @@ test('a bleeding body dragged along the floor wipes a smear that lengthens behin
   drag(40);const early=longest();assert.ok(early>10,`a smear has started (${early.toFixed(0)} px)`);drag(80);assert.ok(longest()>early+40,'and it grows as the body moves');
   assert.ok(d.s.stains.filter(st=>st.smear).every(st=>st.to-st.from<=240),'a long drag is several streaks, not one endless one');const data=JSON.parse(JSON.stringify(d.s.serialize()));const r=new Simulation();r.restore(data);assert.equal(r.stains.filter(st=>st.smear).length,d.s.stains.filter(st=>st.smear).length,'smears survive save and load');
 });
+
+test('the neck holds: swung about by the chest, a head never turns past its limits or whips round; a shove barely nods it',()=>{
+  const {s,e}=standing(),chest=e.bodies[2],atlas=s.joints.find(c=>c.plugin.name==='atlas'),neck=s.joints.find(c=>c.plugin.name==='neck'),turn=c=>{const a=c.bodyB.angle-c.bodyA.angle;return Math.atan2(Math.sin(a),Math.cos(a));};
+  s.beginDrag(chest,{...chest.position});let over=0,spin=0;for(let t=1;t<=240;t++){s.moveDrag({x:1000+Math.sin(t/14)*160,y:420+Math.cos(t/9)*40});s.step();for(const c of [atlas,neck]){const r=turn(c);over=Math.max(over,r-c.plugin.max,c.plugin.min-r);}spin=Math.max(spin,Math.abs(e.bodies[1].angularVelocity)*120);}
+  assert.ok(over<.2,`past a neck limit by ${over.toFixed(2)} rad`);assert.ok(spin<40,`neck spun at ${spin.toFixed(0)} rad/s`);assert.ok(e.alive,'and being carried about does not break it');
+  const shoved=standing(),head=shoved.e.bodies[0],c2=shoved.e.bodies[2];for(const b of shoved.e.bodies)Body.setVelocity(b,{x:7,y:-1});let nod=0;for(let i=0;i<120;i++){shoved.s.step();const a=head.angle-c2.angle;nod=Math.max(nod,Math.abs(Math.atan2(Math.sin(a),Math.cos(a))));}assert.ok(nod<.25,`head nodded ${nod.toFixed(2)} rad`);
+});
