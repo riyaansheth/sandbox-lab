@@ -31,6 +31,7 @@ npm run dev
 - Fractures (bone ≤ 50): the limb hangs, its joints over-bend, and it carries no weight — one broken leg is stood on around, two and the ragdoll stays down; heal mends them
 - Organs by hit location: brain (blackout, or instant death), heart (sits top-centre in the upper torso; death, or massive internal bleeding), lungs (oxygen runs down to unconsciousness and suffocation), gut (slow internal bleeding, seen as a spreading bruise). Blunt force only reaches the brain
 - Pain rises with injury (more for head, groin, hands and feet) and ebbs, slower while wounds are open; it slows getting up. Consciousness runs awake → dazed → unconscious → dead from blood, oxygen, brain and pain; the detail view shows vitals, a Heart row (bpm, damaged, or Stopped) and a Brain row (damaged or Destroyed), other damaged organs and the cause of death
+- Fatal spots: only the head, the neck and the upper torso. Everywhere else one bullet can never kill, whatever fired it: all the wounds a round makes outside the fatal spots (through an arm, the belly and the other arm, entries and exits) share one allowance of blood and close when it is spent, and gut bleeding is capped over the whole body. Several rounds still kill, and a lost limb still bleeds out. Blood loss overall is slower (open wounds drain at 0.3× their rate, was 0.5×)
 - Blood runs out: a corpse keeps draining after death, a severed limb has only the little blood that is in it, and once a body is empty nothing more comes out of it. A severed piece stops being part of the ragdoll it came from — it is remains of its own, so a grafted replacement never gets confused with the limb it replaced
 - Blood: every wound bleeds at its own rate and clots (fast on a still limb, slowly on a moving one; a new blow nearby reopens it). Deep wounds to the neck, upper arms and thighs hit an artery and spurt in time with a heart rate that races with pain and early blood loss, then fails. Skin pales below 75% blood
 - Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Blood only stains — no smears, no footprints, no wet shine — and dries from red to brown in about 30 s. Androids leak teal coolant and sparks instead
@@ -101,7 +102,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 103 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 104 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

@@ -147,6 +147,8 @@
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
   const HOLD_LEVER=16;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
+  // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
+  const FATAL_SPOTS=new Set(['head','neck','chest']),BLEED_DRAIN=.3,WOUND_BLOOD=14,ARTERY_BLOOD=24,SHOT_BLOOD=40,GUT_BLEED=.7;
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
@@ -360,7 +362,7 @@
       const set=this.settings,head=e.bodies.find(b=>b.plugin.part==='head'),human=e.kind==='human';
       if(human){
         let open=0,inside=0;for(const b of e.bodies){const p=b.plugin;open+=p.bleed||0;if(p.internal){inside+=p.internal;p.bruise=Math.min(1,(p.bruise||0)+p.internal*seconds*.12);p.internal=Math.max(0,p.internal-seconds*.012);}} // internal bleeding shows as a spreading bruise, and clots slowly
-        e.blood=Math.max(0,(e.blood??100)-(open*.5+inside)*seconds*set.bleedRate);
+        e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+inside)*seconds*set.bleedRate);
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
         e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
@@ -696,7 +698,7 @@
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
         if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
-          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
+          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined,...(FATAL_SPOTS.has(p.part)?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});if(p.wounds.length>14)p.wounds.shift();
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
@@ -749,7 +751,7 @@
       const [organ,,,,,scale]=zone;e.organs??={brain:100,heart:100,lungs:100,gut:100};e.organs[organ]=Math.max(0,e.organs[organ]-amount*scale);
       if(organ==='brain'){if(e.organs.brain<=0)this.kill(e,'brain destroyed');else e.stun=Math.max(e.stun||0,(100-e.organs.brain)/12);} // a long blackout
       else if(organ==='heart'){p.internal=(p.internal||0)+amount/18;if(e.organs.heart<=0)this.kill(e,'heart destroyed');}               // massive internal bleed
-      else if(organ==='gut')p.internal=(p.internal||0)+amount/80;                                                                          // slow internal bleed
+      else if(organ==='gut'){let all=0;for(const b of e.bodies)all+=b.plugin.internal||0;p.internal=(p.internal||0)+Math.min(amount/80,Math.max(0,GUT_BLEED-all));} /* capped over the whole body: the belly and the pelvis are both gut, and one round crosses both */                                                                          // slow internal bleed
       // lungs: no immediate effect; vitals() runs the oxygen down while they are damaged
     }
     // Gibs: small physical chunks of what used to be a limb, and half as many bone fragments. They trail blood for a moment, and do not last.
@@ -811,6 +813,7 @@
         if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;if(near*SHOT_REACH<=L)hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
       hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */
       const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let stop=null,spent=false;
+      this.shotPool=shot.pool??={left:SHOT_BLOOD}; /* every wound one round makes outside the fatal spots - through an arm, the belly and the other arm, entries and exits - draws on one allowance. ponytail: a saved game turns the shared allowance into one per wound */
       for(const {body,near,far} of hits){shot.first??=body;stop=at(near);shot.done.add(body);if(body.plugin.boundary){spent=true;break;}const gone=shot.travelled+near*SHOT_REACH;
         this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;const damage=this.settings.bulletDamage*shot.damage*shot.power*range(gone),through=this.passes(body,damage)&&far>near;
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*shot.power*(through?.4:1)));
@@ -818,7 +821,7 @@
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
         const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
         stop=exit;shot.power*=1-absorb;if(shot.power<.2){spent=true;break;}}
-      this.contactShot=false;const to=spent?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};this.traces.push({from,to,life:glow,maxLife:glow});
+      this.contactShot=false;this.shotPool=null;const to=spent?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};this.traces.push({from,to,life:glow,maxLife:glow});
       shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
@@ -923,7 +926,7 @@
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
       const bodies=this.bodies;this.bodiesNow=bodies;if(this.shots.length)this.shots=this.shots.filter(shot=>!this.fly(shot,shot.speed*seconds));if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
-        if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*.5*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
+        if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*BLEED_DRAIN*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
         e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){if(e.rung==='stand')this.buckle(e);e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
@@ -938,14 +941,14 @@
         if(p.cool>0)p.cool-=seconds;p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
-          const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate);let sum=0,drop=null;
-          for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0))continue;w.bleed=Math.max(0,w.bleed-clot*(pass?.5:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);sum+=w.bleed;
+          const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate),share=p.bleedRaw>7?7/p.bleedRaw:1; /* a part bleeds at most 7 however many holes are in it, so each wound is charged its share of what actually left */ let sum=0,drop=null;
+          for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0))continue;w.bleed=Math.max(0,w.bleed-clot*(pass?.35:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);{const bank=w.pool||w;if(bank.left!==undefined){bank.left-=w.bleed*share*BLEED_DRAIN*seconds*this.settings.bleedRate;if(bank.left<=0){w.bleed=0;continue;}}} /* a wound outside the fatal spots can only cost so much blood before it closes */ sum+=w.bleed;
             if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(random()>=chance)continue;
             const wx=p.flip?-w.x:w.x,cos=Math.cos(b.angle),sin=Math.sin(b.angle),px=b.position.x+wx*cos-w.y*sin,py=b.position.y+wx*sin+w.y*cos;
             // A spurt leaves along the line from the limb's centre through the wound, weaker as the blood runs out; anything else just drips.
             if(gush){const len=Math.hypot(wx,w.y)||1,ox=(wx*cos-w.y*sin)/len,oy=(wx*sin+w.y*cos)/len,force=(2+2.4*pulse)*(.35+.65*blood/100);drop=this.emit(px,py,b.velocity.x*.4+ox*force+rnd(-.5,.5),b.velocity.y*.4+oy*force-1+rnd(-.5,.5),2.5,2.5,BLOOD,rnd(1.2,2.8),'blood');}
             else drop=this.emit(px,py,b.velocity.x*.4+rnd(-1.2,1.2),b.velocity.y*.4+rnd(-.7,.8),3,3,BLOOD,rnd(.8,2.6),'blood');if(drop)drop.owner=p.entityId;}}
-          p.bleed=Math.min(7,sum);
+          p.bleedRaw=sum;p.bleed=Math.min(7,sum);
         }
         // Androids do not bleed. A holed casing leaks coolant and throws the odd spark until it runs dry.
         if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}

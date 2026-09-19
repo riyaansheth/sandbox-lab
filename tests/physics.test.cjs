@@ -286,7 +286,7 @@ test('fractures: a broken leg carries no weight, two broken legs cannot stand, a
 test('pain rises with injury and ebbs; blood loss passes through dazed and unconscious before death',()=>{
   const {s,e,part}=fresh();const hand=part('hand'),head=part('head');s.damage(hand,20,hand.position,'impact');const small=e.pain;assert.ok(small>0);advance(s,300);assert.ok(e.pain<small,'pain ebbs');
   const a=fresh(),b=fresh();a.s.damage(a.part('thigh'),20,a.part('thigh').position,'impact');b.s.damage(b.part('head'),20,b.part('head').position,'impact');assert.ok(b.e.pain>a.e.pain,'the head hurts more');
-  const d=fresh({organDamage:false});d.s.sever(d.s.joints.find(c=>c.plugin.name==='hip'));const seen=[];for(let i=0;i<6000&&d.e.alive;i++){d.s.step();if(seen[seen.length-1]!==d.e.consciousness)seen.push(d.e.consciousness);}
+  const d=fresh({organDamage:false});d.s.sever(d.s.joints.find(c=>c.plugin.name==='hip'));const seen=[];for(let i=0;i<20000&&d.e.alive;i++){d.s.step();if(seen[seen.length-1]!==d.e.consciousness)seen.push(d.e.consciousness);}
   assert.deepEqual(seen,['awake','dazed','unconscious','dead']);assert.equal(d.e.causeOfDeath,'blood loss');
 });
 test('injuries survive save and load, heal clears them, and old saves still load',()=>{
@@ -452,7 +452,7 @@ test('ten ragdolls in pain for thirty seconds: nothing blows up',()=>{
 // ---- reaction spec, section 6: consciousness and death
 test('bleeding out is a descent: it sinks to its knees, slumps, passes out, dies, twitches once or twice, and then lies still and sleeps',()=>{
   const s=new Simulation().seed(5);s.configure({organDamage:false,stunScale:0});const e=s.spawn('human',1000,555);advance(s,60);const chest=e.bodies[2];s.sever(s.joints.find(c=>c.plugin.name==='shoulder'));
-  const rungs=[],states=[];let kneltAt=null;for(let i=0;i<9000&&e.alive;i++){s.step();if(rungs[rungs.length-1]!==e.rung)rungs.push(e.rung);if(states[states.length-1]!==e.consciousness)states.push(e.consciousness);if(e.rung==='kneel'&&kneltAt===null)kneltAt=chest.position.y;}
+  const rungs=[],states=[];let kneltAt=null;for(let i=0;i<24000&&e.alive;i++){s.step();if(rungs[rungs.length-1]!==e.rung)rungs.push(e.rung);if(states[states.length-1]!==e.consciousness)states.push(e.consciousness);if(e.rung==='kneel'&&kneltAt===null)kneltAt=chest.position.y;}
   assert.deepEqual(states,['awake','dazed','unconscious','dead']);const order=rungs.filter((r,i)=>['stand','kneel','curl','limp'].includes(r)&&rungs.indexOf(r)===i);assert.deepEqual(order,['stand','kneel','curl','limp'],`went ${rungs.join('>')}`);assert.equal(e.causeOfDeath,'blood loss');
   assert.ok(e.twitchAt.length>=1,'a death by blood loss leaves a nerve or two to fire');let twitches=0,last=e.lastTwitch;for(let i=0;i<300;i++){s.step();if(e.lastTwitch!==last){twitches++;last=e.lastTwitch;}}assert.ok(twitches>=1&&twitches<=2,`${twitches} twitches`);assert.equal(e.twitchAt.length,0);
   advance(s,480);assert.ok(e.pin,'a dead ragdoll comes to rest and sleeps');const x=chest.position.x;advance(s,600);assert.equal(chest.position.x,x);
@@ -617,4 +617,11 @@ test('a ragdoll can take up the longest, heaviest guns without the hold wrenchin
 test('a burnt ragdoll writhing in pain stays in the world after the fire is put out (no part ever goes non-finite)',()=>{
   for(const seed of [1,2,3,9,11]){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,60);for(const b of e.bodies)if((seed+b.plugin.slot)%3)s.ignite(b);advance(s,30+seed*137%1100);s.clearFire();advance(s,600);
     assert.equal(s.bodies.filter(b=>b.plugin.part).length,17,`seed ${seed}: every part still there`);assert.ok(s.bodies.every(b=>Number.isFinite(b.position.x)&&Number.isFinite(b.angle)));}
+});
+
+test('one bullet cannot kill outside the fatal spots (head, neck, upper torso), whatever fired it; several can, and one in a fatal spot can',()=>{
+  const once=(slot,mult,n=1)=>{const s=new Simulation().seed(3);const e=s.spawn('human',1000,555);advance(s,60);const part=e.bodies[slot];for(let i=0;i<n;i++){const y=part.position.y+(i-(n-1)/2)*5;s.shoot({x:part.position.x-200,y},{x:part.position.x,y},null,{damage:mult});}
+    let low=100;for(let i=0;i<7200&&e.alive;i++){s.step();low=Math.min(low,e.blood);if(i>60&&!e.bodies.some(b=>b.plugin.bleed>.01||b.plugin.internal>.01))break;} /* until it is dead or has stopped bleeding */return {alive:e.alive,low,cause:e.causeOfDeath};};
+  for(const slot of [3,4,9,14,15,16])for(const mult of [1,5]){ /* not the upper arm: in profile it lies over the chest, and a round that carries on into the upper torso has found a fatal spot */const r=once(slot,mult);assert.ok(r.alive,`slot ${slot} x${mult}: died of ${r.cause}`);assert.ok(r.low>30,`slot ${slot} x${mult}: blood fell to ${r.low.toFixed(0)}`);}
+  assert.ok(!once(14,2,6).alive,'six rounds through a thigh do kill');assert.ok(!once(0,5).alive,'a .50 to the head kills');assert.ok(!once(2,5).alive||once(2,5).low<60,'the upper torso is a fatal spot');
 });
