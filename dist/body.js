@@ -123,12 +123,13 @@
     }
     c.globalAlpha = 1;
     if (state.far && !state.clothed) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(40,22,14,.22)'; c.fillRect(-w * 2, -h, w * 4, h * 2); c.globalCompositeOperation = 'source-over'; }   // the far arm and leg sit in the body's shadow
-    if (part === 'head') face(c, x, y, state.face, state.gaze || 0);
+    if (part === 'head') face(c, x, y, state.face, state.gaze || 0, state.iris);
   }
   // The face in profile, after reference/ragdoll.png: dark tousled hair over the crown and the back of the head, one brow and one eye, the ear, and a mouth at the front edge.
   // Six moods: neutral, tense (eye screwed shut, teeth gritted), dazed (half-lidded), closed (unconscious), dead (a cross), shout (mouth open on a big hit). gaze slides the iris.
   const HAIR = { base: '#2b1e17', light: '#4d382b' };
-  function face(c, x, y, mood, gaze) {
+  const IRIS = { gold: ['#c99a2e', '#fff1b0'], storm: ['#6fe6ff', '#ffffff'], stormDim: ['#3f7f96', '#9fdcf0'] };   // special eyes: the immortal's gold, Storm's blue - bright when he is charged
+  function face(c, x, y, mood, gaze, iris) {
     const shout = mood === 'shout'; if (shout) mood = 'tense'; c.lineCap = 'round'; c.lineJoin = 'round'; const ink = '#2a1c15';
     // ear, then the hair that half covers it
     c.fillStyle = SKIN.base; c.strokeStyle = SKIN.line; c.lineWidth = .5; c.beginPath(); c.ellipse(-x * .12, y * .06, 2.3, 3.6, -.12, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(-x * .1, y * .1, 1.2, .5, 3.7); c.stroke();
@@ -143,7 +144,7 @@
     else if (mood === 'tense') { c.moveTo(ex - half, ey - .6); c.quadraticCurveTo(ex, ey + 1.1, ex + half, ey - .2); c.moveTo(ex - half * .7, ey + 1.3); c.lineTo(ex + half * .6, ey + 1.6); c.stroke(); }
     else if (mood === 'closed') { c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey + 1.5, ex + half, ey); c.stroke(); }
     else { const open = mood === 'dazed' ? .8 : 1.9; c.fillStyle = '#f4f1e8'; c.beginPath(); c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey - open * 1.25, ex + half, ey); c.quadraticCurveTo(ex, ey + open, ex - half, ey); c.fill();
-      c.save(); c.clip(); const ix = ex + .7 + gaze * 1.1; c.fillStyle = '#5a3d28'; c.beginPath(); c.arc(ix, ey, 1.3, 0, 7); c.fill(); c.fillStyle = '#120c08'; c.beginPath(); c.arc(ix, ey, .62, 0, 7); c.fill(); c.restore();
+      c.save(); c.clip(); const ix = ex + .7 + gaze * 1.1; c.fillStyle = IRIS[iris]?.[0] || '#5a3d28'; c.beginPath(); c.arc(ix, ey, 1.3, 0, 7); c.fill(); c.fillStyle = iris === 'storm' ? IRIS.storm[1] : '#120c08'; c.beginPath(); c.arc(ix, ey, .62, 0, 7); c.fill(); c.restore();
       c.strokeStyle = ink; c.lineWidth = .85; c.beginPath(); c.moveTo(ex - half, ey); c.quadraticCurveTo(ex, ey - open * 1.25, ex + half, ey); c.stroke(); if (mood === 'dazed') { c.lineWidth = .5; c.beginPath(); c.moveTo(ex - 2, ey + 1.7); c.quadraticCurveTo(ex, ey + 2.2, ex + 2, ey + 1.7); c.stroke(); } }
     // nostril, mouth at the front of the face, the line of the jaw
     c.fillStyle = '#7d4a3e'; c.globalAlpha = .7; c.beginPath(); c.ellipse(x * .86, y * .27, .9, .55, .4, 0, 7); c.fill(); c.globalAlpha = 1; c.strokeStyle = '#7d4a3e'; c.lineWidth = .9; const mx = x * .84, my = y * .56; c.beginPath();
