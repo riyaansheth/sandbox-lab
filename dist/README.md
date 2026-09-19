@@ -113,7 +113,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 114 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 115 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

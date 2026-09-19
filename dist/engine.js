@@ -110,7 +110,7 @@
   const ZONES={neck:[['artery',-.2,-1,1,1],['spine',-1,-1,-.5,1]],'upper arm':[['artery',-1,-1,1,-.5],['joint',-1,.72,1,1]],forearm:[['joint',-1,-1,1,-.72]],thigh:[['artery',-1,-1,1,-.45],['joint',-1,.72,1,1]],shin:[['joint',-1,-1,1,-.72]],
     chest:[['spine',-1,-1,-.5,1]],abdomen:[['spine',-1,-1,-.5,1]],pelvis:[['spine',-1,-1,-.5,1]]};
   const ARTERY_RATE=2.5,ARTERY_DRAIN=.8,JOINT_HIT=3,SPINE_HIT=25,DROP_HIT=12; // arterial wounds bleed this much faster, in spurts, and drain this much more blood per unit of bleed; force that cuts the cord; force on an arm that makes its hand let go
-  const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
+  const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,PART_STAINS=12,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
   const FRACTURE=50,FRACTURE_SLACK=.7; // bone at or below this is fractured; a fractured limb's joints bend this much further
   // ---- Muscles. A pose is a table of joint targets, keyed by the slot of the joint's outer part: [angle relative to the parent part, strength multiplier].
@@ -740,7 +740,8 @@
     stain(body,point,r,oil) {
       const p=body.plugin,local=Vector.rotate(Vector.sub(point,body.position),-body.angle);p.stains??=[];
       for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(p.part?2.4:3.6,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
-      p.stains.push({x:local.x,y:local.y,r:p.part?Math.min(r,2):r,wet:1,oil:oil||undefined});if(p.stains.length>BODY_STAINS)p.stains.shift();
+      if(p.stains.length>=(p.part?PART_STAINS:BODY_STAINS)){let near=p.stains[0];for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<Math.hypot(near.x-local.x,near.y-local.y))near=st;near.wet=1;return;} /* full: the nearest mark is wetted again. Nothing is taken away to make room, so the marks on a body never jump about */
+      p.stains.push({x:local.x,y:local.y,r:p.part?Math.min(r,2):r,wet:1,oil:oil||undefined});
     }
     addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
     // Blood that lands on the floor joins a pool if one is there. Pools grow by area, up to a limit, instead of stacking dots.
@@ -766,7 +767,7 @@
     wound(p,w) {
       p.wounds??=[];const old=w.type==='shock'?p.wounds.find(o=>o.type==='shock'):p.wounds.find(o=>o.type===w.type&&!o.sealed&&Math.hypot(o.x-w.x,o.y-w.y)<Math.max(5,(o.radius+w.radius)*.7));
       if(!old){p.wounds.push(w);return w;} /* every wound is kept, however many: nothing is dropped to make room. Wounds of one kind that overlap join, which is what bounds the list - a part only has room for a few dozen that do not touch */
-      const a=old.radius,b=w.radius;old.x=(old.x*a+w.x*b)/(a+b);old.y=(old.y*a+w.y*b)/(a+b);old.radius=Math.min(11,Math.hypot(a,b*.6));old.force=(old.force||0)+w.force;old.depth=Math.min(3,Math.max(old.depth||0,w.depth,WOUND_DEPTH[w.type](old.force*.7)));
+      const a=old.radius,b=w.radius;old.radius=Math.min(11,Math.hypot(a,b*.6)); /* it gets bigger and deeper, but it stays exactly where it was made: a wound never moves */old.force=(old.force||0)+w.force;old.depth=Math.min(3,Math.max(old.depth||0,w.depth,WOUND_DEPTH[w.type](old.force*.7)));
       old.hits=(old.hits||1)+1;old.bleed=Math.min(4,(old.bleed||0)+w.bleed*.7);old.wet=w.t;old.artery=old.artery||w.artery;if(w.type==='impact')old.t=Math.min(old.t,w.t-BRUISE_RISE);return old; /* a fresh blow on a bruise does not send it back to invisible */
     }
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}

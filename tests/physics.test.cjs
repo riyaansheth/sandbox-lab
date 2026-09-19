@@ -706,3 +706,11 @@ test('dressed ragdolls are the same human: same parts, masses, joints and limits
     const saved=JSON.parse(JSON.stringify(d2.s.serialize())),r=new Simulation();r.restore(saved);assert.ok(r.bodies.filter(b=>b.plugin.part).every(b=>b.plugin.outfit===item.outfit),'the outfit survives save and load');}
   assert.ok(require('../items.js').ITEMS.filter(i=>i.ragdoll).map(i=>i.id).join()==='human1,civilian,cop,criminal,detective');
 });
+
+test('a wound never moves: hit again beside it, it deepens where it is; blood marks on a body are never taken away to make room',()=>{
+  const {s,e}=standing(),head=e.bodies[0];s.damage(head,30,{x:head.position.x+2,y:head.position.y-3},'bullet',{x:1,y:0});const w=head.plugin.wounds[0],at={x:w.x,y:w.y,seed:w.seed,dir:w.dir};
+  for(let i=0;i<5;i++)s.damage(head,12,{x:head.position.x+4,y:head.position.y-1},'bullet',{x:1,y:0});assert.equal(head.plugin.wounds.filter(x=>x.type==='bullet').length,1,'they joined it');
+  assert.deepEqual({x:w.x,y:w.y,seed:w.seed,dir:w.dir},at,'and it is exactly where it was');assert.ok(w.hits===6&&w.depth===3);
+  for(let i=0;i<40;i++)s.stain(head,{x:head.position.x+(i%7-3)*3,y:head.position.y+(i%5-2)*5},1.5);const marks=head.plugin.stains.map(st=>st.x+','+st.y);for(let i=0;i<40;i++)s.stain(head,{x:head.position.x+(i%5-2)*4,y:head.position.y+(i%7-3)*3},1.5);
+  assert.deepEqual(head.plugin.stains.map(st=>st.x+','+st.y),marks,'the same marks, in the same places');
+});
