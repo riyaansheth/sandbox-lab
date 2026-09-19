@@ -607,3 +607,9 @@ test('every firearm has its own round: faster rounds arrive sooner, heavier ones
   const bow=new Simulation().seed(2);const xb=bow.spawn('crossbow',400,300).bodies[0];bow.freeze(xb);const n=bow.bodies.length;assert.equal(bow.activate(xb),'Crossbow loosed');assert.equal(bow.bodies.length,n+1);const bolt=bow.bodies.find(x=>x.plugin.kind==='bolt');assert.ok(bolt.velocity.x>8,'the bolt leaves fast');
   assert.equal(bow.activate(xb),'','it has to be drawn again');const y=bolt.position.y;advance(bow,20);assert.ok(bolt.position.x>600&&bolt.position.y>y,'it flies, and drops');
 });
+
+test('a ragdoll can take up the longest, heaviest guns without the hold wrenching its hand off',()=>{
+  for(const kind of ['minigun','sniper','lmg']){const s=new Simulation().seed(5);s.configure({organDamage:false});const e=s.spawn('human',1000,555),hand=e.bodies.find(b=>b.plugin.slot===10);advance(s,120);
+    const w=require('../items.js').ITEMS.find(i=>i.id===kind).w,gun=s.spawn(kind,hand.position.x+w/2+22,hand.position.y-200).bodies[0];Body.setPosition(gun,{x:hand.position.x+w/2+22,y:hand.position.y});
+    assert.match(s.equip(hand),/Picked up/);advance(s,240);assert.equal(gun.plugin.heldBy,e.id,`${kind} still in hand`);assert.equal(e.bodies.length,17,'and the hand still on the arm');assert.ok(s.balancing(e),'still on its feet');}
+});

@@ -145,6 +145,7 @@
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
+  const HOLD_LEVER=16;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
@@ -254,7 +255,7 @@
       if(flip)item.plugin.flip=true;else delete item.plugin.flip;Body.setAngle(item,hand.angle+tilt);const local=Vector.rotate({x:grip.x*side,y:grip.y},item.angle);
       Body.setPosition(item,Vector.sub(hand.position,local));Body.setVelocity(item,hand.velocity);Body.setAngularVelocity(item,0);item.collisionFilter.group=hand.collisionFilter.group;item.plugin.heldBy=e.id;item.plugin.heldSlot=hand.plugin.slot;
       // The second pin sits at the item's centre of mass: a long lever, so the weight of a pistol cannot twist it in the hand.
-      const toCentre=Vector.sub(item.position,hand.position),axis=Vector.magnitude(toCentre)>6?toCentre:Vector.rotate({x:0,y:-12},item.angle);for(const offset of [{x:0,y:0},axis]){const point=Vector.add(hand.position,offset);const c=Constraint.create({bodyA:hand,bodyB:item,pointA:offset,pointB:Vector.sub(point,item.position),length:0,stiffness:.9,damping:.2});c.plugin={hold:true};Composite.add(this.world,c);}
+      const toCentre=Vector.sub(item.position,hand.position),far=Vector.magnitude(toCentre),axis=far>6?Vector.mult(toCentre,Math.min(1,HOLD_LEVER/far)):Vector.rotate({x:0,y:-12},item.angle); /* towards the centre of mass, but no further out than a hand can brace: a pin 50 px from a body as light as a hand whips it off its wrist */for(const offset of [{x:0,y:0},axis]){const point=Vector.add(hand.position,offset);const c=Constraint.create({bodyA:hand,bodyB:item,pointA:offset,pointB:Vector.sub(point,item.position),length:0,stiffness:.9,damping:.2});c.plugin={hold:true};Composite.add(this.world,c);}
       e.restTime=0;this.onEffect('impact',.2);return `Picked up the ${(CATALOG.find(c=>c.id===item.plugin.kind)?.name||'object').toLowerCase()}`;
     }
     release(item){for(const c of this.joints.filter(c=>c.plugin.hold&&c.bodyB===item))Composite.remove(this.world,c);item.collisionFilter.group=0;delete item.plugin.heldBy;delete item.plugin.heldSlot;}
