@@ -150,6 +150,7 @@
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
   const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},WOUND_MAX=10,BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
+  const CLOT_AT=30,SCAB_AT=150,REOPEN_SPEED=3,REOPEN_RATE=1.5,REOPEN_BLEED=.5,BRUISE_LIFE=300,DEAD_CLOT=12; // wound ages in seconds (body.js draws by the same two); px per substep that tears a clot; chance per second while it does
   const FATAL_SPOTS=new Set(['head','neck','chest']),BLEED_DRAIN=.3,WOUND_BLOOD=14,ARTERY_BLOOD=24,SHOT_BLOOD=40,GUT_BLEED=.7;
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
@@ -694,7 +695,7 @@
       if(e&&e.alive&&type==='shock')e.shockT=Math.max(e.shockT||0,SHOCK_LOCK);
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
-        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone);
+        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone);if(p.bone<=50&&p.brokeAt===undefined)p.brokeAt=this.time; /* the swelling starts here */
         // Bleeding belongs to the wound, not the limb. A burn seals what is there; a new blow next to an old wound opens it again.
         const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
@@ -753,7 +754,7 @@
       old.hits=(old.hits||1)+1;old.bleed=Math.min(4,(old.bleed||0)+w.bleed*.7);old.wet=w.t;old.artery=old.artery||w.artery;if(w.type==='impact')old.t=Math.min(old.t,w.t-BRUISE_RISE);return old; /* a fresh blow on a bruise does not send it back to invisible */
     }
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
-    kill(e,cause){if(!e.alive)return;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
+    kill(e,cause){if(!e.alive)return;e.diedAt=this.time;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
       e.twitchAt=e.kind==='human'&&!/destroyed/.test(cause)?[rnd(.4,1.4),random()<.6?rnd(1.8,TWITCH_WINDOW):99]:[];}
     // Where on the part the blow landed decides whether it found an organ. Blunt force only reaches the brain (concussion).
     organHit(e,body,lx,ly,amount,type) {
@@ -855,7 +856,7 @@
     stopBleeding(body){const e=this.getEntity(body),parts=e?e.bodies:body?[body]:[];let n=0;for(const b of parts){const p=b.plugin;if(p.material!=='flesh')continue;for(const w of [...(p.wounds||[]),...(p.severed||[])])if(w.bleed>0){w.bleed=0;w.fresh=0;n++;}if(p.internal>0){p.internal=0;n++;}this.bleedOf(p);}return n;}
     // Bandage: one part. Its open wounds and stumps are dressed - sealed, so a knock does not reopen them - and the dressing shows. A hard enough hit on the dressing tears it off (see damage).
     bandage(body){const p=body?.plugin;if(!p||p.material!=='flesh'||!p.part)return 0;let n=0;for(const w of [...(p.wounds||[]),...(p.severed||[])]){if(w.sealed||w.type==='impact'||w.type==='burn')continue;w.sealed=true;w.bleed=0;w.fresh=0;n++;}this.bleedOf(p);return n;}
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;delete b.plugin.brokeAt;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body,held=false) {
       if(!body)return '';
       // Activating any part of a ragdoll works whatever it is holding: that hand first, then the near hand, then the far one.
@@ -951,8 +952,10 @@
         if(p.cool>0)p.cool-=seconds;p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
-          const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate),share=p.bleedRaw>7?7/p.bleedRaw:1; /* a part bleeds at most 7 however many holes are in it, so each wound is charged its share of what actually left */ let sum=0,drop=null;
-          for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0))continue;w.bleed=Math.max(0,w.bleed-clot*(pass?.35:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);{const bank=w.pool||w;if(bank.left!==undefined){bank.left-=w.bleed*share*BLEED_DRAIN*seconds*this.settings.bleedRate;if(bank.left<=0){w.bleed=0;continue;}}} /* a wound outside the fatal spots can only cost so much blood before it closes */ sum+=w.bleed;
+          const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3)*(e&&!e.alive?DEAD_CLOT:1),/* with no heart behind it the flow soon stops */blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate),share=p.bleedRaw>7?7/p.bleedRaw:1; /* a part bleeds at most 7 however many holes are in it, so each wound is charged its share of what actually left */ let sum=0,drop=null;
+          for(let pass=0;pass<2;pass++){const list=pass?p.severed:p.wounds;if(!list)continue;for(let i=0;i<list.length;i++){const w=list[i];if(!(w.bleed>0)){ /* dry. A clot that is not yet a scab tears open again if the limb is thrown about; a bruise that has faded is forgotten */
+              if(!pass&&w.type==='impact'&&!w.depth&&this.time-w.t>BRUISE_LIFE){list.splice(i--,1);continue;}
+              if(!pass&&w.depth>=2&&!w.sealed&&e?.alive&&b.speed>REOPEN_SPEED&&this.time-(w.wet??w.t)>CLOT_AT&&this.time-(w.wet??w.t)<SCAB_AT&&(w.pool||w).left!==0&&!((w.pool||w).left<0)&&random()<seconds*REOPEN_RATE){w.bleed=REOPEN_BLEED;w.wet=this.time;}else continue;}w.bleed=Math.max(0,w.bleed-clot*(pass?.35:1));if(w.fresh)w.fresh=Math.max(0,w.fresh-seconds);{const bank=w.pool||w;if(bank.left!==undefined){bank.left-=w.bleed*share*BLEED_DRAIN*seconds*this.settings.bleedRate;if(bank.left<=0){w.bleed=0;continue;}}} /* a wound outside the fatal spots can only cost so much blood before it closes */ sum+=w.bleed;
             if(blood<=0)continue;const gush=(w.artery||w.fresh>0)&&pulse>.55,chance=w.bleed*seconds*(gush?26:w.artery?1.2:5)*amount;if(random()>=chance)continue;
             const wx=p.flip?-w.x:w.x,cos=Math.cos(b.angle),sin=Math.sin(b.angle),px=b.position.x+wx*cos-w.y*sin,py=b.position.y+wx*sin+w.y*cos;
             // A spurt leaves along the line from the limb's centre through the wound, weaker as the blood runs out; anything else just drips.

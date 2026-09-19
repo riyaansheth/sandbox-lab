@@ -570,7 +570,7 @@ test('legs that break under a conscious body put it down on its front, legs trai
 test('a body with no blood left stops bleeding; a corpse and a loose limb drain until they are empty',()=>{
   const {s,e}=standing(),arm=e.bodies[9],thigh=e.bodies[14];s.sever(s.joints.find(c=>c.bodyB===arm));const limb=s.getEntity(arm);assert.ok(limb!==e&&limb.blood>0&&limb.blood<20);
   s.damage(thigh,30,thigh.position,'bullet',{x:1,y:0});s.kill(e,'test');const before=e.blood;advance(s,120);assert.ok(e.blood<before,'a corpse keeps draining');
-  e.blood=0;limb.blood=0;for(const b of s.bodies)for(const w of [...(b.plugin.wounds||[]),...(b.plugin.severed||[])])w.bleed=3;advance(s,5);s.particles.length=0;advance(s,120);
+  e.blood=0;limb.blood=0;for(const b of s.bodies)for(const w of [...(b.plugin.wounds||[]),...(b.plugin.severed||[])])w.bleed=3;advance(s,5);s.particles.length=0;s.stains.length=0;for(const b of s.bodies)b.plugin.stains=[];/* blood already spilt may still drip; this is about what comes out of the body */advance(s,120);
   assert.equal(s.particles.filter(p=>p.type==='blood').length,0,'nothing left to come out');
 });
 
@@ -632,4 +632,13 @@ test('wounds go deeper with force, dig deeper when hit again in the same place, 
   assert.deepEqual(hit('impact',[20]).map(w=>w.depth),[0],'a blunt blow bruises');assert.deepEqual(hit('impact',[60]).map(w=>w.depth),[2],'only a very hard one splits the skin');
   const dug=hit('cut',[18,18,18]);assert.equal(dug.length,1,'three cuts in one place are one wound');assert.equal(dug[0].depth,3,'dug to the bone');assert.equal(dug[0].hits,3);
   assert.equal(hit('bullet',[40,40,40,40],9).length,4,'wounds apart stay apart');const many=hit('bullet',Array(40).fill(20),1.1);assert.ok(many.length<=10,`${many.length} wounds drawn for 40 rounds`);
+});
+
+test('a clot tears open when the limb is thrown about, a scab does not; a corpse soon stops bleeding; faded bruises are forgotten',()=>{
+  const make=()=>{const {s,e}=standing(),thigh=e.bodies[14];s.damage(thigh,30,thigh.position,'cut',{x:1,y:0});const w=thigh.plugin.wounds.find(x=>x.type==='cut');w.bleed=0;return {s,e,thigh,w};};
+  const shake=(s,thigh,n)=>{for(let i=0;i<n;i++){Body.setVelocity(thigh,{x:i%2?6:-6,y:0});s.step();}};
+  const clot=make();clot.s.time+=60;shake(clot.s,clot.thigh,240);assert.ok(clot.w.bleed>0||clot.w.wet>clot.w.t,'the clot reopened');
+  const scab=make();scab.s.time+=400;shake(scab.s,scab.thigh,240);assert.ok(!(scab.w.bleed>0),'the scab held');
+  const dead=make();dead.w.bleed=3;dead.s.kill(dead.e,'test');advance(dead.s,60*25);assert.ok(dead.w.bleed<.2,`a corpse stops bleeding (${dead.w.bleed.toFixed(2)})`);
+  const bruise=make();bruise.s.damage(bruise.thigh,15,bruise.thigh.position,'impact');assert.ok(bruise.thigh.plugin.wounds.some(x=>x.type==='impact'));bruise.s.time+=400;advance(bruise.s,900);assert.ok(!bruise.thigh.plugin.wounds.some(x=>x.type==='impact'));
 });

@@ -146,7 +146,8 @@
   const STAIN_RAMP=[[155,31,42],[72,26,28]],OIL_RAMP=[[47,84,90],[24,34,36]];
   function stainColor(wet,oil){const [a,b]=oil?OIL_RAMP:STAIN_RAMP;return `rgb(${Math.round(b[0]+(a[0]-b[0])*wet)},${Math.round(b[1]+(a[1]-b[1])*wet)},${Math.round(b[2]+(a[2]-b[2])*wet)})`;}
   const fillers=new Map(),drawList=[];
-  const REMAINS={pale:0,face:'dead',faceId:13,gaze:0,dead:true,noGore:false,time:0,char:0,breath:0}; // parts whose owner is gone
+  const LIVOR_AFTER=12,LIVOR_TIME=40; // the dead go pale over the first seconds; then the blood settles into whatever side is down
+  const REMAINS={livor:0,pale:0,face:'dead',faceId:13,gaze:0,dead:true,noGore:false,time:0,char:0,breath:0}; // parts whose owner is gone
   const looks=new Map(); // entity id -> how that ragdoll looks this frame: pallor, face, dead. Filled once per frame, shared by its 17 parts.
   function render(){
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.fillStyle='#20282d';ctx.fillRect(0,0,width,height);
@@ -154,7 +155,7 @@
     const left=camera.x-width/2/camera.zoom,right=camera.x+width/2/camera.zoom,top=camera.y-height/2/camera.zoom,bottom=camera.y+height/2/camera.zoom;
     ctx.lineWidth=1/camera.zoom;
     const set=sim.settings;looks.clear();for(const e of sim.entities){if(e.kind!=='human')continue;const face=!set.faces?'neutral':!e.alive?'dead':e.consciousness==='unconscious'?'closed':e.shoutT>0?'shout':(sim.time-(e.hitTime??-9)<.6||e.pain>65)?'tense':e.consciousness==='dazed'?'dazed':'neutral';
-      looks.set(e.id,{pale:e.blood<75?clamp((75-e.blood)/50,0,1):0,face,faceId:BodyArt.FACES.indexOf(face)*3+((set.faces&&e.alive?e.gaze:0)||0)+1,gaze:(set.faces&&e.alive?e.gaze:0)||0,dead:!e.alive,noGore:set.noGore,time:sim.time,char:0,breath:e.alive&&set.breathing?Math.sin((e.breath||0)*Math.PI*2)*(.018+Math.min(.03,(e.pain||0)/2500)):0});}
+      looks.set(e.id,{livor:e.alive||e.diedAt===undefined?0:clamp((sim.time-e.diedAt-LIVOR_AFTER)/LIVOR_TIME,0,1),pale:Math.max(e.blood<75?clamp((75-e.blood)/50,0,1):0,e.alive||e.diedAt===undefined?0:clamp((sim.time-e.diedAt)/LIVOR_AFTER,0,1)*.5),face,faceId:BodyArt.FACES.indexOf(face)*3+((set.faces&&e.alive?e.gaze:0)||0)+1,gaze:(set.faces&&e.alive?e.gaze:0)||0,dead:!e.alive,noGore:set.noGore,time:sim.time,char:0,breath:e.alive&&set.breathing?Math.sin((e.breath||0)*Math.PI*2)*(.018+Math.min(.03,(e.pain||0)/2500)):0});}
     if(set.grid)for(let x=Math.floor(left/32)*32;x<right;x+=32){ctx.strokeStyle=x%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,Math.min(bottom,sim.groundY));ctx.stroke();}
     if(set.grid)for(let y=Math.floor(top/32)*32;y<Math.min(bottom,sim.groundY);y+=32){ctx.strokeStyle=y%160===0?'#39464e':'#2c383f';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
     // Far wall measurement ticks and subtle workshop fixtures.
