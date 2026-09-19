@@ -1059,6 +1059,7 @@ test('Storm: electricity heals his wounds, and brings him back from death',()=>{
 test('Storm: while he has charge he cannot die; each death he cheats costs charge, and empty he dies like anyone',()=>{
   const s=new Simulation().seed(4);const e=s.spawn('storm',900,555);advance(s,30);e.power=25;
   s.kill(e,'test');assert.ok(e.alive&&e.power===15,`cheated death: ${e.power}%`);e.blood=5;advance(s,60*5);assert.ok(e.alive&&e.blood>=30,'and cannot bleed out');
+  e.power=0;e.pain=99;e.blood=35;advance(s,30);assert.ok(e.alive&&e.consciousness==='dazed','empty and hurt, he never faints');
   e.power=0;s.kill(e,'test');assert.ok(!e.alive,'empty, he dies');
 });
 test('Storm: electricity charges him instead of hurting him; he spends it on lightning from the hands and beams from the eyes; empty, nothing',()=>{

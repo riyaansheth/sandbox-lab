@@ -424,7 +424,7 @@
         if(e.immortal||(e.conduit&&e.power>0)){e.blood=Math.min(100,Math.max(e.blood,IMMORTAL_FLOOR)+seconds*IMMORTAL_REGEN);e.oxygen=Math.min(100,(e.oxygen??100)+seconds*20);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*IMMORTAL_REGEN);delete e.heartStops;} /* it cannot die, so it cannot stay down for ever either: blood, air and organs come back, slowly. The wounds stay */
         if(e.heartStops!==undefined&&this.time>=e.heartStops){this.kill(e,'heart destroyed');return;}
         if(e.blood<25)this.kill(e,e.bleedingInside?'internal bleeding':'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
-        else e.consciousness=e.blood<40||e.oxygen<30||brain<35||e.pain>=97||e.frozenT>COLD_KO?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70?'dazed':'awake';
+        else e.consciousness=(e.blood<40||e.oxygen<30||brain<35||e.pain>=97||e.frozenT>COLD_KO)&&!e.conduit?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70||e.conduit&&(e.blood<40||e.oxygen<30||brain<35||e.pain>=97)?'dazed':'awake'; /* Storm never faints, charged or empty: at worst he is dazed */
         if(!e.alive)return;
       }else e.consciousness='awake';
       // Brain damage setting: the worse the head, the more often it blacks out.
