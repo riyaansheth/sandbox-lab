@@ -298,9 +298,9 @@ test('injuries survive save and load, heal clears them, and old saves still load
 });
 // ---- gore spec, section 2: blood
 test('an arterial wound drains blood far faster than a bruise from an equal blow',()=>{
-  const drain=(type)=>{const {s,e,part}=fresh({organDamage:false});const thigh=part('thigh');s.damage(thigh,40,thigh.position,type);advance(s,600);return 100-e.blood;};
+  const drain=(type)=>{const {s,e,part}=fresh({organDamage:false});const thigh=part('thigh');s.damage(thigh,40,{x:thigh.position.x,y:thigh.position.y-16},type);advance(s,600);return 100-e.blood;}; /* high in the thigh, where the femoral artery is */
   const bruise=drain('impact'),artery=drain('stab');assert.ok(artery>bruise*6,`artery ${artery} vs bruise ${bruise}`);
-  const off=fresh({organDamage:false,arterialSpurts:false});const t=off.part('thigh');off.s.damage(t,40,t.position,'stab');assert.equal(t.plugin.wounds[0].artery,undefined);advance(off.s,600);assert.ok(100-off.e.blood<artery*.6,'with spurts off a thigh stab is an ordinary wound');
+  const off=fresh({organDamage:false,arterialSpurts:false});const t=off.part('thigh');off.s.damage(t,40,{x:t.position.x,y:t.position.y-16},'stab');assert.equal(t.plugin.wounds[0].artery,undefined);advance(off.s,600);assert.ok(100-off.e.blood<artery*.6,'with spurts off a thigh stab is an ordinary wound');
   const shin=fresh();const sh=shin.part('shin');shin.s.damage(sh,40,sh.position,'stab');assert.equal(sh.plugin.wounds[0].artery,undefined,'no artery in the shin');
 });
 test('a still wound clots: its bleeding strictly decreases, and slower on a limb that keeps moving',()=>{
@@ -641,4 +641,14 @@ test('a clot tears open when the limb is thrown about, a scab does not; a corpse
   const scab=make();scab.s.time+=400;shake(scab.s,scab.thigh,240);assert.ok(!(scab.w.bleed>0),'the scab held');
   const dead=make();dead.w.bleed=3;dead.s.kill(dead.e,'test');advance(dead.s,60*25);assert.ok(dead.w.bleed<.2,`a corpse stops bleeding (${dead.w.bleed.toFixed(2)})`);
   const bruise=make();bruise.s.damage(bruise.thigh,15,bruise.thigh.position,'impact');assert.ok(bruise.thigh.plugin.wounds.some(x=>x.type==='impact'));bruise.s.time+=400;advance(bruise.s,900);assert.ok(!bruise.thigh.plugin.wounds.some(x=>x.type==='impact'));
+});
+
+test('where a blow lands decides what it does: thigh = limp, knee = collapse, femoral artery = dead in half a minute, spine = legs gone, arm = drops the gun',()=>{
+  const shot=(slot,dy,dx=0,amount=45)=>{const {s,e}=standing(),part=e.bodies[slot];s.damage(part,amount,{x:part.position.x+dx,y:part.position.y+dy},'bullet',{x:1,y:0});return {s,e,part};};
+  const mid=shot(14,0);advance(mid.s,1500);assert.ok(mid.e.alive&&!mid.s.fractured(mid.part)&&!mid.part.plugin.wounds[0].artery,'mid-thigh: hurt, alive, leg still whole');
+  const knee=shot(14,20);assert.ok(knee.s.fractured(knee.part),'the knee: crippled by the same round');assert.equal(knee.part.plugin.wounds[0].hit,'joint');advance(knee.s,240);assert.notEqual(knee.e.rung,'stand');
+  const artery=shot(14,-16);assert.equal(artery.part.plugin.wounds[0].hit,'artery');let t=0;while(artery.e.alive&&t<60*60){artery.s.step();t++;}assert.ok(!artery.e.alive&&t/60>10&&t/60<40,`femoral artery: dead in ${(t/60).toFixed(0)} s`);assert.equal(artery.e.causeOfDeath,'blood loss');
+  const saved=shot(14,-16);advance(saved.s,120);saved.s.bandage(saved.part);advance(saved.s,3600);assert.ok(saved.e.alive,'a bandage in time saves it');
+  const spine=shot(3,0,-10);assert.ok(spine.e.paralysed&&spine.e.alive);advance(spine.s,300);assert.ok(!spine.s.canStand(spine.e),'a round in the spine takes the legs');
+  const {s,e}=standing(),hand=e.bodies[10],gun=s.spawn('gun',hand.position.x+20,hand.position.y).bodies[0];assert.match(s.equip(hand),/Picked up/);advance(s,60);s.damage(e.bodies[9],20,e.bodies[9].position,'cut',{x:1,y:0});assert.equal(gun.plugin.heldBy,undefined,'a wounded arm lets go');
 });

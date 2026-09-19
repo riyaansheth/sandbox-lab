@@ -104,7 +104,12 @@
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
   const ORGANS={head:[['brain',-1,-1,.7,.3,1.5]],chest:[['heart',-.5,-.95,.5,-.2,2],['lungs',-1,-1,1,.5,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
-  const ARTERIAL=new Set(['neck','upper arm','thigh']),ARTERY_RATE=2.5; // deep wounds here hit an artery: they bleed this much faster, in spurts
+  // Where on a part a blow lands changes what it does. Zones are in the part's own frame, -1..1 each way (x: back to front, y: top to bottom): [what, x0, y0, x1, y1].
+  // artery: the carotid, the brachial high in the arm, the femoral high in the thigh - a deep wound there spurts, is not capped, and kills in about twenty seconds unless it is stopped.
+  // joint: the elbow and knee ends - the limb is crippled even by a light hit (bone damage x JOINT_HIT). spine: the back edge of the trunk - a deep hit leaves everything below it limp.
+  const ZONES={neck:[['artery',-.2,-1,1,1],['spine',-1,-1,-.5,1]],'upper arm':[['artery',-1,-1,1,-.5],['joint',-1,.72,1,1]],forearm:[['joint',-1,-1,1,-.72]],thigh:[['artery',-1,-1,1,-.45],['joint',-1,.72,1,1]],shin:[['joint',-1,-1,1,-.72]],
+    chest:[['spine',-1,-1,-.5,1]],abdomen:[['spine',-1,-1,-.5,1]],pelvis:[['spine',-1,-1,-.5,1]]};
+  const ARTERY_RATE=2.5,ARTERY_DRAIN=.8,JOINT_HIT=3,SPINE_HIT=25,DROP_HIT=12; // arterial wounds bleed this much faster, in spurts, and drain this much more blood per unit of bleed; force that cuts the cord; force on an arm that makes its hand let go
   const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
   const FRACTURE=50,FRACTURE_SLACK=.7; // bone at or below this is fractured; a fractured limb's joints bend this much further
@@ -364,8 +369,8 @@
     vitals(e,seconds) {
       const set=this.settings,head=e.bodies.find(b=>b.plugin.part==='head'),human=e.kind==='human';
       if(human){
-        let open=0,inside=0;for(const b of e.bodies){const p=b.plugin;open+=p.bleed||0;if(p.internal){inside+=p.internal;p.bruise=Math.min(1,(p.bruise||0)+p.internal*seconds*.12);p.internal=Math.max(0,p.internal-seconds*.012);}} // internal bleeding shows as a spreading bruise, and clots slowly
-        e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+inside)*seconds*set.bleedRate);
+        let open=0,inside=0,artery=0;for(const b of e.bodies){const p=b.plugin;open+=p.bleed||0;if(p.bleed>0&&p.wounds)for(const w of p.wounds)if(w.artery)artery+=w.bleed||0;if(p.internal){inside+=p.internal;p.bruise=Math.min(1,(p.bruise||0)+p.internal*seconds*.12);p.internal=Math.max(0,p.internal-seconds*.012);}} // internal bleeding shows as a spreading bruise, and clots slowly
+        e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+artery*ARTERY_DRAIN+inside)*seconds*set.bleedRate);
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
         e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
@@ -695,16 +700,19 @@
       if(e&&e.alive&&type==='shock')e.shockT=Math.max(e.shockT||0,SHOCK_LOCK);
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
-        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone);if(p.bone<=50&&p.brokeAt===undefined)p.brokeAt=this.time; /* the swelling starts here */
+        const fx=lx/(p.w/2),fy=local.y/(p.h/2),zone=(ZONES[p.part]||[]).find(([,x0,y0,x1,y1])=>fx>=x0&&fx<=x1&&fy>=y0&&fy<=y1)?.[0];
+        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone*(zone==='joint'&&p.slot>=5?JOINT_HIT:1));if(p.bone<=50&&p.brokeAt===undefined)p.brokeAt=this.time; /* the swelling starts here */
         // Bleeding belongs to the wound, not the limb. A burn seals what is there; a new blow next to an old wound opens it again.
-        const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
+        const artery=set.arterialSpurts&&zone==='artery'&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
         if(profile.wound&&!(type==='shock'&&amount<SHOCK_MARK)){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
-          this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),artery:artery||undefined,...(FATAL_SPOTS.has(p.part)?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
+          const made=this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),...(artery?{artery:true}:{}),...(zone&&(zone!=='artery'||artery)?{hit:zone}:{}),...(FATAL_SPOTS.has(p.part)||artery?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
-        if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
+        if(e&&e.alive&&zone==='spine'&&(profile.deep||type==='exit')&&amount>=(type==='exit'?SPINE_HIT*.3:SPINE_HIT)){if(p.slot<=2)e.upright=false;e.paralysed=true;e.restTime=0;} /* the cord: below the chest it takes the legs, at the chest or neck everything */
+        if(e&&p.slot>=5&&p.slot<=10&&amount>=DROP_HIT){const hand=e.bodies.find(b=>b.plugin.slot===(p.slot<=7?7:10)),item=hand&&this.held(hand);if(item)this.release(item);} /* a wounded arm lets go of what it holds */
+        if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20))){const organ=this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);if(organ&&profile.wound){const w=(p.wounds||[]).find(x=>x.type===type&&Math.hypot(x.x-clamp(lx,-p.w/2+1,p.w/2-1),x.y-clamp(local.y,-p.h/2+1,p.h/2-1))<12);if(w)w.hit??=organ;}}
           if(e.alive&&(p.part==='head'||p.part==='chest')&&p.hp<12)this.kill(e,`massive ${p.part} trauma`);}
       }
       else{this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);if(p.part&&profile.deep)p.leak=Math.min(3,(p.leak||0)+amount/70);}
@@ -764,6 +772,7 @@
       else if(organ==='heart'){p.internal=(p.internal||0)+amount/18;if(e.organs.heart<=0)this.kill(e,'heart destroyed');}               // massive internal bleed
       else if(organ==='gut'){let all=0;for(const b of e.bodies)all+=b.plugin.internal||0;p.internal=(p.internal||0)+Math.min(amount/80,Math.max(0,GUT_BLEED-all));} /* capped over the whole body: the belly and the pelvis are both gut, and one round crosses both */                                                                          // slow internal bleed
       // lungs: no immediate effect; vitals() runs the oxygen down while they are damaged
+      return organ;
     }
     // Gibs: small physical chunks of what used to be a limb, and half as many bone fragments. They trail blood for a moment, and do not last.
     gibs(x,y,material,velocity,scale=1) {
