@@ -716,11 +716,11 @@ test('a wound never moves: hit again beside it, it deepens where it is; blood ma
   assert.deepEqual(head.plugin.stains.map(st=>st.x+','+st.y),marks,'the same marks, in the same places');
 });
 
-test('a syringe goes in at a touch, draws 2% of the blood, pushes it back on Activate, and comes out with a light pull',()=>{
+test('a syringe goes in at a touch, draws 2% of the blood, pushes it back on Activate, stays in, and comes out when it is pulled',()=>{
   const {s,e,chest}=arena();e.alive=true;e.blood=100;const hp=chest.plugin.hp,slow=hurl(s,'sword',chest,2);advance(s,200);assert.equal(slow.plugin.stuck,undefined,'a sword this slow bounces off');s.removeBody(slow);
   const needle=hurl(s,'syringe',chest,2);advance(s,200);const near=(got,want)=>assert.ok(Math.abs(got-want)<.2,`blood ${got}, expected about ${want}`); /* the prick itself bleeds a drop */ assert.equal(needle.plugin.stuck,e.id,'the needle goes in');near(e.blood,98);assert.equal(needle.plugin.fill,'blood');assert.ok(hp-chest.plugin.hp<=4,'a prick, not a stab wound');
   assert.match(s.activate(needle),/Injected/);near(e.blood,100);assert.equal(needle.plugin.fill,undefined);assert.match(s.activate(needle),/Drew/);near(e.blood,98);
-  s.beginDrag(needle,{...needle.position});s.moveDrag({x:needle.position.x-6,y:needle.position.y});advance(s,10);assert.ok(!s.joints.some(c=>c.plugin.pierce),'6 px of pull is enough to free it');s.moveDrag({x:needle.position.x-90,y:needle.position.y});advance(s,90);s.endDrag();advance(s,30);assert.equal(needle.plugin.stuck,undefined,'a light pull draws it out');assert.ok(!s.joints.some(c=>c.plugin.pierce));
+  advance(s,600);assert.equal(needle.plugin.stuck,e.id,'left alone it stays in');s.beginDrag(needle,{...needle.position});advance(s,30);assert.ok(s.joints.some(c=>c.plugin.pierce),'picking it up does not draw it out');s.moveDrag({x:needle.position.x-90,y:needle.position.y});advance(s,90);s.endDrag();advance(s,30); /* it comes out the way a blade does: when it is pulled */assert.equal(needle.plugin.stuck,undefined,'a pull draws it out');assert.ok(!s.joints.some(c=>c.plugin.pierce));
   assert.equal(needle.plugin.fill,'blood','and it keeps what it drew');s.particles.length=0;assert.match(s.activate(needle),/emptied/);assert.ok(s.particles.some(p=>p.type==='blood'),'out of a body it squirts onto the floor');assert.match(s.activate(needle),/empty/);
   assert.ok(require('../items.js').CATEGORIES.includes('Syringes'));
 });
@@ -830,4 +830,12 @@ test('heal: a few seconds over a badly hurt ragdoll mends it, oldest wound first
   const dead=lone('human');dead.s.kill(dead.e,'test');const arm=dead.e.bodies[9],elbow=dead.s.joints.find(c=>c.bodyB===arm);dead.s.sever(elbow);held(dead.s,'heal',0,0,240,()=>{dead.s.power.x=dead.e.bodies[2].position.x;dead.s.power.y=dead.e.bodies[2].position.y;});assert.ok(!dead.e.alive,'it does not bring anyone back');assert.ok(dead.e.bodies.length<17&&!dead.s.joints.includes(elbow),'or put anything back on');
   const br=lone('human'),knee=br.s.joints.find(c=>c.plugin.name==='knee');knee.plugin.broken=true;held(br.s,'heal',0,0,120,()=>{br.s.power.x=knee.bodyB.position.x;br.s.power.y=knee.bodyB.position.y;});assert.ok(knee.plugin.broken,'a broken joint stays broken');
   const hot=lone('plank');hot.s.ignite(hot.b);advance(hot.s,30);held(hot.s,'heal',hot.b.position.x,hot.b.position.y,90);assert.ok(!hot.b.plugin.burning&&hot.b.plugin.heat<60,'it puts fire out and brings things back to room temperature');
+});
+
+test('the crossbow bolt is very fast but slower than a bullet, and still goes into a body; the battery discharges in short bursts; the chamber has no ceiling',()=>{
+  const bow=new Simulation().seed(2);bow.gravity=0;bow.configure({gravity:0,organDamage:false,autoBalance:false});const e=bow.spawn('human',1500,400),xb=bow.spawn('crossbow',900,e.bodies[2].position.y).bodies[0];bow.freeze(xb);bow.activate(xb);const bolt=bow.bodies.find(b=>b.plugin.kind==='bolt'),speed=bolt.velocity.x*60;
+  const pistol=require('../items.js').ITEMS.find(i=>i.id==='gun').firearm.speed*110*.1;assert.ok(speed>2200&&speed<pistol,`bolt ${Math.round(speed)} px/s, pistol round ${Math.round(pistol)}`);advance(bow,60);assert.equal(bolt.plugin.stuck,e.id,'at that speed it still lodges in what it hits, and does not pass through');
+  const s=new Simulation().seed(2);const bat=s.spawn('battery',1000,620).bodies[0];advance(s,60);s.activate(bat);let pulses=0;const shock=s.shock.bind(s);s.shock=(...a)=>{pulses++;return shock(...a);};advance(s,60*6);assert.ok(pulses>=4&&pulses<=6,`${pulses} discharges in six seconds`);
+  const sky=new Simulation().seed(2);const ball=sky.spawn('ball',1000,0).bodies[0];Body.setVelocity(ball,{x:0,y:-25});let top=0;for(let i=0;i<300;i++){sky.step();top=Math.min(top,ball.position.y);}assert.ok(top<-700,`thrown up, it went to y ${Math.round(top)}: nothing in the way`);assert.ok(sky.bodies.includes(ball)&&ball.position.y>-700,'and came back down');
+  const wall=new Simulation().seed(2);const high=wall.spawn('ball',2500,-1500).bodies[0];Body.setVelocity(high,{x:40,y:0});advance(wall,60);assert.ok(high.position.x<2610,'the walls go all the way up');
 });

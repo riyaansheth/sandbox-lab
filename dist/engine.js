@@ -160,6 +160,7 @@
   const CRUSH_PULL=90,CRUSH_HOLD=.35,CRUSH_RATE=60,CRUSH_MORE=1.2; // px the cursor must push past the surface (scaled by joint strength) - most of a metre, never by accident; seconds it must be held; damage per second at that push, and more per px beyond it
   // Powers: fire, cold, shock and heal exist in the world at the cursor while the button is held (see powers()). Radii are px at Power radius 1x; rates are per second at the centre, before the material's share.
   const POWER_R={fire:40,cold:40,heal:40,shock:120},POWER_SCAN=1/30,FIRE_RATE=860,COLD_RATE=170,/* flesh is frozen solid after about a second: long enough to watch it stiffen */COLD_FLOOR=-80,COLD_QUENCH=1500,FROZEN=-30,FROZEN_BLOW=22,COLD_KO=2.5,POWER_MARKS=36,FROST_LIFE=10;
+  const BATTERY_EVERY=1.2; // seconds between a battery's discharges: a short burst, then quiet. (The shock power is the continuous one.)
   const SHOCK_CHAIN_HELD=12,SHOCK_TICK=.08,SHOCK_DOSE=.44,SHOCK_ARCS=3,HEAL_HP=35,HEAL_WOUND=7,HEAL_BLOOD=14,HEAL_PAIN=45,HEAL_ORGAN=18,HEAL_TEMP=260; // a held shock is one tick every 80 ms at the dose that matches the old one-a-click rate; heal: hp and bone per second, px of wound closed per second, and the body's blood, pain and organs
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
@@ -197,7 +198,7 @@
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];this.smears=new WeakMap();
       this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.power=null;this.powerNear=[];this.powerK=[];this.powerAt=-9;this.powerPick=[-1,-1,-1];this.powerStamp=0;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.busy=new Array(17).fill(0);this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
-      this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
+      this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,-3350,100,8200,{isStatic:true}),Bodies.rectangle(2650,-3350,100,8200,{isStatic:true})]; /* no ceiling: things can be stacked, thrown and dropped from as high as you like. The walls go up 7 km's worth of pixels; what gets past 10 000 px is removed */
       this.boundaries.forEach(b=>{b.plugin={boundary:true};b.friction=.85;b.frictionStatic=1;});Composite.add(this.world,this.boundaries);
       Events.on(this.engine,'collisionStart',e=>this.collisions(e.pairs));Events.on(this.engine,'collisionActive',e=>this.disturb(e.pairs));
     }
@@ -969,7 +970,7 @@
       if(def.syringe)return held?'':this.syringe(body);
       if(def.firearm){const gun=def.firearm;if(held&&!gun.auto)return '';if(p.cool>0)return '';p.cool=1/(gun.rate||4); // held = the trigger is being kept down: only automatic weapons keep firing; every weapon has its own rate of fire
         const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)},muzzle=Vector.add(body.position,Vector.mult(d,gun.muzzle));Body.applyForce(body,body.position,Vector.mult(d,-gun.recoil));
-        if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/120;
+        if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/60; /* px per 1/60 s, which is what setVelocity takes */
           Body.setAngle(bolt,aim+Math.PI/2);Body.setVelocity(bolt,Vector.add(body.velocity,Vector.mult(d,v)));bolt.plugin.shotBy=body.id;this.onEffect('impact',.3);return held?'':`${name} loosed`;}
         this.shoot(muzzle,Vector.add(muzzle,d),body,gun);return held?'':`${name} fired`;}
       if(def.device==='ram')return this.ram(body);
@@ -1020,7 +1021,7 @@
       for(const sword of this.bodies){const p=sword.plugin;if(p.stuck===undefined||this.piercing.has(sword))continue;
         const pins=this.joints.filter(c=>c.plugin.pierce&&c.bodyB===sword);
         // Matter's pins barely stretch, so a hand pull is measured on the grab itself: how far the cursor has drawn away from the hilt.
-        const sharp=defs[p.kind]?.sharp||{},pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4*(sharp.ease??1);
+        const sharp=defs[p.kind]?.sharp||{},pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4; /* ease is for going in only: picking a syringe up must not draw it out */
         // A blade in the body hurts all the time, and much more when someone moves it.
         if(pins.length){const host=this.getEntity(pins[0].bodyA);if(host&&host.kind==='human'&&host.alive){const moved=this.drag?.bodyB===sword;host.pain=Math.min(100,(host.pain||0)+(moved?14:1.6)*(sharp.prick?.1:1)/120*this.settings.painSensitivity);if(moved&&!sharp.prick&&!(host.flinch>0)){host.flinch=FLINCH_TIME;host.flinchMag=.5;host.flinchSlot=pins[0].bodyA.plugin.slot;host.flinchDir=host.flinchDir||1;}}}
         if(pins.length&&!pulled&&(this.drag?.bodyB===sword||pins.every(c=>Constraint.currentLength(c)<PIN_TEAR)))continue; // a hand pull is what the grip setting governs; the pins themselves only give way to real violence
@@ -1141,7 +1142,7 @@
           if(device==='wheel')Body.setAngularVelocity(b,.18);
           if(device==='chainsaw')Body.setVelocity(b,{x:b.velocity.x+rnd(-.25,.25),y:b.velocity.y+rnd(-.25,.25)});
         }
-        if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b,1,Vector.add(b.position,Vector.rotate({x:0,y:-(p.h||0)/2},b.angle)));} /* from the terminals */
+        if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time/BATTERY_EVERY)!==p.lastPulse){p.lastPulse=Math.floor(this.time/BATTERY_EVERY);p.pulseAt=this.time;this.shock(b,1,Vector.add(b.position,Vector.rotate({x:0,y:-(p.h||0)/2},b.angle)));} /* from the terminals */
       }
       if(this.drag)this.grab(seconds);
       if(this.power)this.powers(seconds,bodies);

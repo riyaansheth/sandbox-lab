@@ -221,7 +221,7 @@
     ctx.fillStyle='#303a3f';ctx.fillRect(left,sim.groundY,right-left,bottom-sim.groundY+100);ctx.fillStyle='#85928f';ctx.fillRect(left,sim.groundY,right-left,3);ctx.fillStyle='#414c50';ctx.fillRect(left,sim.groundY+3,right-left,11);
     ctx.strokeStyle='#222d34';ctx.lineWidth=2;for(let x=Math.floor(left/35)*35;x<right;x+=35){ctx.beginPath();ctx.moveTo(x,sim.groundY+15);ctx.lineTo(x+22,sim.groundY+37);ctx.stroke();}
     ctx.strokeStyle='#465357';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,sim.groundY+38);ctx.lineTo(right,sim.groundY+38);ctx.stroke();
-    for(const x of [0,2600]){ctx.fillStyle='#3d494e';ctx.fillRect(x-8,-370,16,1020);}
+    for(const x of [0,2600]){ctx.fillStyle='#3d494e';ctx.fillRect(x-8,-7450,16,8100);} /* the walls go up as far as the chamber does: there is no ceiling */
     if(set.decals)for(const st of sim.stains){if(st.x+st.r<left||st.x-st.r>right)continue;
       if(st.scorch||st.frost){const img=st.frost?glowSprite('frost','214,238,255',1):glowSprite('scorch','11,13,14',1);ctx.globalAlpha=(st.frost?.75*clamp(1-(st.age||0)/10,0,1):.8)*(st.a??1);if(st.wall)ctx.drawImage(img,st.x-3.5,st.y-st.r,7,st.r*2);else ctx.drawImage(img,st.x-st.r,st.y-(st.frost?2.5:3.5),st.r*2,st.frost?5:7);ctx.globalAlpha=1;continue;} /* a scorch darkens as it builds (a); frost fades over ten seconds */
       if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=.9*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
