@@ -264,10 +264,10 @@ test('a powerful round goes straight through a fresh body part: entry, exit, and
   const entry=belly.wounds.find(w=>w.type==='bullet'),exit=belly.wounds.find(w=>w.type==='exit');assert.ok(exit.x>entry.x&&exit.radius>entry.radius,'exit wound is on the far side and larger');
 });
 test('a heart shot kills without severing anything, and says why',()=>{
-  const {s,e,part}=fresh();const chest=part('chest');s.damage(chest,55,{x:chest.position.x+5,y:chest.position.y-3},'bullet'); // the heart sits front and centre in a chest seen from the side
+  const {s,e,part}=fresh();const chest=part('chest');s.damage(chest,55,{x:chest.position.x,y:chest.position.y-10},'bullet'); // the heart sits top centre in the chest
   assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(s.joints.filter(c=>c.plugin.joint).length,16);assert.ok(chest.plugin.hp>30,'the chest itself is far from destroyed');
-  const off=fresh({organDamage:false});const c=off.part('chest');off.s.damage(c,55,{x:c.position.x+5,y:c.position.y-3},'bullet');assert.equal(off.e.alive,true,'with organ damage off it is just a chest wound');
-  const bot=new Simulation();const a=bot.spawn('android',1000,555),ac=a.bodies[2];bot.damage(ac,55,{x:ac.position.x+5,y:ac.position.y-3},'bullet');assert.equal(a.alive,true);assert.equal(a.organs,undefined);assert.ok(!a.pain,'androids feel nothing');
+  const off=fresh({organDamage:false});const c=off.part('chest');off.s.damage(c,55,{x:c.position.x,y:c.position.y-10},'bullet');assert.equal(off.e.alive,true,'with organ damage off it is just a chest wound');
+  const bot=new Simulation();const a=bot.spawn('android',1000,555),ac=a.bodies[2];bot.damage(ac,55,{x:ac.position.x,y:ac.position.y-10},'bullet');assert.equal(a.alive,true);assert.equal(a.organs,undefined);assert.ok(!a.pain,'androids feel nothing');
 });
 test('brain, lungs and gut each fail in their own way',()=>{
   const b=fresh({stunScale:1});const head=b.part('head');b.s.damage(head,55,{x:head.position.x,y:head.position.y-8},'bullet');assert.ok(b.e.alive&&b.e.stun>5,'one head shot: a long blackout');b.s.step();assert.equal(b.e.consciousness,'unconscious');
@@ -518,7 +518,7 @@ test('the power hammer fires its ram at what is in front of the head',()=>{
 });
 test('prolonged burning leaves a dead, bare skeleton that has stopped burning',()=>{
   const s=new Simulation().seed(2);s.configure({organDamage:false});const e=s.spawn('human',1000,555);for(const b of e.bodies)s.ignite(b);let skinGone=null;for(let i=0;i<60*16;i++){s.step();if(skinGone===null&&e.bodies.every(b=>b.plugin.char>.5))skinGone=i/60;}
-  assert.ok(skinGone>3&&skinGone<9,`skin should be gone in a few seconds, took ${skinGone}`);assert.ok(e.bodies.every(b=>b.plugin.char>=1),'fully charred');assert.ok(e.bodies.every(b=>!b.plugin.burning),'nothing left to burn');assert.equal(e.alive,false);
+  assert.ok(skinGone>3&&skinGone<9,`skin should be gone in a few seconds, took ${skinGone}`);assert.ok(e.bodies.every(b=>b.plugin.char>.9),'burnt to the bone');assert.ok(e.bodies.every(b=>!b.plugin.burning),'nothing left to burn');assert.equal(e.alive,false);
   assert.ok(e.bodies.every(b=>!b.plugin.bleed&&b.plugin.wounds.length===0));assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id).length>0,true,'the skeleton holds together');
 });
 test('guns wound but never dismember, and only a contact shot destroys the part it hits',()=>{
@@ -529,4 +529,23 @@ test('guns wound but never dismember, and only a contact shot destroys the part 
   const contact=volley(1.5,4);assert.equal(contact.shin.plugin.hp,0,'a muzzle against the limb destroys it');assert.equal(contact.s.joints.filter(c=>c.plugin.joint).length,16,'but even that does not dismember');
   const inside=volley(-3,4);assert.equal(inside.shin.plugin.hp,0,'a muzzle pushed into the limb counts as contact');
   const head=new Simulation();const h=head.spawn('human',1000,555),skull=h.bodies[0];for(let i=0;i<3;i++)head.shoot({x:skull.bounds.min.x-300,y:skull.position.y},{x:1600,y:skull.position.y});assert.equal(h.alive,false,'bullets still kill');assert.ok(skull.plugin.hp>0);
+});
+test('R turns a ragdoll to face the other way, with what it holds, and twice is the identity',()=>{
+  const s=new Simulation().seed(3);const e=s.spawn('human',1000,555);advance(s,60);const hand=e.bodies[10],gun=s.spawn('gun',hand.position.x+20,hand.position.y).bodies[0];s.equip(hand);advance(s,200);
+  const chest=e.bodies[2],before=e.bodies.map(b=>({x:b.position.x-chest.position.x,y:b.position.y,a:b.angle})),knee=s.joints.find(c=>c.plugin.name==='knee'),limits=[knee.plugin.min,knee.plugin.max],ahead=gun.position.x-chest.position.x;
+  assert.ok(ahead>20,'the pistol is held out in front');assert.equal(s.flip(e.bodies[5]),true);assert.ok(e.bodies.every(b=>b.plugin.flip));assert.equal(gun.plugin.flip,true);assert.ok(Math.abs(gun.position.x-chest.position.x+ahead)<.01,'now it is out in front on the other side');
+  e.bodies.forEach((b,i)=>{assert.ok(Math.abs(b.position.x-chest.position.x+before[i].x)<1e-6&&Math.abs(b.position.y-before[i].y)<1e-6&&Math.abs(b.angle+before[i].a)<1e-6);});assert.deepEqual([knee.plugin.min,knee.plugin.max],[-limits[1],-limits[0]]);
+  for(const c of s.joints)assert.ok(Constraint.currentLength(c)<1,`${c.plugin.name||'pin'} came apart in the mirror`);advance(s,240);assert.ok(chest.position.y<505&&Math.abs(chest.angle)<.2,'it goes on standing');assert.ok(gun.position.x<chest.position.x-20);
+  const crate=new Simulation();const far=crate.spawn('crate',300,300).bodies[0];far.plugin.hp=80;s.activate(e.bodies[2]);s.flip(chest);e.bodies.forEach((b,i)=>assert.ok(Math.abs(Math.abs(b.position.x-chest.position.x)-Math.abs(before[i].x))<40));assert.ok(e.bodies.every(b=>!b.plugin.flip),'and back again');
+});
+test('burnt skin grows back over five minutes once the fire is out',()=>{
+  const s=new Simulation().seed(2);s.configure({organDamage:false});const e=s.spawn('human',1000,555),arm=e.bodies[8];arm.plugin.char=1;arm.plugin.burning=false;advance(s,60*60);assert.ok(arm.plugin.char>.75&&arm.plugin.char<.85,`after a minute: ${arm.plugin.char}`);
+  advance(s,60*245);assert.equal(arm.plugin.char,0,'whole again after five minutes');const crate=s.spawn('crate',1300,620).bodies[0];crate.plugin.char=.6;advance(s,600);assert.equal(crate.plugin.char,.6,'objects stay charred');
+  s.ignite(arm);advance(s,120);assert.ok(arm.plugin.char>0,'and it can burn again');const n=s.bodies.length;s.clearFire();assert.equal(s.bodies.length,n,'clearing the fire removes nothing');
+});
+test('partial revive brings the dead back as they are: wounds, fractures and missing limbs stay',()=>{
+  const s=new Simulation().seed(4);const e=s.spawn('human',1000,555);advance(s,30);const chest=e.bodies[2],shin=e.bodies[12];s.sever(s.joints.find(c=>c.plugin.name==='shoulder'));s.damage(shin,60,shin.position,'impact');
+  s.damage(chest,55,{x:chest.position.x,y:chest.position.y-10},'bullet');assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(e.heartRate,0);const wounds=chest.plugin.wounds.length,hp=shin.plugin.hp,joints=s.joints.filter(c=>c.plugin.joint).length;
+  assert.equal(s.partialRevive(chest),true);assert.equal(e.alive,true);assert.equal(e.causeOfDeath,undefined);assert.equal(chest.plugin.wounds.length,wounds);assert.equal(shin.plugin.hp,hp);assert.ok(s.fractured(shin));assert.equal(s.joints.filter(c=>c.plugin.joint).length,joints,'the arm is still off');
+  assert.ok(e.organs.heart>=60&&e.blood>=65);advance(s,600);assert.equal(e.alive,true,'and it stays alive');assert.ok(e.heartRate>40);assert.equal(s.partialRevive(s.spawn('crate',300,300).bodies[0]),false);
 });

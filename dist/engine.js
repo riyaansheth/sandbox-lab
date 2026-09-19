@@ -102,7 +102,7 @@
   };
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
-  const ORGANS={head:[['brain',-1,-1,.7,.3,1.5]],chest:[['heart',-.1,-.45,.75,.3,2],['lungs',-1,-1,1,.45,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
+  const ORGANS={head:[['brain',-1,-1,.7,.3,1.5]],chest:[['heart',-.5,-.95,.5,-.2,2],['lungs',-1,-1,1,.5,1]],abdomen:[['gut',-1,-1,1,1,.8]],pelvis:[['gut',-1,-1,1,.2,.6]]};
   const ARTERIAL=new Set(['neck','upper arm','thigh']),ARTERY_RATE=2.5; // deep wounds here hit an artery: they bleed this much faster, in spurts
   const CLOT=.012,DRY_TIME=30,POOL_MAX=46,BODY_STAINS=5,BLOOD='#922c33',OIL='#2f4a4f'; // clotting per second at rest; seconds for blood to dry; biggest pool; stains kept per body
   const GIB_LIFE=14,GIB_MAX=36; // seconds a gib lasts, and how many may exist at once
@@ -139,6 +139,7 @@
   // Balance and landing. STEP_*: how far ahead of its feet (px, with velocity looked ahead) the chest may get before a recovery step, and the pause between steps.
   // LAND_*: a fall speed (px/frame) that counts as a full-depth landing, and how long the legs take to straighten again. STRUGGLE_*: tone and kick rate of a body held off the ground.
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
+  const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
@@ -333,6 +334,13 @@
       const trunk=!!joint(3)&&!!joint(4)&&!e.paralysed,brokenLeg=live.some(c=>c.bodyB.plugin.slot>=11&&this.fractured(c.bodyB));if(trunk&&!brokenLeg&&((ok(11)&&ok(12))||(ok(14)&&ok(15))))return 'kneel'; // kneeling is for missing feet, not for broken legs
       const arms=(ok(5)&&ok(6)?1:0)+(ok(8)&&ok(9)?1:0);return arms===2?'crawl':arms===1?'drag':'curl';
     }
+    // Enough is put back to live on: blood, air, a working heart and brain, clotted wounds. Nothing is mended.
+    partialRevive(body) {
+      const e=this.getEntity(body);if(!e||e.blood===undefined)return false;e.alive=true;e.upright=true;e.paralysed=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=1.5;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;e.pin=null;e.shockT=0;e.twitchAt=[];
+      e.blood=Math.max(e.blood,65);e.oxygen=100;e.pain=Math.min(e.pain||0,45);if(e.organs){e.organs.heart=Math.max(e.organs.heart,60);e.organs.brain=Math.max(e.organs.brain,75);e.organs.lungs=Math.max(e.organs.lungs,65);}
+      for(const b of e.bodies){const p=b.plugin;p.burning=false;p.internal=0;for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=(w.bleed||0)*.2;this.bleedOf(p);if(p.part==='head'||p.part==='chest')p.hp=Math.max(p.hp,40);}
+      this.burst(body.position.x,body.position.y,12,'#9fcbb1',2);return true;
+    }
     revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
     // After death a nerve may still fire once or twice: a limb jerks at one joint, equal and opposite on its two parts, and that is the end of it. Then the body is left to come to rest.
     twitch(e,seconds) {
@@ -371,6 +379,7 @@
       if(c.plugin.name==='atlas'||c.plugin.name==='neck')this.kill(e,'broken neck');else if(c.plugin.name==='spine'||c.plugin.name==='waist')e.paralysed=true;
     }
     bearing(f){return f.plugin.part==='foot'?f.position.x-(f.plugin.flip?-1:1)*FOOT_AHEAD*Math.cos(f.angle):f.position.x;}
+    chestOf(e){return e.bodies.find(b=>b.plugin.slot===2);}
     // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
     strengthOf(b){return this.fractured(b)?0:clamp((b.plugin.hp??100)/50,.2,1);}
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
@@ -575,6 +584,18 @@
     }
     removeEntity(body){const e=this.getEntity(body);if(e)for(const b of [...e.bodies])this.removeBody(b);}
     clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
+    // Turn to face the other way: the whole connected set is mirrored about a vertical line through the clicked body's owner (its chest, if it has one).
+    // Positions, angles and velocities mirror; every constraint anchor on a mirrored body mirrors with it; ragdoll joints swap and negate their limits; stains move to the other side.
+    flip(body) {
+      if(!body||body.plugin.boundary)return false;const links=this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce),set=this.connected(body,links),e=this.getEntity(body),axis=(e&&this.chestOf(e)&&set.has(this.chestOf(e))?this.chestOf(e):body).position.x;
+      for(const b of set){const wasStatic=b.isStatic;if(wasStatic)Body.setStatic(b,false);Body.setPosition(b,{x:2*axis-b.position.x,y:b.position.y});Body.setAngle(b,-b.angle);Body.setVelocity(b,{x:-b.velocity.x,y:b.velocity.y});Body.setAngularVelocity(b,-b.angularVelocity);if(wasStatic)Body.setStatic(b,true);
+        const p=b.plugin;if(p.flip)delete p.flip;else p.flip=true;for(const st of p.stains||[])st.x=-st.x;}
+      for(const c of this.joints){let touched=false;if(c.bodyA&&set.has(c.bodyA)){c.pointA.x=-c.pointA.x;c.angleA=c.bodyA.angle;touched=true;}if(c.bodyB&&set.has(c.bodyB)){c.pointB.x=-c.pointB.x;c.angleB=c.bodyB.angle;touched=true;}
+        if(touched&&c.plugin.joint&&c.plugin.min!==undefined){const min=c.plugin.min;c.plugin.min=-c.plugin.max;c.plugin.max=-min;}}
+      if(this.drag&&set.has(this.drag.bodyB)){this.drag.pointB.x=-this.drag.pointB.x;if(this.dragAngle!=null)this.dragAngle=-this.dragAngle;}
+      for(const owner of new Set([...set].map(b=>this.getEntity(b)).filter(Boolean))){owner.pin=null;owner.restTime=0;if(owner.flinchDir)owner.flinchDir=-owner.flinchDir;if(owner.stagDir)owner.stagDir=-owner.stagDir;if(owner.braceDir)owner.braceDir=-owner.braceDir;}
+      return true;
+    }
     // Toolbar housekeeping.
     clearFire(){let n=0;for(const b of this.bodies){const p=b.plugin;if(p.burning||p.heat>this.settings.ambient+5){if(p.burning)n++;p.burning=false;p.heat=this.settings.ambient;delete p.fuse;}}for(const p of this.particles)if(p.type==='ember'||p.type==='smoke'||p.type==='fire')p.life=0;return n;}
     clearDead(){let n=0;for(const e of [...this.entities]){const dead=e.blood!==undefined?!e.alive:e.kind==='debris';if(!dead)continue;n++;for(const b of [...e.bodies])this.removeBody(b);}this.stains.length=0;return n;}
@@ -697,7 +718,7 @@
     }
     // A part's bleeding is the sum of its wounds and stumps.
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
-    kill(e,cause){if(!e.alive)return;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
+    kill(e,cause){if(!e.alive)return;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
       e.twitchAt=e.kind==='human'&&!/destroyed/.test(cause)?[rnd(.4,1.4),random()<.6?rnd(1.8,TWITCH_WINDOW):99]:[];}
     // Where on the part the blow landed decides whether it found an organ. Blunt force only reaches the brain (concussion).
     organHit(e,body,lx,ly,amount,type) {
@@ -895,7 +916,8 @@
           if(random()<seconds*5*hot*clamp(wide/50,.2,1))this.emit(b.position.x+rnd(-.4,.4)*wide,top-rnd(55,95),rnd(-.3,.3),rnd(-1.5,-.8),rnd(1.4,2.6),2.6,'#1c1d1f',rnd(6,12),'smoke'); // smoke leaves from above the flame tips, and small parts make little
           if(random()<.1){for(const other of bodies)if(other!==b&&Vector.magnitude(Vector.sub(other.position,b.position))<45)other.plugin.heat+=4;}
           if(p.hp<=0)this.damage(b,.1);
-        }else p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
+        }else{if(p.part&&p.char>0)p.char=Math.max(0,p.char-seconds/SKIN_REGROW); /* a burnt body slowly grows its flesh and skin back, the reverse of the way it lost them */ p.heat+=clamp(this.settings.ambient-p.heat,-seconds*8,seconds*8);
+        }
         // ponytail: rain reaches everything, roofs do not shelter. Ray test upward if that matters.
         if(this.settings.rain&&p.heat>this.settings.ambient){p.heat-=seconds*(p.burning?140:25);if(p.burning&&p.heat<150)p.burning=false;}
         {const hot=defs[p.kind]?.explosive?.onHeat;if(hot&&p.heat>hot&&p.fuse===undefined)p.fuse=.5;}
@@ -967,7 +989,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,paralysed:e.paralysed,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,heartRate:e.heartRate,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,paralysed:e.paralysed,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');
