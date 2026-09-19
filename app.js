@@ -10,12 +10,13 @@
   const TOOLS=[
     {id:'grab',name:'Grab',symbol:'↖',key:'1',title:'Grab & move',desc:'Drag anything. See what happens.'},
     {id:'rope',name:'Rope',symbol:'⌁',key:'2',title:'Connect objects',desc:'Click two objects, or an object and empty space.'},
-    {id:'freeze',name:'Freeze',symbol:'❄',key:'3',title:'Freeze in place',desc:'Click a body to freeze it. Click again to release.'},
+    {id:'freeze',name:'Lock',symbol:'⚲',key:'3',title:'Lock in place',desc:'Click a body to lock it in place. Click again to release.'},
     {id:'shoot',name:'Shoot',symbol:'⌖',key:'4',title:'Take your shot',desc:'Click or hold. Fires from close range, left to right, into whatever is under the cursor. Bullets wound; they never take a limb off.'},
-    {id:'fire',name:'Fire',symbol:'♨',key:'5',title:'Turn up the heat',desc:'Click or hold on an object to ignite it.'},
-    {id:'shock',name:'Shock',symbol:'ϟ',key:'6',title:'A little electricity',desc:'Click a conductor. Electricity spreads to nearby objects.'},
+    {id:'fire',name:'Fire',symbol:'♨',key:'5',title:'Turn up the heat',desc:'Hold and sweep. A flame at the cursor heats whatever is near it: a pass singes, holding it sets wood and flesh alight, metal only glows.'},
+    {id:'cold',name:'Cold',symbol:'❄',key:'c',title:'Bring the temperature down',desc:'Hold and sweep. Draws the heat out of whatever is near: puts fires out, stiffens and then freezes flesh solid - and what is frozen shatters.'},
+    {id:'shock',name:'Shock',symbol:'ϟ',key:'6',title:'A little electricity',desc:'Hold and sweep. Arcs jump from the cursor to the nearest conductors and spread from there.'},
     {id:'blast',name:'Blast',symbol:'✳',key:'7',title:'Make an impact',desc:'Click anywhere to create an explosion.'},
-    {id:'heal',name:'Heal',symbol:'✚',key:'8',title:'Patch it up',desc:'Restore tissue and extinguish. It does not bring anyone back; broken joints stay broken.'},
+    {id:'heal',name:'Heal',symbol:'✚',key:'8',title:'Patch it up',desc:'Hold and sweep. Mends tissue and bone, closes wounds one by one, stops bleeding, puts out fire. It does not bring anyone back; broken joints stay broken. Option/Alt + click heals the whole ragdoll at once.'},
     {id:'revive',name:'Revive',symbol:'♥',key:'9',title:'Back on your feet',desc:'Click a dead or collapsed ragdoll to bring it back to life and standing.'},
     {id:'partial',name:'Partial revive',symbol:'♡',key:'\\',title:'Alive, not mended',desc:'Click a dead ragdoll to bring it back as it is: every wound, fracture and missing limb stays.'},
     {id:'clot',name:'Stop bleeding',symbol:'◍',key:';',title:'Stem the flow',desc:'Click a ragdoll to stop all its bleeding, inside and out. The wounds stay.'},
@@ -29,13 +30,14 @@
   let width=0,height=0,dpr=1,toastTimer,lastShot=0,lastAction=0,lastTime=0,accumulator=0,frameCount=0,fpsTime=0,uiTime=0;
   let audio=null,lastImpact=0;
   function sound(type,volume=.2){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
+    if(type==='electric'){if(now-(lastHit.electric||0)<.07)return;lastHit.electric=now;}
     if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='thunder'){thunder(now,level);return;}
     if(type==='grunt'){const o=audio.createOscillator(),g=audio.createGain(),f=audio.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(125+volume*40,now);o.frequency.exponentialRampToValueAtTime(78,now+.16);f.type='lowpass';f.frequency.value=520;g.gain.setValueAtTime(Math.min(.12,.06*volume*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.2);o.connect(f);f.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.22);return;}
     if(type==='grow'||type==='surge'){const rise=audio.createOscillator(),g=audio.createGain(),long=type==='surge'?.7:.22;rise.type=type==='surge'?'sawtooth':'sine';rise.frequency.setValueAtTime(type==='surge'?90:220+volume*260,now);rise.frequency.exponentialRampToValueAtTime(type==='surge'?1400:520+volume*400,now+long);g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(Math.min(.2,.09*level),now+long*.6);g.gain.exponentialRampToValueAtTime(.001,now+long);rise.connect(g);g.connect(audio.destination);rise.start(now);rise.stop(now+long+.02);if(type==='surge')shake=7*set.shake;return;}
     const gain=audio.createGain();gain.connect(audio.destination);gain.gain.setValueAtTime(Math.min(.2,volume*.15*level),now);gain.gain.exponentialRampToValueAtTime(.001,now+.18);
     const oscillator=audio.createOscillator();oscillator.type=type==='electric'?'sawtooth':'triangle';oscillator.frequency.setValueAtTime(type==='explosion'?70:type==='shot'?210:type==='electric'?650:160,now);oscillator.frequency.exponentialRampToValueAtTime(30,now+.2);oscillator.connect(gain);oscillator.start(now);oscillator.stop(now+.22);
-  }catch{applySettings({sound:false});$('#sound-btn').textContent='Sound unavailable';}}
+  }catch(err){console.warn('sound failed:',type,err);applySettings({sound:false});$('#sound-btn').textContent='Sound unavailable';}}
   // What a blow sounds like on a body. All of it is filtered noise, from one shared second of it: a thud is low and round with a sine under it, a slice is a wet hiss that falls, a round going in is a short dull smack,
   // a breaking bone is two dry clicks over a knock, a burn is a long thin hiss.
   const lastHit={};let noiseBuffer;
@@ -47,6 +49,19 @@
     else if(type==='wet'){burst(now,.07,'lowpass',900,220,.9,.4);tone(now,.06,140,70,.2);}
     else if(type==='crack'){burst(now,.03,'bandpass',2600,1900,4,.6);burst(now+.035,.04,'bandpass',1700,1200,4,.5);tone(now,.08,190,90,.3);}
     else if(type==='sizzle'){burst(now,.4,'highpass',4200,3000,.6,.12);}}
+  // The sound of a held power: one loop per kind, faded in when the power appears and out when it goes. Each is a second or two of shaped noise (or, for heal, two soft tones) built once.
+  // fire: a low roar with sharp random pops - crackle; cold: a thin band of wind that swells and sinks; shock: a harsh mains buzz; heal: a gentle hum.
+  const loops={};let loopNow=null;
+  function loopBuffer(kind){const rate=audio.sampleRate,n=rate*2,buffer=audio.createBuffer(1,n,rate),d=buffer.getChannelData(0);let brown=0,seed=kind.length*7.3;const rand=()=>{seed=(seed*16807+.5)%2147483647;return seed/2147483647;};
+    for(let i=0;i<n;i++){const t=i/rate,white=rand()*2-1;brown=(brown+white*.04)*.985;
+      d[i]=kind==='fire'?brown*2.2+(rand()<.0009?white*1.6:0)+white*.03:kind==='cold'?white*(.35+.25*Math.sin(t*Math.PI*1)+.12*Math.sin(t*Math.PI*5)):kind==='shock'?(((t*100)%1<.5?1:-1)*.35+white*.25)*(.7+.3*Math.sin(t*Math.PI*37)):0;}
+    for(let i=0;i<2000;i++){const k=i/2000;d[i]*=k;d[n-1-i]*=k;}return buffer;}
+  function powerSound(kind){const set=sim.settings;if(!set.sound||!set.volume)kind=null;if(kind===loopNow)return;
+    try{if(loopNow&&loops[loopNow]){const old=loops[loopNow],now=audio.currentTime;old.gain.gain.cancelScheduledValues(now);old.gain.gain.setValueAtTime(old.gain.gain.value,now);old.gain.gain.linearRampToValueAtTime(0,now+.3);for(const node of old.nodes)node.stop(now+.35);delete loops[loopNow];}
+      loopNow=kind;if(!kind)return;audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,gain=audio.createGain(),level=set.volume/60,nodes=[];gain.gain.setValueAtTime(0,now);gain.connect(audio.destination);
+      if(kind==='heal'){for(const [f,g] of [[196,.5],[294,.3],[392,.15]]){const o=audio.createOscillator(),og=audio.createGain();o.type='sine';o.frequency.value=f;og.gain.value=g;o.connect(og);og.connect(gain);o.start(now);nodes.push(o);}const trem=audio.createOscillator(),tg=audio.createGain();trem.frequency.value=2.2;tg.gain.value=.012*level;trem.connect(tg);tg.connect(gain.gain);trem.start(now);nodes.push(trem);gain.gain.linearRampToValueAtTime(.05*level,now+.15);}
+      else{const src=audio.createBufferSource(),filter=audio.createBiquadFilter();src.buffer=loopBuffer(kind);src.loop=true;filter.type=kind==='fire'?'lowpass':kind==='cold'?'bandpass':'highpass';filter.frequency.value=kind==='fire'?1800:kind==='cold'?2200:180;filter.Q.value=kind==='cold'?.8:.5;src.connect(filter);filter.connect(gain);src.start(now,Math.random());nodes.push(src);gain.gain.linearRampToValueAtTime((kind==='fire'?.5:kind==='cold'?.16:.12)*level,now+.12);}
+      loops[kind]={gain,nodes};}catch{loopNow=null;}}
   // Thunder: a sharp crack, then low-passed noise that rolls off over a couple of seconds.
   function thunder(now,level){const length=2.6,buffer=audio.createBuffer(1,audio.sampleRate*length,audio.sampleRate),data=buffer.getChannelData(0);
     for(let i=0;i<data.length;i++){const t=i/audio.sampleRate;data[i]=(Math.random()*2-1)*(Math.exp(-t*30)+.55*Math.exp(-t*1.6)*(.6+.4*Math.sin(t*9)));}
@@ -59,11 +74,11 @@
   function fit(){camera.x=1220;camera.y=390;camera.zoom=Math.min(width/1040,height/660);camera.zoom=clamp(camera.zoom,.25,1.6);updateZoom();}
   function updateZoom(){$('#zoom-reset').textContent=Math.round(camera.zoom*100)+'%';}
   function toWorld(point){return {x:(point.x-width/2)/camera.zoom+camera.x,y:(point.y-height/2)/camera.zoom+camera.y};}
-  function setTool(id){state.tool=id;state.ropeStart=null;state.graftStump=null;sim.endDrag();document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===id);b.setAttribute('aria-pressed',String(b.dataset.tool===id));});const t=TOOLS.find(t=>t.id===id);$('#tool-caption-icon').textContent=t.symbol;$('#tool-caption-name').textContent=t.title;$('#tool-caption-desc').textContent=t.desc;canvas.style.cursor=id==='grab'?'grab':'crosshair';}
+  function setTool(id){state.tool=id;state.ropeStart=null;state.graftStump=null;sim.power=null;sim.endDrag();document.querySelectorAll('.tool').forEach(b=>{b.classList.toggle('active',b.dataset.tool===id);b.setAttribute('aria-pressed',String(b.dataset.tool===id));});const t=TOOLS.find(t=>t.id===id);$('#tool-caption-icon').textContent=t.symbol;$('#tool-caption-name').textContent=t.title;$('#tool-caption-desc').textContent=t.desc;canvas.style.cursor=id==='grab'?'grab':'crosshair';}
   function chooseSpawn(id){state.spawn=state.spawn===id?null:id;state.rotation=0;document.querySelectorAll('.object-card').forEach(b=>b.classList.toggle('active',b.dataset.object===state.spawn));if(state.spawn)toast(CATALOG.find(c=>c.id===id).name+' ready — Q / E places it at the cursor, facing left / right');}
   function temperature(c){const unit=sim.settings.tempUnit;return unit==='Fahrenheit'?Math.round(c*9/5+32)+'°F':unit==='Kelvin'?Math.round(c+273)+' K':Math.round(c)+'°C';}
   function select(body){state.selected=body;if(body?.plugin.part==='hand'){const picked=sim.equip(body);if(picked)toast(picked);}updateSelection();}
-  function updateSelection(){const b=state.selected;if(!b||!sim.bodies.includes(b)){state.selected=null;$('#selection-panel').hidden=true;return;}$('#selection-panel').hidden=false;const p=b.plugin,c=CATALOG.find(c=>c.id===p.kind);$('#selection-name').textContent=(c?.name||'Fragment')+(p.part?' · '+p.part:'');$('#selection-info').innerHTML=`<div class="stat-row"><span>Integrity</span><b>${Math.round(p.hp/p.maxHp*100)}%</b></div><div class="health-bar"><i style="width:${clamp(p.hp/p.maxHp*100,0,100)}%"></i></div><div class="stat-row"><span>Temperature</span><b>${temperature(p.heat)}</b></div><div class="stat-row"><span>State</span><b>${b.isStatic?'Frozen':p.burning?'Burning':p.charge>.1?'Electrified':p.hp<=0?'Broken':p.active?'Active':'Dynamic'}</b></div>`;$('#freeze-selection').textContent=b.isStatic?'Unfreeze':'Freeze';$('#activate-selection').disabled=!['barrel','bomb','gun','thruster','wheel','battery'].includes(p.kind);}
+  function updateSelection(){const b=state.selected;if(!b||!sim.bodies.includes(b)){state.selected=null;$('#selection-panel').hidden=true;return;}$('#selection-panel').hidden=false;const p=b.plugin,c=CATALOG.find(c=>c.id===p.kind);$('#selection-name').textContent=(c?.name||'Fragment')+(p.part?' · '+p.part:'');$('#selection-info').innerHTML=`<div class="stat-row"><span>Integrity</span><b>${Math.round(p.hp/p.maxHp*100)}%</b></div><div class="health-bar"><i style="width:${clamp(p.hp/p.maxHp*100,0,100)}%"></i></div><div class="stat-row"><span>Temperature</span><b>${temperature(p.heat)}</b></div><div class="stat-row"><span>State</span><b>${b.isStatic?'Locked':p.burning?'Burning':p.heat<=-30?'Frozen solid':p.heat<0?'Freezing':p.charge>.1?'Electrified':p.hp<=0?'Broken':p.active?'Active':'Dynamic'}</b></div>`;$('#freeze-selection').textContent=b.isStatic?'Unlock':'Lock';$('#activate-selection').disabled=!['barrel','bomb','gun','thruster','wheel','battery'].includes(p.kind);}
   // Every wound on the selected part: what made it, how deep it goes, what state it is in, and what it hit on the way.
   const CAUSE={bullet:'Bullet entry',exit:'Bullet exit',cut:'Cut',stab:'Stab',impact:'Blunt',blast:'Shrapnel',burn:'Burn',shock:'Electrical burn'},DEPTH=['surface','skin','to muscle','to bone'],HIT={artery:'artery',joint:'joint',spine:'spine',brain:'brain',heart:'heart',lungs:'lung',gut:'gut'};
   function woundRows(p){const rows=(p.wounds||[]).map(w=>{const age=sim.time-(w.wet??w.t??0),state=w.sealed?'bandaged':w.bleed>.05?(w.artery?'spurting':w.bleed>1.5?'bleeding heavily':'bleeding'):w.type==='impact'&&!w.depth?'bruise':w.type==='burn'?((w.force??99)<15?'reddened':(w.force??99)<40?'blistered':'charred'):w.type==='shock'?'burn marks':age<Sandbox.CLOT_AT?'wet':age<Sandbox.SCAB_AT?'clotted':'scabbed';
@@ -111,6 +126,9 @@
       for(let tries=0;tries<2;tries++){const lx=(Math.random()-.5)*w,ly=(Math.random()-.5)*h,wy=b.position.y+lx*sin+ly*cos;if(wy<y){y=wy;x=b.position.x+lx*cos-ly*sin;}}
       flame.x[i]=x;flame.y[i]=y;flame.vx[i]=b.velocity.x*30+(Math.random()-.5)*22;flame.vy[i]=b.velocity.y*18-45-Math.random()*55;
       flame.age[i]=0;flame.life[i]=(.55+Math.random()*.65)*(.8+power*.3);flame.size[i]=base*(.75+Math.random()*.6)*(.85+power*.25);}}
+  // The flame of the fire power: the same blobs, born at the cursor and thrown back along the way it is moving, so the flame leans away from the motion.
+  function emitFlamesAt(x,y,vx,vy,dt){let count=70*dt*(flame.alive>1200?.35:1);count=Math.floor(count)+(Math.random()<count%1?1:0);
+    for(;count>0;count--){const i=flame.next=(flame.next+1)%FLAMES;flame.x[i]=x+(Math.random()-.5)*12;flame.y[i]=y+(Math.random()-.5)*8;flame.vx[i]=-vx*.35+(Math.random()-.5)*20;flame.vy[i]=-vy*.2-50-Math.random()*55;flame.age[i]=0;flame.life[i]=.45+Math.random()*.5;flame.size[i]=9+Math.random()*7;}}
   function drawFire(dt,left,right){
     if(dt>0)for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left-80&&b.bounds.min.x<right+80)emitFlames(b,dt);
     const hot=glowSprite('flameHot','255,236,170',1),mid=glowSprite('flameMid','255,138,32',1),cool=glowSprite('flameCool','205,44,12',1),t=sim.time;let alive=0;
@@ -154,6 +172,16 @@
       stroke(pathOf([strand]),.8,`rgba(190,230,255,${.45*fade*flick})`);stroke(pathOf(twigs),.8,`rgba(215,240,255,${.7*fade*flick})`);
       for(const end of [t.from,t.to]){ctx.globalAlpha=.7*fade*flick;ctx.drawImage(glowSprite('arcGlow','150,215,255',.6),end.x-11,end.y-11,22,22);}ctx.globalAlpha=1;}
     ctx.globalCompositeOperation='source-over';ctx.lineCap='butt';}
+  const POWER_RING={fire:'#f0a05a99',cold:'#a9dcff99',shock:'#9fd0ff99',heal:'#8ff0a899'},POWER_LIGHT={fire:[190,1],cold:[100,.4],shock:[170,.9],heal:[110,.55]},powerWas={x:0,y:0,vx:0,vy:0};
+  function drawPower(w,dt){const R=sim.powerRadius(w.kind),tick=Math.floor(performance.now()/33);if(dt>0){powerWas.vx+=((w.x-powerWas.x)/dt-powerWas.vx)*.35;powerWas.vy+=((w.y-powerWas.y)/dt-powerWas.vy)*.35;}powerWas.x=w.x;powerWas.y=w.y;
+    ctx.globalCompositeOperation='lighter';
+    if(w.kind==='fire'){if(dt>0)emitFlamesAt(w.x,w.y,clamp(powerWas.vx,-900,900),clamp(powerWas.vy,-900,900),dt);const f=.8+.2*hash(tick);ctx.globalAlpha=.5*f;ctx.drawImage(glowSprite('fireGlow','255,130,40',.2),w.x-R*2.2,w.y-R*2.2,R*4.4,R*4.4);ctx.globalAlpha=.9;ctx.drawImage(glowSprite('flameHot','255,236,170',1),w.x-9,w.y-9,18,18);}
+    else if(w.kind==='cold'){const f=.85+.15*hash(tick);ctx.globalAlpha=.55*f;ctx.drawImage(glowSprite('coldGlow','150,210,255',.5),w.x-R*1.5,w.y-R*1.3,R*3,R*3);ctx.globalAlpha=.8;ctx.drawImage(glowSprite('coldCore','235,248,255',.9),w.x-8,w.y-8,16,16);}
+    else if(w.kind==='heal'){const f=.8+.2*Math.sin(performance.now()/260);ctx.globalAlpha=.5*f;ctx.drawImage(glowSprite('healGlow','120,240,160',.5),w.x-R*1.5,w.y-R*1.5,R*3,R*3);ctx.globalAlpha=.75;ctx.drawImage(glowSprite('healCore','215,255,225',.9),w.x-7,w.y-7,14,14);}
+    else{ctx.lineJoin='round';ctx.lineCap='round';const arcs=[],n=state.paused?0:w.n||0; // a bright core, and arcs to whatever the engine struck on its last tick; with nothing in reach, short ones that fizzle out
+      for(let j=0;j<n;j++)arcs.push(jagged(w,w.hits[j],.4,4,tick+j*17));if(!n)for(let j=0;j<3;j++){const a=hash(tick*1.3+j*5.1)*6.28,len=(14+hash(tick+j*9)*30)*(R/120);arcs.push(jagged(w,{x:w.x+Math.cos(a)*len,y:w.y+Math.sin(a)*len},.55,3,tick+j*23));}
+      const path=pathOf(arcs),f=.6+.4*hash(tick*1.7);stroke(path,7,`rgba(90,165,255,${.18*f})`);stroke(path,3,`rgba(140,210,255,${.45*f})`);stroke(path,1.2,`rgba(245,252,255,${f})`);ctx.globalAlpha=.9*f;ctx.drawImage(glowSprite('arcGlow','150,215,255',.6),w.x-20,w.y-20,40,40);ctx.globalAlpha=1;ctx.drawImage(glowSprite('coldCore','235,248,255',.9),w.x-6,w.y-6,12,12);ctx.lineCap='butt';}
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';}
   // With the floodlights off the chamber is dark, and anything that burns, flashes or arcs cuts a hole in the dark.
   let shade=null;
   function darkness(){shade??=document.createElement('canvas');if(shade.width!==canvas.width||shade.height!==canvas.height){shade.width=canvas.width;shade.height=canvas.height;}
@@ -161,6 +189,7 @@
     const hole=glowSprite('hole','0,0,0',1),light=(point,radius,power=1)=>{const p=toScreen(point),r=radius*camera.zoom;d.globalAlpha=Math.min(1,power);d.drawImage(hole,p.x-r,p.y-r,r*2,r*2);};
     for(const b of sim.bodies){const p=b.plugin;if(p.burning)light(b.position,150+Math.sin(sim.time*23+b.id)*12);else if(p.charge>.1)light(b.position,70,p.charge);else if(p.active&&p.kind==='thruster')light(b.position,110);}
     for(const f of sim.flashes)light(f,f.radius*2.2,f.life/f.maxLife);for(const t of sim.traces)if(t.bolt){const power=Math.min(1,strokeLight(t)*1.4);if(power>.02){light(t.to,520,power);light({x:(t.from.x+t.to.x)/2,y:(t.from.y+t.to.y)/2},620,power*.8);}}else if(t.electric)light(t.to,60,t.life/t.maxLife);
+    if(sim.power){const [reach,power]=POWER_LIGHT[sim.power.kind];light(sim.power,reach*(.92+.08*hash(Math.floor(performance.now()/40))),power);} /* a held power lights the dark: fire and arcs brightly, heal softly, cold faintly */
     if(state.inside)light(state.worldPointer,95,.55); // a little working light at the cursor, or the room is unusable
     d.globalAlpha=1;ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(shade,0,0);ctx.restore();}
   // Rain, snow and fog are stateless: every streak's position is a function of its index and the clock.
@@ -194,7 +223,7 @@
     ctx.strokeStyle='#465357';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,sim.groundY+38);ctx.lineTo(right,sim.groundY+38);ctx.stroke();
     for(const x of [0,2600]){ctx.fillStyle='#3d494e';ctx.fillRect(x-8,-370,16,1020);}
     if(set.decals)for(const st of sim.stains){if(st.x+st.r<left||st.x-st.r>right)continue;
-      if(st.scorch){ctx.globalAlpha=.8;ctx.drawImage(glowSprite('scorch','11,13,14',1),st.x-st.r,st.y-3.5,st.r*2,7);ctx.globalAlpha=1;continue;}
+      if(st.scorch||st.frost){const img=st.frost?glowSprite('frost','214,238,255',1):glowSprite('scorch','11,13,14',1);ctx.globalAlpha=(st.frost?.75*clamp(1-(st.age||0)/10,0,1):.8)*(st.a??1);if(st.wall)ctx.drawImage(img,st.x-3.5,st.y-st.r,7,st.r*2);else ctx.drawImage(img,st.x-st.r,st.y-(st.frost?2.5:3.5),st.r*2,st.frost?5:7);ctx.globalAlpha=1;continue;} /* a scorch darkens as it builds (a); frost fades over ten seconds */
       if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=.9*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
       if(st.smear){const len=st.to-st.from,t=st.thick||2; /* a wiped streak: a flat band with ragged, thinning ends and a few dry drag lines through it */ ctx.ellipse(st.x,st.y,len/2+2,t,0,0,7);ctx.fill();ctx.globalAlpha*=.55;ctx.strokeStyle=stainColor(Math.max(0,wet-.35),st.oil);ctx.lineWidth=.6;for(let k=0;k<3;k++){const a=st.from+len*hash(st.from+k*3.3)*.4,b2=st.to-len*hash(st.to+k*1.7)*.4,yy=st.y-t*.6+k*t*.55;ctx.beginPath();ctx.moveTo(a,yy);ctx.lineTo(b2,yy);ctx.stroke();}continue;}
       if(st.wall){ctx.ellipse(st.x,st.y,2.6,st.r,0,0,7);ctx.fill();ctx.fillRect(st.x-.8,st.y,1.6,st.r*(2.2-wet)*1.4);} // a run down the wall that lengthens as it dries
@@ -225,6 +254,8 @@
         for(const st of p.stains){if(set.noGore&&!st.oil)continue;ctx.globalAlpha=p.part?.7:.88;ctx.fillStyle=stainColor(st.wet||0,st.oil);ctx.beginPath();ctx.ellipse(st.x,st.y,st.r*(.75+hash(st.x*3.1+st.y)*.5),st.r*(1+(1-(st.wet||0))*.6),-b.angle,0,7);ctx.fill();
           // a splat, not a dot: a couple of satellite droplets thrown off it, placed by where it landed
           for(let k=0;k<2;k++){const a=hash(st.x+st.y*2.3+k)*6.28,d=st.r*(1.5+hash(st.y+k*5)*1.2);ctx.beginPath();ctx.arc(st.x+Math.cos(a)*d,st.y+Math.sin(a)*d,st.r*.28,0,7);ctx.fill();}}ctx.restore();} // they sag downward as they dry: the long axis stays vertical in the world
+      if(p.heat<0){const frost=Math.min(1,p.heat/-30);ctx.save();if(p.part&&p.material==='flesh'){if(p.flip)ctx.scale(-1,1);BodyArt.trace(ctx,p);}else{ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,3);}ctx.clip();ctx.fillStyle=`rgba(186,224,255,${.2+.4*frost})`;ctx.fillRect(-60,-60,120,120);
+        if(frost>=1){ctx.strokeStyle='rgba(240,250,255,.8)';ctx.lineWidth=.6;ctx.beginPath();for(let k=0;k<4;k++){const fx=(hash(b.id+k*3.1)-.5)*(p.w||20)*.7,fy=(hash(b.id*1.7+k)-.5)*(p.h||20)*.7;for(let a=0;a<3;a++){const ang=a*Math.PI/3+hash(b.id+k);ctx.moveTo(fx-Math.cos(ang)*2.4,fy-Math.sin(ang)*2.4);ctx.lineTo(fx+Math.cos(ang)*2.4,fy+Math.sin(ang)*2.4);}}ctx.stroke();}ctx.restore();} /* frozen solid, ice crystals stand on it */
       if(p.char&&p.kind!=='human'){ctx.fillStyle=`rgba(14,11,9,${Math.min(.8,p.char*.85)})`;ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,2);ctx.fill();}
       if(p.heat>100&&p.kind!=='human'){ctx.fillStyle=`rgba(219,99,49,${Math.min(.55,(p.heat-100)/1000)})`;ctx.fillRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24);}
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}
@@ -237,6 +268,9 @@
     ctx.globalCompositeOperation='lighter';for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left&&b.bounds.min.x<right)fireGlow(b);drawFire(state.paused?0:frameDt*state.speed,left,right);ctx.globalCompositeOperation='source-over';
     if(set.particles!=='Off')for(let i=0;i<sim.particles.length;i++){const p=sim.particles[i];if((set.particles==='Low'&&i%2)||(set.noGore&&p.type==='blood'))continue;const age=1-clamp(p.life/p.maxLife,0,1);
       if(p.type==='smoke'){const r=p.size*(1+2.2*age);ctx.globalAlpha=1-age;ctx.drawImage(glowSprite('smoke','38,38,40',.36),p.x-r,p.y-r,r*2,r*2);ctx.globalAlpha=1;continue;}
+      if(p.type==='mist'){const r=p.size*(1+1.4*age);ctx.globalAlpha=(1-age)*.5;ctx.drawImage(glowSprite('mist','205,232,255',.4),p.x-r,p.y-r,r*2,r*2);ctx.globalAlpha=1;continue;}
+      if(p.type==='ice'){ctx.globalAlpha=1-age*age;ctx.fillStyle='#f2fbff';ctx.beginPath();ctx.moveTo(p.x,p.y-p.size);ctx.lineTo(p.x+p.size*.6,p.y);ctx.lineTo(p.x,p.y+p.size);ctx.lineTo(p.x-p.size*.6,p.y);ctx.closePath();ctx.fill();ctx.globalAlpha=1;continue;}
+      if(p.type==='plus'){ctx.globalAlpha=(1-age)*.9;ctx.fillStyle=p.color;const a=p.size,t=p.size*.34;ctx.fillRect(p.x-a,p.y-t,a*2,t*2);ctx.fillRect(p.x-t,p.y-a,t*2,a*2);ctx.globalAlpha=1;continue;}
       if(p.type==='ember'){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=1-age*age;ctx.fillStyle=age<.5?'#ffd98a':'#ff8a3c';ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;continue;}
       ctx.globalAlpha=1-age;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*.8,0,7);ctx.fill();}ctx.globalAlpha=1;
     for(const f of sim.flashes){const t=1-f.life/f.maxLife;if(f.grow||f.surge){const tint=f.grow?'150,255,205':'130,235,255';for(const lag of f.surge?[]:[0]){ // the graft surge has no ring: just the core flash, arcs and sparks
@@ -246,7 +280,8 @@
     if(state.graftStump&&sim.bodies.includes(state.graftStump)){const g=state.graftStump.position,pulse=10+Math.sin(sim.time*9)*3;ctx.strokeStyle='#8fe9ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(g.x,g.y,pulse+8,0,7);ctx.stroke();ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.ropeStart){ctx.strokeStyle='#dec58e';ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(state.ropeStart.point.x,state.ropeStart.point.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.inside&&state.spawn&&!state.down){ctx.save();ctx.globalAlpha=.3;ctx.translate(state.worldPointer.x,state.worldPointer.y);ctx.rotate(state.rotation);if(state.spawn==='human'||state.spawn==='android'||Sandbox.defs[state.spawn]?.ragdoll){Sandbox.ANATOMY.map((row,slot)=>[...row,slot]).sort((a,b)=>BodyArt.layer({part:a[0],slot:a[5]})-BodyArt.layer({part:b[0],slot:b[5]})).forEach(([part,x,y,w,h,slot])=>{ctx.save();ctx.translate(x,y);drawObject(ctx,state.spawn,{part,slot,w,h,hp:100});ctx.restore();});}else drawObject(ctx,state.spawn);ctx.restore();}
-    if(state.inside&&['blast','fire','shock','heal','revive','partial','regrow','reattach','graft','dismember'].includes(state.tool)){ctx.strokeStyle=state.tool==='blast'?'#e3b07966':'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:24,0,7);ctx.stroke();ctx.setLineDash([]);}
+    if(state.inside&&['blast','fire','cold','shock','heal','revive','partial','regrow','reattach','graft','dismember'].includes(state.tool)){const power=POWERS.includes(state.tool);ctx.strokeStyle=state.tool==='blast'?'#e3b07966':power?POWER_RING[state.tool]:'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:power?sim.powerRadius(state.tool):24,0,7);ctx.stroke();ctx.setLineDash([]);} /* for a power the ring is its real reach */
+    if(sim.power)drawPower(sim.power,state.paused?0:frameDt*state.speed);
     if(!set.floodlights)darkness();
     ctx.restore();weather();
     // Gentle edge falloff adds depth without obscuring the simulation.
@@ -257,16 +292,18 @@
   }
   const spawned=[];
   function place(point,flip=false){const e=sim.spawn(state.spawn,point.x,point.y,flip);if(!e){toast('Chamber is full — delete some objects first.');return;}if(state.rotation){const center={x:point.x,y:point.y};for(const b of e.bodies)Body.rotate(b,state.rotation,center);}spawned.push(e);if(spawned.length>50)spawned.shift();sound('impact',.1);}
+  // Powers. While the button is held the power is in the world at the cursor: sim.power = {kind,x,y,px,py}. This file only puts it there, moves it and draws it; the engine applies it in its step (so not while paused).
+  const POWERS=['fire','cold','shock','heal'];
+  function startPower(point,e){const body=sim.bodyAt(point);
+    if(state.tool==='heal'){if(body?.plugin.part)select(body);if(e.altKey&&body){sim.heal(body);toast('Fully healed');return;}} /* Option/Alt + click: the old one-click heal of the whole ragdoll. Shift is taken - it pans */
+    sim.power={kind:state.tool,x:point.x,y:point.y,px:point.x,py:point.y};}
   function perform(point,continuous=false){const body=sim.bodyAt(point);
     switch(state.tool){case'grab':if(!continuous){select(body);if(body){sim.beginDrag(body,point);canvas.style.cursor='grabbing';}}break;
       case'rope':if(!continuous){if(!state.ropeStart){state.ropeStart={body,point:{...point}};toast('Choose the other end of the rope.');}else{const a=state.ropeStart;if(!a.body&&!body){toast('At least one end must attach to an object.');}else{const c=sim.rope(a.body,body,a.point,point);if(c)spawned.push({rope:c});toast('Rope connected');}state.ropeStart=null;}}break;
-      case'freeze':if(!continuous&&body){select(body);toast(sim.freeze(body)?'Body frozen':'Body released');}break;
+      case'freeze':if(!continuous&&body){select(body);toast(sim.freeze(body)?'Body locked':'Body released');}break;
       // Point blank: the shot starts just outside whatever is under the cursor, so it hits that and not the first thing on a long line from the left.
       case'shoot':if(performance.now()-lastShot>120){const from={x:(body?body.bounds.min.x:point.x)-8,y:point.y-1};sim.shoot(from,{x:from.x+100,y:point.y+.5});lastShot=performance.now();}break;
-      case'fire':if(body)sim.ignite(body);break;
-      case'shock':if(body&&performance.now()-lastAction>180){sim.shock(body,1,point);lastAction=performance.now();}break;
       case'blast':if(!continuous)sim.explode(point.x,point.y);break;
-      case'heal':if(body){sim.heal(body);select(body);}break;
       case'revive':if(body&&!continuous){toast(sim.revive(body)?'Revived':'Only humans and androids can be revived');select(body);}break;
       case'clot':if(body&&!continuous){const n=sim.stopBleeding(body);toast(n?'Bleeding stopped':'Nothing is bleeding');select(body);}break;
       case'bandage':if(body&&!continuous){const n=sim.bandage(body);toast(n?`Bandaged ${n} wound${n>1?'s':''}`:'No open wound on that part');select(body);}break;
@@ -282,9 +319,9 @@
   const trail=[]; // the last few cursor positions with their times, for the throw
   function throwVelocity(){const now=performance.now(),recent=trail.filter(t=>now-t.t<90);if(recent.length<2)return null;const a=recent[0],b=recent[recent.length-1],ms=Math.max(8,b.t-a.t);return {x:(b.x-a.x)/ms*16.67,y:(b.y-a.y)/ms*16.67};}
   function pointer(e){const r=canvas.getBoundingClientRect();state.pointer={x:e.clientX-r.left,y:e.clientY-r.top};state.worldPointer=toWorld(state.pointer);$('#coordinates').textContent=`x ${Math.round(state.worldPointer.x)} : y ${Math.round(state.worldPointer.y)}`;trail.push({x:state.worldPointer.x,y:state.worldPointer.y,t:performance.now()});if(trail.length>8)trail.shift();return state.worldPointer;}
-  canvas.addEventListener('pointerdown',e=>{if(e.button!==0&&e.button!==1&&e.button!==2)return;canvas.focus();canvas.setPointerCapture(e.pointerId);pointer(e);state.inside=true;if(e.button===2||e.button===1||state.shift){state.pan={x:e.clientX,y:e.clientY,cx:camera.x,cy:camera.y};canvas.style.cursor='grabbing';return;}state.down=true;perform(state.worldPointer);});
-  canvas.addEventListener('pointermove',e=>{pointer(e);state.inside=true;if(state.pan){camera.x=state.pan.cx-(e.clientX-state.pan.x)/camera.zoom;camera.y=state.pan.cy-(e.clientY-state.pan.y)/camera.zoom;return;}if(sim.drag){const body=sim.drag.bodyB,target=Vector.sub(state.worldPointer,sim.drag.pointB);if(state.paused)sim.translateConnected(body,Vector.sub(target,body.position));else if(body.isStatic)Body.setPosition(body,target);sim.moveDrag(state.worldPointer);}});
-  function release(){state.down=false;state.pan=null;sim.endDrag(); /* no throw is computed: what is let go keeps the velocity the pull gave it */canvas.style.cursor=state.tool!=='grab'?'crosshair':'grab';}
+  canvas.addEventListener('pointerdown',e=>{if(e.button!==0&&e.button!==1&&e.button!==2)return;canvas.focus();canvas.setPointerCapture(e.pointerId);pointer(e);state.inside=true;if(e.button===2||e.button===1||state.shift){state.pan={x:e.clientX,y:e.clientY,cx:camera.x,cy:camera.y};canvas.style.cursor='grabbing';return;}state.down=true;if(POWERS.includes(state.tool))startPower(state.worldPointer,e);else perform(state.worldPointer);});
+  canvas.addEventListener('pointermove',e=>{pointer(e);state.inside=true;if(sim.power){sim.power.x=state.worldPointer.x;sim.power.y=state.worldPointer.y;}if(state.pan){camera.x=state.pan.cx-(e.clientX-state.pan.x)/camera.zoom;camera.y=state.pan.cy-(e.clientY-state.pan.y)/camera.zoom;return;}if(sim.drag){const body=sim.drag.bodyB,target=Vector.sub(state.worldPointer,sim.drag.pointB);if(state.paused)sim.translateConnected(body,Vector.sub(target,body.position));else if(body.isStatic)Body.setPosition(body,target);sim.moveDrag(state.worldPointer);}});
+  function release(){state.down=false;state.pan=null;sim.power=null;sim.endDrag(); /* no throw is computed: what is let go keeps the velocity the pull gave it */canvas.style.cursor=state.tool!=='grab'?'crosshair':'grab';}
   canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('lostpointercapture',release);canvas.addEventListener('pointerleave',()=>state.inside=false);window.addEventListener('blur',()=>{release();state.shift=false;held.clear();});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('dblclick',e=>{const b=sim.bodyAt(pointer(e));if(b&&state.tool==='grab')toast(sim.activate(b));});
   function zoom(factor,p={x:width/2,y:height/2}){const before=toWorld(p);camera.zoom=clamp(camera.zoom*factor,.2,3);const after=toWorld(p);camera.x+=before.x-after.x;camera.y+=before.y-after.y;updateZoom();}
@@ -385,7 +422,8 @@
   let frameDt=0;
   function frame(now){const elapsed=Math.min(50,now-(lastTime||now));lastTime=now;frameDt=elapsed/1000;heldKeys(elapsed/1000);
     if(!state.paused&&!document.hidden){accumulator+=elapsed*state.speed;let steps=0;while(accumulator>=1000/60&&steps<8){sim.step();accumulator-=1000/60;steps++;}}else accumulator=0;
-    if(state.down&&!state.pan&&['shoot','fire','shock'].includes(state.tool))perform(state.worldPointer,true);
+    if(state.down&&!state.pan&&state.tool==='shoot')perform(state.worldPointer,true);
+    powerSound(sim.power&&!state.paused?sim.power.kind:null);
     render();frameCount++;if(now-fpsTime>=1000){$('#fps').textContent=Math.min(240,Math.round(frameCount*1000/(now-fpsTime)))+' fps';frameCount=0;fpsTime=now;}
     if(now-uiTime>180){$('#object-count').textContent=sim.entities.length+' objects';$('#joint-count').textContent=sim.joints.length+' joints';updateSelection();updateAnatomyInfo();uiTime=now;}
     requestAnimationFrame(frame);

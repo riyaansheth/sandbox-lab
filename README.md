@@ -85,6 +85,12 @@ npm run dev
   - Weapons, Physics, Visuals, Interface, Audio: bullet damage and knockback, explosion power, piercing speed, blade grip, solver iterations, air resistance, grab strength, object limit, slow-motion speed, decals, tracers, particles, screen shake, grid, shadows, vignette, temperature unit, FPS, hints, zoom and pan speed, sound and volume
 - Fire: hundreds of soft additive blobs per fire that rise, stretch, wander and cool from yellow-white to red, merging into one flame body around a burning ragdoll; embers, smoke above the tips, a glow on the surroundings, and charring that stays
 - Rendering never builds gradients or blurs per frame: flames, glows and smoke are pre-painted sprites and lightning channels are cached paths (measured: no frame over 20 ms with a burning scene, a storm and the lights off, also at 4× CPU throttle)
+- Powers. Fire, Cold, Shock and Heal are not clicks: while the button is held the power exists in the world at the cursor, follows it, and works on everything inside the dashed ring (40 px; shock reaches 120; the Power radius setting scales them 0.5–3×) — in empty air too. Full strength at the centre, nothing at the edge, scaled by what each body is made of (its thermal value for fire and cold, its conductivity for shock). The effect covers the whole path the cursor has swept, so a fast pass cannot skip a body, and nothing happens while paused
+  - Fire adds heat, and bodies catch through the ordinary rule when they pass their burning point: a pass warms and singes, holding it lights flesh in about half a second and wood in under one; metal heats and glows and never burns; a barrel goes off; rain weakens it. It leans away from the cursor's motion, throws sparks and smoke, lights the dark, crackles, and scorches the floor or wall it touches — darker the longer it stays
+  - Cold is its mirror, down to −80°: it puts burning things out in a fraction of a second and cools hot metal. Flesh freezes by degrees — below 0° muscles weaken and joints stiffen, and at −30° the part is frozen solid: it stops bleeding (the wound is stopped, not closed), holds its pose, and a hard blow shatters it. Warmed back up it thaws and bleeds again. A living ragdoll shivers as it cools and passes out if its head or chest stays frozen; cold alone never kills. Pale mist drifts down from it with small ice crystals, frost creeps over cold parts, and it leaves frost on the floor that fades
+  - Shock throws an arc every 80 ms to the best one to three conductors in reach — better conductors and nearer ones first, never two parts of one body — and each spreads through the ordinary chain, the current shared between them and scaled by closeness. Held for a second it does what the old tool did in a second. It hurts, burns and stuns; it takes nothing off. In empty air it only crackles
+  - Heal is a field per second on every part inside it: tissue and bone come back, wounds close one at a time, oldest first, shrinking until they are gone, bleeding stops, bruises and burns fade, fire goes out, hot and frozen things come back to room temperature; a living ragdoll gets its blood, oxygen, organs and ease from pain back. A badly hurt ragdoll takes a few seconds of sweeping. It never revives, regrows, reattaches or mends a broken joint. Alt/Option + click heals the whole ragdoll at once
+  - The old Freeze tool, which pins a body in place, is now called Lock (key 3) so that it is not taken for cold. Measured while sweeping each power across ten ragdolls: 5–7 ms of work per frame (idle 4.6), worst 16
 - Electricity looks like it: where current goes in there is a flash, a star of short arcs that shrinks as it dies, and a few sparks that fall; arcs between conductors jump surface to surface and writhe — a new path thirty times a second, flickering, drawn as light with a blue halo, a white core, a fainter second strand and a twig or two; a charged body crawls with arcs running from one point on its edge to another until the charge dies away; a switched-on battery holds an arc between its terminals that flares with each of its three pulses a second. Measured: 1 frame in 120 over 20 ms with a ragdoll, an android and a battery all arcing
 - Lightning: forked, glowing channels with restrikes, sky flash, thunder, scorch marks; strikes hit the highest thing under them, shock through conductors, burn and ignite
 - Toolbar housekeeping: Clear fire (puts everything out and cools it), Clear dead (dead ragdolls, remains, debris, stains), Clear objects (everything except ragdolls)
@@ -100,6 +106,8 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | --- | --- |
 | Q / E | Spawn the chosen object at the cursor, facing left / right. While you are holding something, they rotate it instead |
 | A / D | Rotate the held or selected body (or the spawn preview). Speeds up while held, faster with Shift. A held body keeps the angle after you let go of the key |
+| Hold + sweep (Fire, Cold, Shock, Heal) | The power is in the world at the cursor while the button is held; the dashed ring is its real reach |
+| Alt / Option + click (Heal) | Heal the whole ragdoll at once |
 | F (hold) | Keep an automatic weapon firing |
 | F | Activate the object under the cursor (or the held / selected one) |
 | S | Detail view of the object under the cursor |
@@ -110,7 +118,7 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
-| 1–9, \\, ;, ', -, =, [, ], 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, partial revive, stop bleeding, bandage, regrow, reattach, graft, dismember, delete |
+| 1–9, C, \\, ;, ', -, =, [, ], 0 | Grab, rope, lock in place, shoot, fire, shock, explosion, heal, (C) cold, revive, partial revive, stop bleeding, bandage, regrow, reattach, graft, dismember, delete |
 | X | X-ray: skin → muscle layer → skeleton, with organs and fractures lit |
 | R | Flip the ragdoll or object under the cursor to face the other way |
 
@@ -118,7 +126,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 120 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 126 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 
