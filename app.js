@@ -32,7 +32,7 @@
   let audio=null,lastImpact=0;
   function sound(type,volume=.2){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
     if(type==='electric'){if(now-(lastHit.electric||0)<.07)return;lastHit.electric=now;}
-    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'||type==='ricochet'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
+    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'||type==='ricochet'||type==='armour'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='thunder'){thunder(now,level);return;}
     if(type==='grunt'){const o=audio.createOscillator(),g=audio.createGain(),f=audio.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(125+volume*40,now);o.frequency.exponentialRampToValueAtTime(78,now+.16);f.type='lowpass';f.frequency.value=520;g.gain.setValueAtTime(Math.min(.12,.06*volume*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.2);o.connect(f);f.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.22);return;}
     if(type==='grow'||type==='surge'){const rise=audio.createOscillator(),g=audio.createGain(),long=type==='surge'?.7:.22;rise.type=type==='surge'?'sawtooth':'sine';rise.frequency.setValueAtTime(type==='surge'?90:220+volume*260,now);rise.frequency.exponentialRampToValueAtTime(type==='surge'?1400:520+volume*400,now+long);g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(Math.min(.2,.09*level),now+long*.6);g.gain.exponentialRampToValueAtTime(.001,now+long);rise.connect(g);g.connect(audio.destination);rise.start(now);rise.stop(now+long+.02);if(type==='surge')shake=7*set.shake;return;}
@@ -50,6 +50,7 @@
     else if(type==='wet'){burst(now,.07,'lowpass',900,220,.9,.4);tone(now,.06,140,70,.2);}
     else if(type==='crack'){burst(now,.03,'bandpass',2600,1900,4,.6);burst(now+.035,.04,'bandpass',1700,1200,4,.5);tone(now,.08,190,90,.3);}
     else if(type==='sizzle'){burst(now,.4,'highpass',4200,3000,.6,.12);}
+    else if(type==='armour'){tone(now,.12,120,60,.45);burst(now,.05,'bandpass',1800,900,2,.35);} /* a round stopped by armour: a dull blow and a flat crack */
     else if(type==='ricochet'){const o=audio.createOscillator(),g=audio.createGain(),f0=2400+Math.random()*900;o.type='sine';o.frequency.setValueAtTime(f0,now);o.frequency.exponentialRampToValueAtTime(f0*.35,now+.32);g.gain.setValueAtTime(Math.min(.3,.14*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.34);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.36);burst(now,.03,'bandpass',3000,2000,3,.3);} /* a spark and a falling whine */
     else if(type==='cloth'){burst(now,.16,'lowpass',1100,300,.5,.16);burst(now+.05,.12,'bandpass',1600,700,.7,.07);}} /* a soft rustle */
   // The sound of a held power: one loop per kind, faded in when the power appears and out when it goes. Each is a second or two of shaped noise (or, for heal, two soft tones) built once.

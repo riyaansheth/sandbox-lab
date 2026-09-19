@@ -8,6 +8,7 @@
   const folded = (c, x, y, col, line) => { c.beginPath(); c.roundRect(-x, -y, x * 2, y * 2, 2.5); c.fillStyle = fill(c, col, -x, x); c.fill(); ink(c, line); c.stroke(); };
   const crease = (c, pts, line, alpha = .6) => { c.globalAlpha = alpha; ink(c, line, .5); c.beginPath(); c.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]); c.stroke(); c.globalAlpha = 1; };
 
+  const crack = (c, x, y, light) => { c.strokeStyle = light ? '#d8d6c8' : '#12160f'; c.lineWidth = .7; c.beginPath(); c.moveTo(-x * .5, -y * .6); c.lineTo(-x * .05, -y * .1); c.lineTo(-x * .25, y * .35); c.moveTo(-x * .05, -y * .1); c.lineTo(x * .45, -y * .3); c.stroke(); };   // worn-out armour
   const kinds = {
     top(c, x, y, o) { const t = o.top; folded(c, x, y, t, t.line);
       if (o.stripes) { c.save(); c.beginPath(); c.roundRect(-x, -y, x * 2, y * 2, 2.5); c.clip(); c.fillStyle = o.stripes; for (let sy = -y + 2; sy < y; sy += 6) c.fillRect(-x, sy, x * 2, 3); c.restore(); ink(c, t.line); c.beginPath(); c.roundRect(-x, -y, x * 2, y * 2, 2.5); c.stroke(); }
@@ -23,8 +24,14 @@
       if (o.belt) { c.fillStyle = o.belt; c.fillRect(-x + .8, -y + .8, x * 2 - 1.6, 3); c.fillStyle = o.gear ? '#8d9299' : '#c9a24a'; c.fillRect(-1.6, -y + .4, 3.2, 3.8); }
       if (o.gear) { c.fillStyle = '#17171a'; ink(c, '#050506', .5); c.beginPath(); c.roundRect(x * .35, -y + 3.2, 5, 9, 1.2); c.fill(); c.stroke(); ink(c, '#aeb4bb', .9); c.beginPath(); c.arc(-x * .62, -y + 6.5, 2.2, 0, 7); c.stroke(); }   // holster, handcuffs
       if (o.cargo) { ink(c, t.line, .5); c.globalAlpha = .8; c.beginPath(); c.roundRect(x * .2, y * .3 - 1, x * .6, y * .55, 1); c.stroke(); c.beginPath(); c.moveTo(x * .2, y * .3 + 1.5); c.lineTo(x * .8, y * .3 + 1.5); c.stroke(); c.globalAlpha = 1; } },
-    hat(c, x, y, o) {
-      if (o.hat === 'cap') { const t = o.cap; ink(c, t.line); c.fillStyle = fill(c, t, -x, x); c.beginPath(); c.moveTo(-x * .85, y * .35); c.bezierCurveTo(-x, -y * 1.5, x * .45, -y * 1.7, x * .62, -y * .5); c.lineTo(x * .58, y * .35); c.closePath(); c.fill(); c.stroke();
+    vest(c, x, y, o, p) { const v = o.vest, t = v.col, plate = v.kind === 'plate'; c.fillStyle = fill(c, t, -x, x); ink(c, t.line); c.beginPath(); c.moveTo(-x, -y * .55); c.lineTo(-x * .55, -y * .55); c.lineTo(-x * .45, -y); c.lineTo(x * .45, -y); c.lineTo(x * .55, -y * .55); c.lineTo(x, -y * .55); c.lineTo(x, y); c.lineTo(-x, y); c.closePath(); c.fill(); c.stroke();   // a vest laid flat: shoulders, body, the neck cut out
+      c.fillStyle = t.shade; c.fillRect(-x, y * .15, x * 2, y * .28); c.strokeRect(-x, y * .15, x * 2, y * .28);
+      if (plate) { ink(c, t.line, .8); c.beginPath(); c.roundRect(-x * .55, -y * .5, x * 1.1, y * .6, 2); c.stroke(); for (const px of [-.62, -.18, .26]) { c.fillStyle = t.base; c.beginPath(); c.roundRect(x * px, y * .45, x * .36, y * .5, 1); c.fill(); c.stroke(); } }
+      else { c.fillStyle = '#20251c'; c.fillRect(-x * .35, -y * .35, x * .7, y * .32); }
+      if (p.durability <= 0) crack(c, x, y, plate); },
+    hat(c, x, y, o, p) {
+      if (o.hat === 'helmet') { const t = o.helmet; ink(c, t.line); c.fillStyle = fill(c, t, -x, x); c.beginPath(); c.moveTo(-x, y * .55); c.bezierCurveTo(-x * 1.05, -y * 1.35, x * 1.05, -y * 1.35, x, y * .55); c.quadraticCurveTo(0, y * .2, -x, y * .55); c.closePath(); c.fill(); c.stroke(); ink(c, t.shade, .9); c.beginPath(); c.moveTo(-x * .9, y * .35); c.quadraticCurveTo(0, 0, x * .9, y * .35); c.stroke(); ink(c, '#1a1c16', .6); c.beginPath(); c.moveTo(-x * .55, y * .5); c.quadraticCurveTo(0, y * 1.25, x * .55, y * .5); c.stroke(); if (p.durability <= 0) crack(c, x * .8, y * .8, true); }
+      else if (o.hat === 'cap') { const t = o.cap; ink(c, t.line); c.fillStyle = fill(c, t, -x, x); c.beginPath(); c.moveTo(-x * .85, y * .35); c.bezierCurveTo(-x, -y * 1.5, x * .45, -y * 1.7, x * .62, -y * .5); c.lineTo(x * .58, y * .35); c.closePath(); c.fill(); c.stroke();
         c.fillStyle = '#10121f'; c.fillRect(-x * .85, y * .02, x * 1.43, y * .42); c.strokeRect(-x * .85, y * .02, x * 1.43, y * .42); c.fillStyle = '#0a0a0d'; c.beginPath(); c.moveTo(x * .4, y * .44); c.quadraticCurveTo(x * .9, y * .4, x, y * .95); c.lineTo(x * .3, y * .8); c.closePath(); c.fill(); c.stroke();
         c.fillStyle = '#d9a84a'; ink(c, '#7a5a1e', .4); c.beginPath(); c.ellipse(x * .42, -y * .45, 1.6, 2.2, .15, 0, 7); c.fill(); c.stroke(); }
       else if (o.hat === 'beanie') { ink(c, '#0a0a0b'); c.fillStyle = '#303033'; c.beginPath(); c.moveTo(-x, y * .3); c.bezierCurveTo(-x, -y * 1.5, x, -y * 1.5, x, y * .3); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#232326'; c.beginPath(); c.roundRect(-x, y * .2, x * 2, y * .8, 1.5); c.fill(); c.stroke();
@@ -40,5 +47,5 @@
     mask(c, x, y, o) { ink(c, '#09090a'); c.fillStyle = o.mask; c.beginPath(); c.moveTo(-x * .8, -y * .8); c.quadraticCurveTo(0, -y * 1.15, x * .8, -y * .8); c.lineTo(x * .7, y * .85); c.quadraticCurveTo(0, y * 1.1, -x * .7, y * .85); c.closePath(); c.fill(); c.stroke();
       crease(c, [-x * .7, -y * .1, 0, y * .15, x * .7, -y * .1], '#000000', .5); crease(c, [-x * .62, y * .45, 0, y * .62, x * .62, y * .45], '#000000', .35); ink(c, '#3a3a3e', .6); for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * x * .8, -y * .7); c.quadraticCurveTo(s * x * 1.1, 0, s * x * .7, y * .8); c.stroke(); } }
   };
-  for (const item of root.Items.GARMENTS) root.ItemArt.register(item.id, { pad: 8, paint(c, p) { const g = item.garment, o = root.BodyArt ? root.BodyArt.cloth(g.outfit, g.kind) : {}; if (o.top || o.legs || o.shoes || o.hat || o.mask || o.gloves) kinds[g.kind](c, item.w / 2, item.h / 2, o); else { c.fillStyle = item.color; c.fillRect(-item.w / 2, -item.h / 2, item.w, item.h); } } });
+  for (const item of root.Items.GARMENTS) root.ItemArt.register(item.id, { pad: 8, state: p => item.armour && p.durability <= 0 ? 'worn' : '', paint(c, p) { const g = item.garment, o = root.BodyArt ? root.BodyArt.cloth(g.outfit, g.kind) : {}; if (o.top || o.legs || o.shoes || o.hat || o.mask || o.gloves || o.vest) kinds[g.kind](c, item.w / 2, item.h / 2, o, p); else { c.fillStyle = item.color; c.fillRect(-item.w / 2, -item.h / 2, item.w, item.h); } } });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
