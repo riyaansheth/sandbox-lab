@@ -723,3 +723,12 @@ test('a syringe goes in at a touch, draws 2% of the blood, pushes it back on Act
   assert.equal(needle.plugin.fill,'blood','and it keeps what it drew');s.particles.length=0;assert.match(s.activate(needle),/emptied/);assert.ok(s.particles.some(p=>p.type==='blood'),'out of a body it squirts onto the floor');assert.match(s.activate(needle),/empty/);
   assert.ok(require('../items.js').CATEGORIES.includes('Syringes'));
 });
+
+test('a shock brings round someone who is out cold, too many in a row stop the heart, and a stopped heart is what a shock restarts best',()=>{
+  const out=standing();out.e.stun=8;out.e.pain=99;advance(out.s,30);assert.ok(!out.s.active(out.e),'out cold');out.s.shock(out.e.bodies[2]);advance(out.s,5);assert.equal(out.e.stun,0);assert.ok(out.e.alive&&out.e.consciousness!=='unconscious','brought round');
+  const bled=standing();bled.e.blood=32;advance(bled.s,5);bled.s.shock(bled.e.bodies[2]);advance(bled.s,5);assert.equal(bled.e.consciousness,'unconscious','but not someone who is out for want of blood');
+  let shocks=0,died=0;for(let seed=1;seed<=20;seed++){const s=new Simulation().seed(seed);s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,30);let n=0;while(e.alive&&n<12){s.shock(e.bodies[4]);advance(s,6);n++;}if(!e.alive){died++;shocks+=n;assert.equal(e.causeOfDeath,'cardiac arrest');assert.ok(n>3,'never within the safe dose');}}
+  assert.equal(died,20,'a dozen shocks in a row always kill');assert.ok(shocks/died>=4&&shocks/died<=7,`on average ${(shocks/died).toFixed(1)} shocks`);
+  const spaced=standing();for(let i=0;i<10;i++){spaced.s.shock(spaced.e.bodies[4]);advance(spaced.s,60*8);}assert.ok(spaced.e.alive,'the same ten shocks, spaced out, do not');
+  let back=0;for(let seed=1;seed<=20;seed++){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,30);s.kill(e,'cardiac arrest');advance(s,30);s.shock(e.bodies[2]);if(e.alive)back++;}assert.ok(back>=16,`restarted ${back}/20 stopped hearts`);
+});

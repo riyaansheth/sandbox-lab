@@ -152,7 +152,7 @@
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
-  const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
+  const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
   const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<6?1:a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
@@ -378,7 +378,7 @@
         e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+artery*ARTERY_DRAIN+inside)*seconds*set.bleedRate);
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
-        e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
+        if(e.shockDose>0)e.shockDose=Math.max(0,e.shockDose-seconds/SHOCK_FADE);e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
         e.burningParts=burning;e.breath=((e.breath||0)+seconds*(12+e.pain*.28+(e.rise||e.stagN>0?8:0))/60)%1;
         // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
         e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
@@ -721,7 +721,7 @@
         if(e&&e.alive&&zone==='spine'&&(profile.deep||type==='exit')&&amount>=(type==='exit'?SPINE_HIT*.3:SPINE_HIT)){if(p.slot<=2)e.upright=false;e.paralysed=true;e.restTime=0;} /* the cord: below the chest it takes the legs, at the chest or neck everything */
         if(e&&p.slot>=5&&p.slot<=10&&amount>=DROP_HIT){const hand=e.bodies.find(b=>b.plugin.slot===(p.slot<=7?7:10)),item=hand&&this.held(hand);if(item)this.release(item);} /* a wounded arm lets go of what it holds */
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20))){const organ=this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);if(organ&&profile.wound){const w=(p.wounds||[]).find(x=>x.type===type&&Math.hypot(x.x-clamp(lx,-p.w/2+1,p.w/2-1),x.y-clamp(local.y,-p.h/2+1,p.h/2-1))<12);if(w)w.hit??=organ;}}
-          if(e.alive&&(p.part==='head'||p.part==='chest')&&p.hp<12)this.kill(e,`massive ${p.part} trauma`);}
+          if(e.alive&&(p.part==='head'||p.part==='chest')&&p.hp<12)this.kill(e,type==='shock'?'cardiac arrest':`massive ${p.part} trauma`);} /* current that does this much to the trunk has stopped the heart */
       }
       else{this.burst(point.x,point.y,Math.min(8,Math.ceil(amount/8)),p.material==='glass'?'#a7dbe2':'#e1bc7b',3);if(p.part&&profile.deep)p.leak=Math.min(3,(p.leak||0)+amount/70);}
       if(p.hp<=0) {
@@ -860,16 +860,22 @@
       const under=this.bodies.filter(b=>b.bounds.min.x<=x&&b.bounds.max.x>=x).sort((a,b)=>a.bounds.min.y-b.bounds.min.y)[0],y=under?under.bounds.min.y:this.groundY,top=-370;
       this.traces.push({from:{x:x+rnd(-140,140),y:top},to:{x,y},life:.55,maxLife:.55,electric:true,bolt:true});this.flashes.push({x,y,radius:90,life:.35,maxLife:.35,sky:true});
       this.burst(x,y,26,'#dff3ff',9);this.burst(x,y,10,'#8f9aa0',3,'smoke');if(this.settings.decals&&!under)this.addStain({x,y:this.groundY-1,r:rnd(14,24),scorch:true,age:0});
-      if(under){this.shock(under);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
+      if(under){this.shock(under,LIGHTNING_DOSE);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
       this.onEffect('thunder',1);return under||null;
     }
-    shock(body) {
-      if(!body)return;const touched=new Set(),queue=[body];
+    shock(body,dose=1) {
+      if(!body)return;const deadBefore=new Set(this.entities.filter(e=>e.alive===false)); /* only someone who was already dead can be brought back by this shock: the one that stops a heart does not also restart it */const touched=new Set(),queue=[body];
       while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
         for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
-      // Defibrillation: a good chance that current through a dead human starts the heart again. It mends nothing.
-      for(const e of new Set([...touched].map(b=>this.getEntity(b)))){if(!e||e.kind!=='human'||e.alive||!e.causeOfDeath||!e.bodies.some(b=>b.plugin.slot===0)||!e.bodies.some(b=>b.plugin.slot===2)||this.chestOf(e).plugin.char>.9)continue;if(random()<SHOCK_REVIVE){this.partialRevive(e.bodies[0]);this.onRevive?.(e);}}
+      // What current does to a person depends on the state they are in, and on how much of it they have had.
+      // Out cold: it brings them round - the stun goes, and pain that had put them under is cut through (it cannot wake someone who is out for want of blood, air or brain).
+      // Too much: every shock adds to a dose that fades over seconds; past SHOCK_SAFE each further shock may stop the heart. Dead: it may start it again - nearly always if the heart is what failed, less often otherwise. It mends nothing.
+      for(const e of new Set([...touched].map(b=>this.getEntity(b)))){if(!e||e.kind!=='human'||!e.bodies.some(b=>b.plugin.slot===0)||!e.bodies.some(b=>b.plugin.slot===2))continue;
+        if(e.alive&&!deadBefore.has(e)){e.shockDose=(e.shockDose||0)+dose;e.stun=0;e.stunNext=0;e.stunIn=0;if(e.pain>WAKE_PAIN)e.pain=WAKE_PAIN;e.restTime=0;
+          if(e.shockDose>SHOCK_SAFE&&random()<(e.shockDose-SHOCK_SAFE)*SHOCK_ARREST)this.kill(e,'cardiac arrest');continue;}
+        if(!deadBefore.has(e)||!e.causeOfDeath||this.chestOf(e).plugin.char>.9)continue;const heart=/cardiac|heart/.test(e.causeOfDeath);
+        if(random()<(heart?HEART_RESTART:SHOCK_REVIVE)){this.partialRevive(e.bodies[0]);e.shockDose=SHOCK_SAFE;this.onRevive?.(e);}} /* back, but with no margin: more current now and the heart may stop again */
     }
     // Stop bleeding: every wound, stump and internal bleed on the whole ragdoll closes. Nothing is mended: the wounds, the pain and the lost blood stay.
     stopBleeding(body){const e=this.getEntity(body),parts=e?e.bodies:body?[body]:[];let n=0;for(const b of parts){const p=b.plugin;if(p.material!=='flesh')continue;for(const w of [...(p.wounds||[]),...(p.severed||[])])if(w.bleed>0){w.bleed=0;w.fresh=0;n++;}if(p.internal>0){p.internal=0;n++;}this.bleedOf(p);}return n;}
