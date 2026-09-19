@@ -49,6 +49,7 @@
     {id:'brainDamage',section:'Ragdolls',label:'Brain damage',help:'A damaged head causes blackouts: the ragdoll collapses now and then.',type:'toggle',def:false},
     {id:'slowHealing',section:'Ragdolls',label:'Slow injury healing',help:'Wounds of the living slowly close, bones knit and blood is replaced.',type:'toggle',def:false},
     {id:'powerRadius',section:'Physics',label:'Power radius',help:'Size of the fire, cold, shock and heal fields at the cursor. The dashed ring is the real reach.',type:'range',min:.5,max:3,step:.1,def:1,unit:'×'},
+    {id:'rigorMortis',section:'Gore',label:'Rigor mortis',help:'The dead stiffen over a minute, so a body left for a while holds its pose.',type:'toggle',def:true},
     {id:'fallDamage',section:'Gore',label:'Fall damage',help:'Multiplies the damage a ragdoll takes from hitting the floor, walls and anything else that does not move. 0 turns it off.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
     {id:'fragility',section:'Gore',label:'Fragility multiplier',help:'Multiplies all damage to ragdolls. Higher is more fragile.',type:'range',min:.1,max:10,step:.1,def:1,unit:'×'},
     {id:'jointStrength',section:'Gore',label:'Joint strength',help:'How much force or damage it takes to tear a limb off.',type:'range',min:.25,max:5,step:.05,def:1,unit:'×'},
@@ -181,6 +182,8 @@
   const ARTERIAL_JOINT=new Set(['hip','shoulder','neck','atlas','waist','spine']),RUIN_JOINT=.55,SHOT_ENTRY=.7,CHANNEL_NEAR=4,CHANNEL_EASE=.3; // of the energy a round spends in a part it passes through, the share that goes into the entry wound; the rest makes the exit
   const ARMOURS=Object.fromEntries(ITEMS.filter(i=>i.armour).map(i=>[i.garment.outfit,{...i.armour,id:i.id,name:i.name}])),ARMOUR_ON={chest:'vest',abdomen:'vest',head:'hat'},BLUNT_K=.12,BLUNT_PAIN=18; // armour by the outfit id it is worn as; what covers which part; the share of a stopped round's energy that still reaches the body as a blow, and the pain of it
   const LIMB_CHAIN={'upper arm':1,forearm:1,hand:1,thigh:1,shin:1,foot:1},TOURNIQUET_NUMB=20,TOURNIQUET_DEAD=120,STITCH_REACH=10,STITCH_EASE=10; // the parts a tourniquet can go on; seconds for what is below it to go numb, and to die; how near the wound a lodged round must be to come out with it; the pain a stitch takes away
+  // Feedback. Bullet holes kept per object and in all; the life, number and sizes of ejected casings; the seconds a destroyed heart still beats on; rigor mortis over RIGOR_TIME seconds after death.
+  const PUMP_DELAY=.35,HOLES_PER_BODY=8,HOLE_MAX=160,CASING_MAX=30,CASING_LIFE=9,CASING={pistol:[4,1.8,'#c9a24a'],rifle:[6.5,1.8,'#c9a24a'],shell:[7,3.4,'#b8342c']},HEART_LAST=[3,5],RIGOR_TIME=60,RIGOR_STIFF=.9;
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
@@ -388,12 +391,12 @@
     }
     // Enough is put back to live on: blood, air, a working heart and brain, clotted wounds. Nothing is mended.
     partialRevive(body) {
-      const e=this.getEntity(body);if(!e||e.blood===undefined)return false;e.alive=true;e.upright=true;e.paralysed=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=1.5;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;e.pin=null;e.shockT=0;e.twitchAt=[];
+      const e=this.getEntity(body);if(!e||e.blood===undefined)return false;delete e.heartStops;e.alive=true;e.upright=true;e.paralysed=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=1.5;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;e.pin=null;e.shockT=0;e.twitchAt=[];
       e.blood=Math.max(e.blood,65);e.oxygen=100;e.pain=Math.min(e.pain||0,45);if(e.organs){e.organs.heart=Math.max(e.organs.heart,60);e.organs.brain=Math.max(e.organs.brain,75);e.organs.lungs=Math.max(e.organs.lungs,65);}
       for(const b of e.bodies){const p=b.plugin;p.burning=false;p.internal=0;for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=(w.bleed||0)*.2;this.bleedOf(p);if(p.part==='head'||p.part==='chest')p.hp=Math.max(p.hp,40);}
       this.burst(body.position.x,body.position.y,12,'#9fcbb1',2);return true;
     }
-    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;this.heal(body);e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
+    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;delete e.heartStops;this.heal(body);e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
     // After death a nerve may still fire once or twice: a limb jerks at one joint, equal and opposite on its two parts, and that is the end of it. Then the body is left to come to rest.
     twitch(e,seconds) {
       e.deadFor+=seconds;if(e.deadFor<e.twitchAt[0])return;e.twitchAt.shift();if(e.twitchAt[0]>TWITCH_WINDOW)e.twitchAt.length=0;
@@ -416,6 +419,7 @@
         // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
         e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
         const brain=organs?organs.brain:100;
+        if(e.heartStops!==undefined&&this.time>=e.heartStops){this.kill(e,'heart destroyed');return;}
         if(e.blood<25)this.kill(e,e.bleedingInside?'internal bleeding':'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
         else e.consciousness=e.blood<40||e.oxygen<30||brain<35||e.pain>=97||e.frozenT>COLD_KO?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70?'dazed':'awake';
         if(!e.alive)return;
@@ -819,7 +823,9 @@
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.stitched)continue;if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
         if(profile.wound&&!(type==='shock'&&amount<SHOCK_MARK)){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
           const made=this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:this.woundRadius??clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),...(artery?{artery:true}:{}),...(zone&&(zone!=='artery'||artery)?{hit:zone}:{}),...(FATAL_SPOTS.has(p.part)||artery?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
-          if(type!=='burn'&&!this.noBleed)this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
+          if(type!=='burn'&&!this.noBleed){if(type==='bullet')this.spray(point,direction,Math.min(4,Math.ceil(amount/10))*(set.extraGunshot?3:1),3,-.35); /* the entry: a small puff back toward the gun */
+            else if(type==='exit'){const left=this.sprayE??1;this.spray(point,direction,Math.min(44,Math.round(6+left*9))*(set.extraGunshot?2:1),Math.min(12,4+left*2.4),1);} /* the exit: a cone along the round's line, as big as what it still carries - it paints whatever is behind */
+            else this.spray(point,direction,Math.min(24,Math.ceil(amount/3)),3,.6);}}
         this.bleedOf(p);
         if(e&&e.alive&&zone==='spine'&&(profile.deep||type==='exit')&&amount>=(type==='exit'?SPINE_HIT*.3:SPINE_HIT)){if(p.slot<=2)e.upright=false;e.paralysed=true;e.restTime=0;} /* the cord: below the chest it takes the legs, at the chest or neck everything */
         if(e&&p.slot>=5&&p.slot<=10&&amount>=DROP_HIT){const hand=e.bodies.find(b=>b.plugin.slot===(p.slot<=7?7:10)),item=hand&&this.held(hand);if(item)this.release(item);} /* a wounded arm lets go of what it holds */
@@ -885,7 +891,7 @@
     organ(e,body,organ,scale,amount) {
       const p=body.plugin;e.organs??={brain:100,heart:100,lungs:100,gut:100};e.organs[organ]=Math.max(0,e.organs[organ]-amount*scale);
       if(organ==='brain'){if(e.organs.brain<=0)this.kill(e,'brain destroyed');else e.stun=Math.max(e.stun||0,(100-e.organs.brain)/12);} // a long blackout
-      else if(organ==='heart'){p.internal=(p.internal||0)+amount/18;if(e.organs.heart<=0)this.kill(e,'heart destroyed');}               // massive internal bleed
+      else if(organ==='heart'){p.internal=(p.internal||0)+amount/18;if(e.organs.heart<=0&&e.heartStops===undefined){e.heartStops=this.time+rnd(HEART_LAST[0],HEART_LAST[1]);e.hurtSlot=2;e.hurtScore=999;e.hurtX=0;e.hurtY=-p.h*.25;e.pain=Math.max(e.pain||0,85);if(this.balancing(e)&&!(e.stagN>0)){e.stagN=2;e.stagDir=random()<.5?-1:1;e.stagT=0;e.stagLeg=0;e.stagPush=STAGGER_MAX*.8;}}} /* the heart is gone, but not the blood in the head: a few seconds of staggering and clutching the chest, then down (see vitals) */               // massive internal bleed
       else if(organ==='gut'){let all=0;for(const b of e.bodies)all+=b.plugin.internal||0;p.internal=(p.internal||0)+Math.min(amount/80,Math.max(0,GUT_BLEED-all));} /* capped over the whole body: the belly and the pelvis are both gut, and one round crosses both */                                                                          // slow internal bleed
       // lungs: no immediate effect; vitals() runs the oxygen down while they are damaged
       return organ;
@@ -962,8 +968,8 @@
         if(hard){const cosI=Math.abs(dx*h.nx+dy*h.ny),glancing=cosI<RICO_GLANCE,need=p.boundary?Infinity:chord*rate;
           if(shot.bounces<RICO_MAX&&(glancing||need>=shot.E)){shot.bounces++;shot.E*=glancing?RICO_KEEP:RICO_KEEP*(1-cosI*.65);if(!p.boundary)this.damage(body,shot.E*bd*.05,stop,'bullet',direction);
             const r=2*(dx*h.nx+dy*h.ny);shot.dx=dx-r*h.nx;shot.dy=dy-r*h.ny;turn(rnd(-RICO_JITTER,RICO_JITTER),near*SHOT_REACH);stop={x:stop.x+h.nx*.6,y:stop.y+h.ny*.6};shot.ignore=null;shot.done=new Set([body]); /* bounced: it can hit anything now, the one who fired it too */
-            this.burst(stop.x,stop.y,6,'#ffe7a0',4);this.onEffect('ricochet',.5);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,ricochet:true});break;}
-          if(p.boundary){spent=true;shot.E=0;break;}}
+            this.hole(body,stop,false);this.burst(stop.x,stop.y,6,'#ffe7a0',4);this.onEffect('ricochet',.5);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,ricochet:true});break;}
+          if(p.boundary){this.hole(body,stop,false);spent=true;shot.E=0;break;}}
         this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;
         const toLocal=q=>{const l=Vector.rotate(Vector.sub(q,body.position),-body.angle);return {x:(p.flip?-l.x:l.x)/(p.w/2),y:l.y/(p.h/2)};};let a=null,b=null,bone=0,channel=false;
         if(flesh&&p.part){a=toLocal(stop);b=toLocal(exitAt);if(BONE_ZONE[p.part]&&crosses(a.x,a.y,b.x,b.y,BONE_ZONE[p.part]))bone=BONE_E[p.part]; /* the line crosses the bone */
@@ -987,14 +993,14 @@
         const end=through?exitAt:{x:stop.x+dx*chord*(use/need||0),y:stop.y+dy*chord*(use/need||0)};
         if(flesh&&p.part&&human&&e.alive&&this.settings.organDamage&&ORGANS[p.part]){const la=a,lb=toLocal(end);for(const zone of ORGANS[p.part])if(crosses(la.x,la.y,lb.x,lb.y,zone.slice(1,5))){this.organ(e,body,zone[0],zone[5],use*bd);if(this.shotLog)this.shotLog.push({organ:zone[0]});}} /* every organ the wound channel crosses, not just the one at the entry - before the wound itself, which may kill */
         if(flesh){this.channelled=true;this.woundRadius=clamp(shot.diameter*.28,1.5,4)*(shot.tumbling?TUMBLE_WOUND:1);this.damage(body,this.contactShot&&p.part?Math.max(use*bd,p.hp+p.maxHp):use*bd*(through?SHOT_ENTRY:1),stop,'bullet',direction); /* the entry is always about the calibre (bigger from a tumbling round). With the muzzle against the body the gas goes in with the round and the part is destroyed, whatever the round */
-          if(through&&this.bodies.includes(body)){this.woundRadius=clamp(2.6+left*1.4,2.6,11);this.damage(body,use*bd*(1-SHOT_ENTRY),exitAt,'exit',direction);for(let i=0;i<8;i++)this.emit(exitAt.x,exitAt.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');} /* out the far side: small from a pistol, ragged from a rifle */
+          if(through&&this.bodies.includes(body)){this.woundRadius=clamp(2.6+left*1.4,2.6,11);this.sprayE=left;this.damage(body,use*bd*(1-SHOT_ENTRY),exitAt,'exit',direction);this.sprayE=null;} /* out the far side: small from a pistol, ragged from a rifle */
           this.woundRadius=null;this.channelled=false;
           if(p.part){const la=a,lb=toLocal(end);
             if(bone){p.bone=Math.max(0,(p.bone??100)-BONE_HIT*Math.min(1.5,shot.E+use));if(p.bone<=FRACTURE&&p.brokeAt===undefined){p.brokeAt=this.time;if(p.slot>=5)this.onEffect('crack',.8);}} /* a round through a bone always hurts it, and enough of them break it */
             if(shot.ms>=CAVITY_MS){p.bruise=Math.min(1,(p.bruise||0)+use*CAVITY_BRUISE);if(human)p.internal=(p.internal||0)+use*CAVITY_BLEED;} /* a fast round's shock wave bruises and tears round its path without widening the hole: rifles, not pistols */
             if(human&&e.alive&&p.slot===0&&through&&use>=SKULL_KILL){this.spray(exitAt,direction,30,7,1);this.kill(e,'shot through the head');}
             if(!through&&!this.contactShot){const la=a;p.lodged??=[];if(p.lodged.length<LODGED_MAX)p.lodged.push({x:lb.x*p.w/2,y:lb.y*p.h/2,calibre:shot.diameter,ex:la.x*p.w/2,ey:la.y*p.h/2}); /* where it stopped, and the wound it went in by */}}} /* it stopped inside: the round stays there */
-        else this.damage(body,use*bd,stop,'bullet',direction);
+        else{this.damage(body,use*bd,stop,'bullet',direction);this.hole(body,stop,false);if(through)this.hole(body,exitAt,true);if(matOf(p).absorb>=.9)this.onEffect('metal',.4);}
         if(flesh&&p.part&&!this.contactShot)this.ruin(body,use,shot,stop,exitAt,direction,bone>0,through,left,broken);
         if(!through){spent=true;stop=end;break;}
         if(shot.ms>=CAVITY_MS)shot.tumbling=true; /* through something, a rifle round begins to tumble */
@@ -1002,6 +1008,15 @@
       this.contactShot=false;this.shotPool=null;this.woundRadius=null;this.channelled=false;const to=spent||turned>=0?stop:{x:fx+dx*L,y:fy+dy*L};if(turned>=0)L=turned;this.traces.push({from:{x:fx,y:fy},to,life:glow,maxLife:glow});
       shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH||shot.E<=0;
     }
+    // A bullet hole in something that is not flesh: a bright dent in metal, a splintered hole in wood, a chipped pock in stone, a star in glass; in the floor and the walls a world decal. Capped per object and in all.
+    hole(body,at,exit){if(!this.settings.decals)return;const p=body.plugin;if(p.boundary){this.addStain({x:at.x,y:at.y,r:1.6,hole:true,age:0,wall:at.y<this.groundY-2||undefined});return;}
+      if(p.material==='flesh'||p.part||p.debris)return;let total=0;for(const b of this.bodies)total+=b.plugin.holes?.length||0;if(total>=HOLE_MAX||(p.holes?.length||0)>=HOLES_PER_BODY)return;
+      const l=Vector.rotate(Vector.sub(at,body.position),-body.angle),abs=matOf(p).absorb,kind=abs>=.9?(p.material==='stone'?'chip':'dent'):matOf(p).brittle?'crack':'splinter';(p.holes??=[]).push(exit?{x:p.flip?-l.x:l.x,y:l.y,kind,exit:true}:{x:p.flip?-l.x:l.x,y:l.y,kind});}
+    // A casing thrown out of the ejection port, up and back, to bounce with a clink and lie about for a while. Not for a revolver or a crossbow; a pump shotgun throws its shell when it is worked.
+    eject(gun,kind){const set=this.settings;if(set.particles==='Off'||(set.particles==='Low'&&(this.ejected=(this.ejected||0)+1)%2)||this.bodies.length>set.maxObjects-5)return;const [w,h,colour]=CASING[kind]||CASING.pistol;
+      const old=this.bodies.filter(b=>b.plugin.casing);for(const b of old.slice(0,Math.max(0,old.length+1-CASING_MAX)))this.removeBody(b);
+      const side=gun.plugin.flip?-1:1,port=Vector.add(gun.position,Vector.rotate({x:-side*2,y:-(gun.plugin.h||8)/2},gun.angle)),b=Bodies.rectangle(port.x,port.y,w,h,{density:.004,friction:.5,restitution:.45});
+      this.meta(b,'casing',{material:'metal',w,h,hp:5,maxHp:5,debris:true,casing:kind,colour,life:CASING_LIFE});Body.setVelocity(b,Vector.add(gun.velocity,Vector.rotate({x:-side*rnd(1,2.5),y:-rnd(3,4.5)},gun.angle)));Body.setAngularVelocity(b,rnd(-.5,.5));this.entity('debris',[b]);}
     // What a heavy round does to the part it spent energy in, beyond the wound: bone chips where it crossed a bone hard, flesh thrown out of a big exit, and - if the part is within the round's class and took more than it can -
     // the part destroyed, or severed at the joint it was hit near. Deferred to after the step's contacts, since it removes bodies.
     // The blow of a round that armour stopped: impact damage, with a bruise and pain and no bleeding; enough of it knocks the body down.
@@ -1069,7 +1084,8 @@
         const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)},muzzle=Vector.add(body.position,Vector.mult(d,gun.muzzle));Body.applyForce(body,body.position,Vector.mult(d,-gun.recoil));
         if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/60; /* px per 1/60 s, which is what setVelocity takes */
           Body.setAngle(bolt,aim+Math.PI/2);Body.setVelocity(bolt,Vector.add(body.velocity,Vector.mult(d,v)));bolt.plugin.shotBy=body.id;this.onEffect('impact',.3);return held?'':`${name} loosed`;}
-        this.shoot(muzzle,Vector.add(muzzle,d),body,gun);return held?'':`${name} fired`;}
+        this.shoot(muzzle,Vector.add(muzzle,d),body,gun);this.flashes.push({x:muzzle.x,y:muzzle.y,radius:26,life:.06,maxLife:.06,muzzle:true}); /* a muzzle flash: lights the chamber for a moment when the floodlights are off */
+        if(gun.casing){if(gun.casing==='shell')(this.pumps??=[]).push({gun:body,at:this.time+PUMP_DELAY});else this.eject(body,gun.casing);}return held?'':`${name} fired`;}
       if(def.device==='ram')return this.ram(body);
       if(def.device){p.active=!p.active;return `${name} ${p.active?'on':'off'}`;}
       return 'This object has no activation';
@@ -1195,14 +1211,15 @@
         if(blade){if(speed>7){this.damage(target,Math.min(od.sharp.power??60,(speed-7)*4.5),point,'cut',toward);if(od.sharp.hot)this.sear(target);}}
         else if(target.plugin.part)this.land(target,other,closing,point,toward,n);
         else if(closing>OBJECT_SAFE)this.damage(target,(closing-OBJECT_SAFE)*(matOf(target.plugin).brittle?3:1)*.75*(od?.blunt||1),point,'impact',toward);}
-      if(closing>3)this.onEffect('impact',Math.min(.5,closing/30));
+      if(closing>3)this.onEffect(a.plugin.casing||b.plugin.casing?'clink':'impact',Math.min(.5,closing/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
     step(dt=1000/60) {
       if(dt>1000/120+.001){this.step(dt/2);this.step(dt/2);return;}
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
-      const bodies=this.bodies;this.bodiesNow=bodies;if(this.shots.length)this.shots=this.shots.filter(shot=>!this.fly(shot,shot.speed*seconds));if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
+      const bodies=this.bodies;this.bodiesNow=bodies;if(this.pumps?.length)this.pumps=this.pumps.filter(q=>{if(this.time<q.at)return true;if(this.bodies.includes(q.gun))this.eject(q.gun,'shell');return false;});if(this.shots.length)this.shots=this.shots.filter(shot=>!this.fly(shot,shot.speed*seconds));if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
+        {const k=!e.alive&&this.settings.rigorMortis&&e.diedAt!==undefined?RIGOR_STIFF*clamp((this.time-e.diedAt)/RIGOR_TIME,0,1):0;if(k||e.bodies[0]?.plugin.rigor)for(const b of e.bodies)b.plugin.rigor=k;} /* the dead stiffen over a minute */
         if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*BLEED_DRAIN*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
         if(e.bodies.some(b=>b.plugin.tourniquet||b.plugin.tied))this.limbs(e);e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){if(e.rung==='stand')this.buckle(e);e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
@@ -1214,7 +1231,7 @@
         if(p.fuse!==undefined){p.fuse-=seconds;if(p.fuse<=0&&!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(b));}}
         // A sanity limit, not a behaviour: if solver and muscles ever gang up on a limb, it is slowed rather than fired across the room. Far above anything a throw, a blast or a fall produces.
         if(p.part&&!b.isStatic){if(b.speed>LIMB_SPEED)Body.setVelocity(b,Vector.mult(b.velocity,LIMB_SPEED/b.speed));if(b.angularSpeed>LIMB_SPIN)Body.setAngularVelocity(b,Math.sign(b.angularVelocity)*LIMB_SPIN);}
-        if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
+        if(p.gib||p.casing){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
         if(p.cool>0)p.cool-=seconds;p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         // A bleeding part dragged along the floor wipes a smear behind it: one streak that lengthens as the part moves, and a new one when it is lifted and set down somewhere else or the streak is long enough. It also leaves the odd small pool along the way.
         if(p.part&&p.bleed>.3&&this.settings.decals&&b.bounds.max.y>=this.groundY-1.5){const x=b.position.x;let sm=this.smears.get(b);
@@ -1270,7 +1287,7 @@
         const limp=this.getEntity(a)?.alive===false;if(Math.abs(error)>BREAK_BEND*(VITAL_JOINT[c.plugin.name]?1.5:1)&&!slack&&(limp||this.forced(a))){c.plugin.strain=(c.plugin.strain||0)+seconds;if(c.plugin.strain>(limp&&!this.forced(a)?BREAK_TIME*8:BREAK_TIME)*(VITAL_JOINT[c.plugin.name]||1))this.snap(c);} /* a dead body that lands with a limb folded the wrong way under it breaks it too, given a moment */ else if(c.plugin.strain)c.plugin.strain=0;
         const ia=a.isStatic?0:a.inverseInertia,ib=b.isStatic?0:b.inverseInertia,total=ia+ib;if(!total)continue;
         // A neck is not a hinge with nothing in it: ligaments and muscle tone damp it whether or not anyone is awake, or alive. Without this the head - a light body on a lighter one - nods and rattles after every knock.
-        {const cold=Math.max(this.chill(a),this.chill(b));if(cold>0){const ease=(b.angularVelocity-a.angularVelocity)*cold*FROST_STIFF;Body.setAngularVelocity(a,a.angularVelocity+ease*ia/total);Body.setAngularVelocity(b,b.angularVelocity-ease*ib/total);}} /* a joint stiffens as it freezes; frozen solid it holds its pose */
+        {const cold=Math.max(this.chill(a),this.chill(b),a.plugin.rigor||0,b.plugin.rigor||0);if(cold>0){const ease=(b.angularVelocity-a.angularVelocity)*cold*FROST_STIFF;Body.setAngularVelocity(a,a.angularVelocity+ease*ia/total);Body.setAngularVelocity(b,b.angularVelocity-ease*ib/total);}} /* a joint stiffens as it freezes; frozen solid it holds its pose */
         if(NECK_DAMP[c.plugin.name]){const ease=(b.angularVelocity-a.angularVelocity)*NECK_DAMP[c.plugin.name];Body.setAngularVelocity(a,a.angularVelocity+ease*ia/total);Body.setAngularVelocity(b,b.angularVelocity-ease*ib/total);}
         if(Math.abs(error)<.005)continue;
         // The soft limit below is a push, and a hard yank outruns it: a head could be swung right round its neck, after which the shortest way back is the wrong way. Past a margin the joint simply stops: the parts are turned back about the joint, each by its share.

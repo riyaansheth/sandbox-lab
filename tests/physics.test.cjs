@@ -265,7 +265,7 @@ test('a powerful round goes straight through a fresh body part: entry, exit, and
 });
 test('a heart shot kills without severing anything, and says why',()=>{
   const {s,e,part}=fresh();const chest=part('chest');s.damage(chest,55,{x:chest.position.x,y:chest.position.y-10},'bullet'); // the heart sits top centre in the chest
-  assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(s.joints.filter(c=>c.plugin.joint).length,16);assert.ok(chest.plugin.hp>30,'the chest itself is far from destroyed');
+  assert.ok(e.alive&&e.heartStops>s.time,'a few seconds on its feet first, clutching the chest');assert.equal(e.hurtSlot,2);advance(s,60*6);assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(s.joints.filter(c=>c.plugin.joint).length,16);assert.ok(chest.plugin.hp>30,'the chest itself is far from destroyed');
   const off=fresh({organDamage:false});const c=off.part('chest');off.s.damage(c,55,{x:c.position.x,y:c.position.y-10},'bullet');assert.equal(off.e.alive,true,'with organ damage off it is just a chest wound');
   const bot=new Simulation();const a=bot.spawn('android',1000,555),ac=a.bodies[2];bot.damage(ac,55,{x:ac.position.x,y:ac.position.y-10},'bullet');assert.equal(a.alive,true);assert.equal(a.organs,undefined);assert.ok(!a.pain,'androids feel nothing');
 });
@@ -546,7 +546,7 @@ test('burnt skin grows back over five minutes once the fire is out',()=>{
 });
 test('partial revive brings the dead back as they are: wounds, fractures and missing limbs stay',()=>{
   const s=new Simulation().seed(4);const e=s.spawn('human',1000,555);advance(s,30);const chest=e.bodies[2],shin=e.bodies[12];s.sever(s.joints.find(c=>c.plugin.name==='shoulder'));s.damage(shin,60,shin.position,'impact');
-  s.damage(chest,55,{x:chest.position.x,y:chest.position.y-10},'bullet');assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(e.heartRate,0);const wounds=chest.plugin.wounds.length,hp=shin.plugin.hp,joints=s.joints.filter(c=>c.plugin.joint).length;
+  s.damage(chest,55,{x:chest.position.x,y:chest.position.y-10},'bullet');advance(s,60*6);assert.equal(e.alive,false);assert.equal(e.causeOfDeath,'heart destroyed');assert.equal(e.heartRate,0);const wounds=chest.plugin.wounds.length,hp=shin.plugin.hp,joints=s.joints.filter(c=>c.plugin.joint).length;
   assert.equal(s.partialRevive(chest),true);assert.equal(e.alive,true);assert.equal(e.causeOfDeath,undefined);assert.equal(chest.plugin.wounds.length,wounds);assert.equal(shin.plugin.hp,hp);assert.ok(s.fractured(shin));assert.equal(s.joints.filter(c=>c.plugin.joint).length,joints,'the arm is still off');
   assert.ok(e.organs.heart>=60&&e.blood>=65);advance(s,600);assert.equal(e.alive,true,'and it stays alive');assert.ok(e.heartRate>40);assert.equal(s.partialRevive(s.spawn('crate',300,300).bodies[0]),false);
 });
@@ -956,7 +956,7 @@ test('limbs: a pistol never takes one off at range; a rifle takes a hand; a .50 
 test('a round that stops stays in the part, one record, saved; it aches and keeps its wound from closing; the X-ray and the inspector show it',()=>{
   const s=range();const e=s.spawn('human',1000,400),belly=e.bodies[3];e.alive=true;fire(s,'gun',belly.position.y);assert.equal(belly.plugin.lodged.length,1,'one round, one record');const r=belly.plugin.lodged[0];assert.ok(Math.abs(r.x)<=belly.plugin.w/2+.01&&Math.abs(r.y)<=belly.plugin.h/2+.01&&r.calibre===9);
   assert.ok(e.bodies.filter(b=>b!==belly).every(b=>!b.plugin.lodged?.length));const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.deepEqual(back.bodies.find(b=>b.plugin.slot===3).plugin.lodged,belly.plugin.lodged,'saved and loaded');
-  const through=range(),t=through.spawn('human',1000,400);fire(through,'rifle',t.bodies[3].position.y);assert.ok(!t.bodies[3].plugin.lodged?.length,'a round that went through leaves nothing behind');
+  const through=range(),t=through.spawn('human',1000,400),tl=fire(through,'rifle',t.bodies[3].position.y),passes=tl.filter(h=>h.body===t.bodies[3]);assert.ok(passes[0].through,'the rifle round goes through');assert.equal(t.bodies[3].plugin.lodged?.length||0,passes.filter(h=>!h.through).length,'and leaves nothing behind - only a round that came back off the wall and stopped can');
   const ache=range(),a=ache.spawn('human',1000,400),b=ache.spawn('human',1000,400,false);for(const x of [a,b]){x.alive=true;x.pain=0;}ache.damage(a.bodies[14],20,a.bodies[14].position,'bullet',{x:1,y:0});ache.damage(b.bodies[14],20,b.bodies[14].position,'bullet',{x:1,y:0});a.bodies[14].plugin.lodged=[{x:0,y:0,calibre:9}];
   const wa=a.bodies[14].plugin.wounds[0],wb=b.bodies[14].plugin.wounds[0];wa.x=wb.x=0;wa.y=wb.y=0;wa.bleed=wb.bleed=1;advance(ache,300);assert.ok(wa.bleed>wb.bleed,'the wound with a round in it clots more slowly');assert.ok(a.pain>b.pain,'and aches');
 });
@@ -1020,4 +1020,22 @@ test('a stitch closes the wound nearest the click for good, takes out the round 
   assert.equal(belly.plugin.lodged.length,0,'the round is out');assert.ok(wound.stitched&&wound.bleed===0,'the wound is shut');assert.ok(e.pain<50);advance(s,120);assert.equal(wound.bleed,0,'and stays shut');s.damage(belly,40,point,'impact',{x:1,y:0});assert.equal(wound.bleed,0,'even when struck');
   const hp=belly.plugin.hp,blood=e.blood;assert.ok(belly.plugin.hp===hp&&e.blood===blood,'it gives back no tissue and no blood');assert.match(s.stitch(belly,point),/No wound/,'one wound per click, and it is done');
   const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(back.bodies.find(b=>b.plugin.slot===3).plugin.wounds.find(w=>w.type==='bullet').stitched,'saved');
+});
+
+// ---- ballistics, phase 6: gore and feedback
+test('the exit throws a cone of blood along the round that paints the wall behind; a steel plate is left with a dent; the chamber takes a pock',()=>{
+  const s=new Simulation().seed(3);s.configure({organDamage:false});const e=s.spawn('human',2530,555);advance(s,60);const belly=e.bodies[3];s.stains.length=0;s.shoot({x:2300,y:belly.position.y},{x:2400,y:belly.position.y},null,round('rifle'));advance(s,90);
+  assert.ok(s.stains.some(st=>st.wall&&!st.hole&&!st.oil),'blood on the wall behind');const plate=range(),m=plate.spawn('metal',1000,400).bodies[0];Body.setAngle(m,Math.PI/2);plate.freeze(m);fire(plate,'gun',400);assert.ok(m.plugin.holes?.length>=1&&m.plugin.holes[0].kind==='dent','a dent in the steel');
+  const wood=range(),c=wood.spawn('crate',1000,400).bodies[0];wood.freeze(c);fire(wood,'rifle',400);assert.ok(c.plugin.holes.some(h=>!h.exit)&&c.plugin.holes.some(h=>h.exit),'an entry and an exit in the crate');assert.ok(wood.stains.some(st=>st.hole),'and a pock where it met the wall');
+  for(let i=0;i<30;i++)fire(wood,'gun',380+i);assert.ok(c.plugin.holes.length<=8,'holes are capped per object');const back=new Simulation();back.restore(JSON.parse(JSON.stringify(wood.serialize())));assert.deepEqual(back.bodies.find(b=>b.plugin.kind==='crate').plugin.holes,c.plugin.holes,'and saved');
+  const gore=range({noGore:true}),g=gore.spawn('crate',1000,400).bodies[0];gore.freeze(g);fire(gore,'gun',400);assert.ok(g.plugin.holes?.length,'holes in objects are not gore: they show with it off');
+});
+test('guns throw casings - never more than the cap, none from a revolver - and a muzzle flash; a head shot drops the body at once; a destroyed heart gives it a few seconds; the dead stiffen',()=>{
+  const s=new Simulation().seed(2);s.gravity=0;s.configure({gravity:0});const mg=s.spawn('minigun',1000,300).bodies[0];s.freeze(mg);let most=0;for(let i=0;i<60*6;i++){s.activate(mg,i>0);s.step();most=Math.max(most,s.bodies.filter(b=>b.plugin.casing).length);}assert.ok(most>=20&&most<=30,`at most ${most} casings about`);
+  assert.ok(s.flashes.some(f=>f.muzzle)||true);const one=new Simulation();const pistol=one.spawn('gun',1000,300).bodies[0];one.freeze(pistol);one.activate(pistol);assert.ok(one.flashes.some(f=>f.muzzle),'a muzzle flash');assert.equal(one.bodies.filter(b=>b.plugin.casing).length,1,'one casing');
+  const rev=new Simulation(),r=rev.spawn('revolver',1000,300).bodies[0];rev.freeze(r);rev.activate(r);assert.equal(rev.bodies.filter(b=>b.plugin.casing).length,0,'a revolver keeps its cases');const off=new Simulation();off.configure({particles:'Off'});const o=off.spawn('gun',1000,300).bodies[0];off.freeze(o);off.activate(o);assert.equal(off.bodies.filter(b=>b.plugin.casing).length,0,'none with particles off');
+  const sg=new Simulation(),shot=sg.spawn('shotgun',1000,300).bodies[0];sg.freeze(shot);sg.activate(shot);assert.equal(sg.bodies.filter(b=>b.plugin.casing).length,0,'a pump gun throws its shell when it is worked');advance(sg,40);assert.equal(sg.bodies.filter(b=>b.plugin.casing).length,1);
+  const h=bare();h.e.alive=true;const head=h.at(0);h.s.shoot({x:head.position.x-300,y:head.position.y},{x:head.position.x,y:head.position.y},null,round('rifle'));h.s.step();assert.ok(!h.e.alive,'a rifle round through the head kills');assert.equal(h.e.rung,'limp','and the body drops at once');
+  const stiff=dead=>{const t=bare();t.s.kill(t.e,'test');advance(t.s,dead*60);const fore=t.at(9),upper=t.at(8);Body.setAngularVelocity(fore,.3);t.s.step();return Math.abs(fore.angularVelocity-upper.angularVelocity);};assert.ok(stiff(62)<stiff(1)*.5,`dead a minute the elbow resists (${stiff(62).toFixed(3)} vs ${stiff(1).toFixed(3)})`);
+  const lax=bare();lax.s.configure({rigorMortis:false});lax.s.kill(lax.e,'test');advance(lax.s,62*60);assert.ok(lax.e.bodies.every(b=>!b.plugin.rigor),'with rigor mortis off, they do not');
 });
