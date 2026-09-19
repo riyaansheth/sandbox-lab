@@ -4,7 +4,7 @@
   const {Simulation,CATALOG,clamp}=Sandbox;
   const {Body,Constraint,Vector}=Matter;
   const $=s=>document.querySelector(s);
-  const sim=new Simulation(),canvas=$('#world'),ctx=canvas.getContext('2d'),stage=$('#stage');
+  const sim=window.__sim=new Simulation(),/* exposed for the console and for browser tests */canvas=$('#world'),ctx=canvas.getContext('2d'),stage=$('#stage');
   const camera={x:1220,y:400,zoom:1};
   const state={tool:'grab',spawn:null,selected:null,paused:false,speed:1,category:'all',pointer:{x:0,y:0},worldPointer:{x:0,y:0},inside:false,down:false,pan:null,ropeStart:null,shift:false,rotation:0,sound:false};
   const TOOLS=[
@@ -185,6 +185,7 @@
     if(set.decals)for(const st of sim.stains){if(st.x+st.r<left||st.x-st.r>right)continue;
       if(st.scorch){ctx.globalAlpha=.8;ctx.drawImage(glowSprite('scorch','11,13,14',1),st.x-st.r,st.y-3.5,st.r*2,7);ctx.globalAlpha=1;continue;}
       if(set.noGore&&!st.oil)continue;const wet=st.wet||0,fade=set.stainLifetime?clamp((set.stainLifetime-(st.age||0))/8,0,1):1;ctx.globalAlpha=.9*fade;ctx.fillStyle=stainColor(wet,st.oil);ctx.beginPath();
+      if(st.smear){const len=st.to-st.from,t=st.thick||2; /* a wiped streak: a flat band with ragged, thinning ends and a few dry drag lines through it */ ctx.ellipse(st.x,st.y,len/2+2,t,0,0,7);ctx.fill();ctx.globalAlpha*=.55;ctx.strokeStyle=stainColor(Math.max(0,wet-.35),st.oil);ctx.lineWidth=.6;for(let k=0;k<3;k++){const a=st.from+len*hash(st.from+k*3.3)*.4,b2=st.to-len*hash(st.to+k*1.7)*.4,yy=st.y-t*.6+k*t*.55;ctx.beginPath();ctx.moveTo(a,yy);ctx.lineTo(b2,yy);ctx.stroke();}continue;}
       if(st.wall){ctx.ellipse(st.x,st.y,2.6,st.r,0,0,7);ctx.fill();ctx.fillRect(st.x-.8,st.y,1.6,st.r*(2.2-wet)*1.4);} // a run down the wall that lengthens as it dries
       else{const ry=Math.min(4.2,1.4+st.r*.07);ctx.ellipse(st.x,st.y,st.r,ry,0,0,7);ctx.fill();}
     }ctx.globalAlpha=1;

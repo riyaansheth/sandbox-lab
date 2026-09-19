@@ -154,8 +154,8 @@
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
-  const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},WOUND_MAX=10,BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
-  const FLOW={impact:.3,cut:.45,blast:.8,bullet:1,exit:1.3,stab:1.6},RUN_MAX=18,RUN_RATE=1.6,SMEAR_STEP=7; // drops per unit of bleed by kind of wound; longest run down a part, px, and px per second per unit of bleed; px between marks of a smear
+  const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
+  const FLOW={impact:.3,cut:.45,blast:.8,bullet:1,exit:1.3,stab:1.6},RUN_MAX=18,RUN_RATE=1.6,SMEAR_STEP=7,SMEAR_GAP=14,SMEAR_MAX=220; // drops per unit of bleed by kind of wound; longest run down a part, px, and px per second per unit of bleed; px between marks of a smear
   const HIT_SOUND={impact:'thud',cut:'slice',stab:'slice',bullet:'wet',exit:'wet',burn:'sizzle'},GRAZE_CHORD=5,GRAZE_TURN=.16; // what each kind of blow sounds like on flesh; a round that crosses less than this much of a body only grazes it, and is turned this much
   const CLOT_AT=30,SCAB_AT=150,REOPEN_SPEED=3,REOPEN_RATE=1.5,REOPEN_BLEED=.5,BRUISE_LIFE=300,DEAD_CLOT=12; // wound ages in seconds (body.js draws by the same two); px per substep that tears a clot; chance per second while it does
   const FATAL_SPOTS=new Set(['head','neck','chest']),BLEED_DRAIN=.3,WOUND_BLOOD=14,ARTERY_BLOOD=24,SHOT_BLOOD=40,GUT_BLEED=.7;
@@ -183,7 +183,7 @@
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
-      this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];
+      this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];this.smears=new WeakMap();
       this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.busy=new Array(17).fill(0);this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
@@ -742,7 +742,7 @@
     addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
     // Blood that lands on the floor joins a pool if one is there. Pools grow by area, up to a limit, instead of stacking dots.
     pool(x,r,oil) {
-      const stains=this.stains;for(let i=stains.length-1;i>=0;i--){const st=stains[i];if(st.wall||st.scorch||!!st.oil!==!!oil||Math.abs(st.x-x)>st.r+4)continue;
+      const stains=this.stains;for(let i=stains.length-1;i>=0;i--){const st=stains[i];if(st.wall||st.scorch||st.smear||!!st.oil!==!!oil||Math.abs(st.x-x)>st.r+4)continue;
         st.r=Math.min(POOL_MAX,Math.sqrt(st.r*st.r+r*r*.55));st.x+=(x-st.x)*.04;st.wet=1;st.age=0;return st;}
       return this.addStain({x,y:this.groundY-1,r,wet:1,age:0,oil:oil||undefined});
     }
@@ -751,7 +751,7 @@
       const stains=this.stains,life=this.settings.stainLifetime;let keep=0;
       for(let i=0;i<stains.length;i++){const st=stains[i];if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);st.age=(st.age||0)+dt;if(!life||st.age<life)stains[keep++]=st;}stains.length=keep;
       // A pool that has spread over smaller floor stains swallows them.
-      for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
+      for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.smear||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.smear||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
       keep=0;for(let i=0;i<stains.length;i++)if(!stains[i].gone)stains[keep++]=stains[i];stains.length=keep;
       const over=stains.length-this.settings.maxStains;if(over>0)stains.splice(0,over);
       for(const b of bodies){const p=b.plugin;if(p.stains)for(const st of p.stains)if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);
@@ -759,10 +759,10 @@
     }
     // A part's bleeding is the sum of its wounds and stumps.
     // A new wound either joins one of its own kind that it overlaps, or is added. Joining digs deeper rather than wider: the force adds up, and depth follows the total - skin (1), muscle (2), bone (3).
-    // So three cuts in one place are one deep gash, a burst into one spot is one big hole, and a body never carries more than a handful of wounds to draw.
+    // So three cuts in one place are one deep gash and a burst into one spot is one big hole.
     wound(p,w) {
       p.wounds??=[];const old=w.type==='shock'?p.wounds.find(o=>o.type==='shock'):p.wounds.find(o=>o.type===w.type&&!o.sealed&&Math.hypot(o.x-w.x,o.y-w.y)<Math.max(5,(o.radius+w.radius)*.7));
-      if(!old){p.wounds.push(w);if(p.wounds.length>WOUND_MAX)p.wounds.splice(p.wounds.findIndex(o=>!(o.bleed>0))>=0?p.wounds.findIndex(o=>!(o.bleed>0)):0,1);return w;} /* the oldest dry one makes room */
+      if(!old){p.wounds.push(w);return w;} /* every wound is kept, however many: nothing is dropped to make room. Wounds of one kind that overlap join, which is what bounds the list - a part only has room for a few dozen that do not touch */
       const a=old.radius,b=w.radius;old.x=(old.x*a+w.x*b)/(a+b);old.y=(old.y*a+w.y*b)/(a+b);old.radius=Math.min(11,Math.hypot(a,b*.6));old.force=(old.force||0)+w.force;old.depth=Math.min(3,Math.max(old.depth||0,w.depth,WOUND_DEPTH[w.type](old.force*.7)));
       old.hits=(old.hits||1)+1;old.bleed=Math.min(4,(old.bleed||0)+w.bleed*.7);old.wet=w.t;old.artery=old.artery||w.artery;if(w.type==='impact')old.t=Math.min(old.t,w.t-BRUISE_RISE);return old; /* a fresh blow on a bruise does not send it back to invisible */
     }
@@ -965,7 +965,12 @@
         if(p.part&&!b.isStatic){if(b.speed>LIMB_SPEED)Body.setVelocity(b,Vector.mult(b.velocity,LIMB_SPEED/b.speed));if(b.angularSpeed>LIMB_SPIN)Body.setAngularVelocity(b,Math.sign(b.angularVelocity)*LIMB_SPIN);}
         if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
         if(p.cool>0)p.cool-=seconds;p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
-        if(p.part&&p.bleed>.3&&this.settings.decals&&b.bounds.max.y>=this.groundY-1.5&&Math.abs(b.position.x-(p.smearX??b.position.x))>SMEAR_STEP){this.pool(b.position.x,2.4);p.smearX=b.position.x;}else if(p.smearX===undefined&&p.bleed>.3)p.smearX=b.position.x;
+        // A bleeding part dragged along the floor wipes a smear behind it: one streak that lengthens as the part moves, and a new one when it is lifted and set down somewhere else or the streak is long enough. It also leaves the odd small pool along the way.
+        if(p.part&&p.bleed>.3&&this.settings.decals&&b.bounds.max.y>=this.groundY-1.5){const x=b.position.x;let sm=this.smears.get(b);
+          if(sm&&(x<sm.from-SMEAR_GAP||x>sm.to+SMEAR_GAP||sm.to-sm.from>SMEAR_MAX||!this.stains.includes(sm)))sm=null;
+          if(!sm&&Math.abs(x-(p.smearX??x))>2){sm=this.addStain({x,y:this.groundY-1,r:1,from:x,to:x,thick:clamp(p.bleed*1.1,2,4),smear:true,wet:1,age:0});this.smears.set(b,sm);}
+          if(sm&&(x<sm.from||x>sm.to)){sm.from=Math.min(sm.from,x);sm.to=Math.max(sm.to,x);sm.x=(sm.from+sm.to)/2;sm.r=(sm.to-sm.from)/2+1;sm.wet=1;sm.age=0;}
+          if(Math.abs(x-(p.smearX??x))>SMEAR_STEP*4){this.pool(x,2.2);p.smearX=x;}else if(p.smearX===undefined)p.smearX=x;}else if(this.smears.has(b))this.smears.delete(b);
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
           const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3)*(e&&!e.alive?DEAD_CLOT:1),/* with no heart behind it the flow soon stops */blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate),share=p.bleedRaw>7?7/p.bleedRaw:1; /* a part bleeds at most 7 however many holes are in it, so each wound is charged its share of what actually left */ let sum=0,drop=null;

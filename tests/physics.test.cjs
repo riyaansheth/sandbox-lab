@@ -675,3 +675,17 @@ test('a round that only clips a limb grazes it and glances off; a breaking bone 
   assert.ok(sounds.includes('thud'));assert.equal(sounds.filter(k=>k==='crack').length,1,'one crack, at the moment it breaks');t.s.damage(arm,20,arm.position,'cut',{x:1,y:0});assert.ok(sounds.includes('slice'));
   const c=standing(),elbow=c.s.joints.find(j=>j.plugin.name==='elbow'&&j.bodyB===c.e.bodies[9]),upper=elbow.bodyA;c.s.sever(elbow);assert.ok(Number.isFinite(upper.plugin.severed[0].pull),'pull direction kept');
 });
+
+test('every wound is kept: a part riddled with separate holes shows all of them, however many',()=>{
+  const {s,e}=standing(),chest=e.bodies[2],c=Math.cos(chest.angle),sn=Math.sin(chest.angle);let n=0;
+  for(let gx=-8;gx<=8;gx+=8)for(let gy=-14;gy<=14;gy+=7){s.damage(chest,20,{x:chest.position.x+gx*c-gy*sn,y:chest.position.y+gx*sn+gy*c},'bullet',{x:1,y:0});n++;}
+  assert.equal(n,15);assert.equal(chest.plugin.wounds.filter(w=>w.type==='bullet').length,15,'none dropped to make room');const first=chest.plugin.wounds[0];
+  const thigh=e.bodies[14];for(let i=0;i<6;i++)s.damage(thigh,6,{x:thigh.position.x,y:thigh.position.y-18+i*7},'cut',{x:1,y:0});assert.ok(chest.plugin.wounds.includes(first),'and later wounds do not push the first one out');assert.equal(thigh.plugin.wounds.filter(w=>w.type==='cut').length,6);
+});
+
+test('a bleeding body dragged along the floor wipes a smear that lengthens behind it',()=>{
+  const d=standing();d.s.kill(d.e,'test');advance(d.s,240);for(const b of d.e.bodies){b.plugin.wounds=[{x:0,y:0,radius:3,type:'cut',seed:1,t:d.s.time,wet:d.s.time,depth:2,bleed:3}];b.plugin.bleed=3;}d.s.stains.length=0;
+  const drag=n=>{for(let i=0;i<n;i++){for(const b of d.e.bodies)Body.setVelocity(b,{x:2.5,y:b.velocity.y});d.s.step();}},longest=()=>Math.max(0,...d.s.stains.filter(st=>st.smear).map(st=>st.to-st.from));
+  drag(40);const early=longest();assert.ok(early>10,`a smear has started (${early.toFixed(0)} px)`);drag(80);assert.ok(longest()>early+40,'and it grows as the body moves');
+  assert.ok(d.s.stains.filter(st=>st.smear).every(st=>st.to-st.from<=240),'a long drag is several streaks, not one endless one');const data=JSON.parse(JSON.stringify(d.s.serialize()));const r=new Simulation();r.restore(data);assert.equal(r.stains.filter(st=>st.smear).length,d.s.stains.filter(st=>st.smear).length,'smears survive save and load');
+});
