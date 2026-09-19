@@ -714,3 +714,12 @@ test('a wound never moves: hit again beside it, it deepens where it is; blood ma
   for(let i=0;i<40;i++)s.stain(head,{x:head.position.x+(i%7-3)*3,y:head.position.y+(i%5-2)*5},1.5);const marks=head.plugin.stains.map(st=>st.x+','+st.y);for(let i=0;i<40;i++)s.stain(head,{x:head.position.x+(i%5-2)*4,y:head.position.y+(i%7-3)*3},1.5);
   assert.deepEqual(head.plugin.stains.map(st=>st.x+','+st.y),marks,'the same marks, in the same places');
 });
+
+test('a syringe goes in at a touch, draws 2% of the blood, pushes it back on Activate, and comes out with a light pull',()=>{
+  const {s,e,chest}=arena();e.alive=true;e.blood=100;const hp=chest.plugin.hp,slow=hurl(s,'sword',chest,2);advance(s,200);assert.equal(slow.plugin.stuck,undefined,'a sword this slow bounces off');s.removeBody(slow);
+  const needle=hurl(s,'syringe',chest,2);advance(s,200);const near=(got,want)=>assert.ok(Math.abs(got-want)<.2,`blood ${got}, expected about ${want}`); /* the prick itself bleeds a drop */ assert.equal(needle.plugin.stuck,e.id,'the needle goes in');near(e.blood,98);assert.equal(needle.plugin.fill,'blood');assert.ok(hp-chest.plugin.hp<=4,'a prick, not a stab wound');
+  assert.match(s.activate(needle),/Injected/);near(e.blood,100);assert.equal(needle.plugin.fill,undefined);assert.match(s.activate(needle),/Drew/);near(e.blood,98);
+  s.beginDrag(needle,{...needle.position});s.moveDrag({x:needle.position.x-6,y:needle.position.y});advance(s,10);assert.ok(!s.joints.some(c=>c.plugin.pierce),'6 px of pull is enough to free it');s.moveDrag({x:needle.position.x-90,y:needle.position.y});advance(s,90);s.endDrag();advance(s,30);assert.equal(needle.plugin.stuck,undefined,'a light pull draws it out');assert.ok(!s.joints.some(c=>c.plugin.pierce));
+  assert.equal(needle.plugin.fill,'blood','and it keeps what it drew');s.particles.length=0;assert.match(s.activate(needle),/emptied/);assert.ok(s.particles.some(p=>p.type==='blood'),'out of a body it squirts onto the floor');assert.match(s.activate(needle),/empty/);
+  assert.ok(require('../items.js').CATEGORIES.includes('Syringes'));
+});

@@ -33,6 +33,8 @@
   //   explosive  { radius, power, fuse: seconds when armed, arm: what arms it ('activate'), onBreak: detonates when destroyed, onHeat: °C that lights the fuse }
   //   firearm    { damage: x the bullet-damage setting, speed: muzzle velocity in m/s, rate: rounds a second, auto: keeps firing while held, pellets, spread: radians, launch: item it throws instead of a round, recoil, muzzle: distance from centre along the barrel }
   //   sharp      { tip: pierces point-first (the -y end), edge: slashes on contact, power: most damage one slash can do, length: share of the item that is blade, hot: cauterises }
+  //              ease: multiplier on the speed needed to pierce and on the pull needed to draw it out (a needle: .1), prick: the damage it does going in, instead of a blade's
+  //   syringe    { dose: % of a body's blood it draws or gives back }. Pierced into a body while empty it draws a dose; Activate pushes out whatever is in it - into the body it is in, or onto the floor
   //   blunt      multiplier on the damage it does by hitting things (a hammer hits harder than its speed alone)
   //   grip       where a hand holds it, in the item's own frame
   //   device     what Activate toggles: 'thruster' | 'wheel' | 'battery'
@@ -62,6 +64,7 @@
     { id: 'spike',    name: 'Spike',          category: 'Melee',      description: 'A steel spike. Freeze it point-up and drop something on it.', w: 12, h: 54, material: 'metal', hp: 300, density: .004, sharp: { tip: true, length: .85 }, color: '#77838a' },
     { id: 'stick',    name: 'Stick',          category: 'Melee',      description: 'It is a stick. It burns, it breaks, it pokes.', w: 7, h: 92, material: 'wood', hp: 45, density: .001, blunt: 1.1, color: '#8a6a44' },
     { id: 'wrench',   name: 'Wrench',         category: 'Melee',      description: 'Drop-forged steel. A short, heavy club.', w: 16, h: 60, material: 'metal', hp: 280, density: .0045, blunt: 1.8, grip: { x: 0, y: 18 }, color: '#9aa5aa' },
+    { id: 'syringe',  name: 'Empty syringe',  category: 'Syringes',   description: 'Goes in at a touch and comes out with a light pull. Empty, it draws 2% of the body\'s blood; F pushes what is in it back out.', w: 7, h: 38, material: 'plastic', hp: 30, density: .0012, sharp: { tip: true, length: .34, ease: .1, prick: 3 }, syringe: { dose: 2 }, color: '#9aa0a6' },
     // Firearms. damage is a multiple of the bullet-damage setting with the 9 mm pistol as 1, set from each round's real muzzle energy and what it does to tissue; speed is its real muzzle velocity in m/s (the engine flies rounds at a fixed fraction of it); rate is rounds a second.
     { id: 'gun',      name: 'Pistol',         category: 'Firearms',   description: '9 mm, 370 m/s. Activate (F) to fire. A / D to aim, or put it in a hand.', w: 24, h: 9, material: 'metal', hp: 170, density: .006, firearm: { damage: 1, speed: 370, rate: 5, recoil: .008, muzzle: 14 }, grip: { x: -7, y: 4.5 }, color: '#8f989b' },
     { id: 'revolver', name: 'Revolver',       category: 'Firearms',   description: '.357 Magnum, 440 m/s. Six heavy rounds: hits a third harder than the pistol, kicks twice as hard.', w: 28, h: 11, material: 'metal', hp: 190, density: .0049, firearm: { damage: 1.35, speed: 440, rate: 2.5, recoil: .016, muzzle: 16 }, grip: { x: -10, y: 6 }, color: '#8f989b' },
@@ -87,6 +90,6 @@
     { id: 'glass',    name: 'Glass pane',     category: 'Misc',       description: 'Fragile. Shatters into physical fragments.', w: 13, h: 100, material: 'glass', hp: 22, color: '#93c3c8' },
     { id: 'platform', name: 'Fixed platform', category: 'Misc',       description: 'A frozen platform. Unfreeze with the freeze tool.', w: 180, h: 17, material: 'metal', hp: 1000, density: .005, static: true, indestructible: true, color: '#788a94' }
   ];
-  const CATEGORIES = ['Entities', 'Melee', 'Firearms', 'Explosives', 'Vehicles', 'Machinery', 'Chemistry', 'Misc'];
+  const CATEGORIES = ['Entities', 'Syringes', 'Melee', 'Firearms', 'Explosives', 'Vehicles', 'Machinery', 'Chemistry', 'Misc'];
   return { MATERIALS, ITEMS, CATEGORIES };
 });

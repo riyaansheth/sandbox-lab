@@ -151,11 +151,11 @@
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
-  const HOLD_LEVER=16;
+  const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
-  const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
+  const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<6?1:a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
   const FLOW={impact:.3,cut:.45,blast:.8,bullet:1,exit:1.3,stab:1.6},RUN_MAX=18,RUN_RATE=1.6,SMEAR_STEP=7,SMEAR_GAP=14,SMEAR_MAX=220; // drops per unit of bleed by kind of wound; longest run down a part, px, and px per second per unit of bleed; px between marks of a smear
   const HIT_SOUND={impact:'thud',cut:'slice',stab:'slice',bullet:'wet',exit:'wet',burn:'sizzle'},GRAZE_CHORD=5,GRAZE_TURN=.16; // what each kind of blow sounds like on flesh; a round that crosses less than this much of a body only grazes it, and is turned this much
   const CLOT_AT=30,SCAB_AT=150,REOPEN_SPEED=3,REOPEN_RATE=1.5,REOPEN_BLEED=.5,BRUISE_LIFE=300,DEAD_CLOT=12; // wound ages in seconds (body.js draws by the same two); px per substep that tears a clot; chance per second while it does
@@ -883,6 +883,7 @@
       const p=body.plugin;
       const def=defs[p.kind]||{},name=def.name||'Object';if(held&&!def.firearm)return '';
       if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
+      if(def.syringe)return held?'':this.syringe(body);
       if(def.firearm){const gun=def.firearm;if(held&&!gun.auto)return '';if(p.cool>0)return '';p.cool=1/(gun.rate||4); // held = the trigger is being kept down: only automatic weapons keep firing; every weapon has its own rate of fire
         const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)},muzzle=Vector.add(body.position,Vector.mult(d,gun.muzzle));Body.applyForce(body,body.position,Vector.mult(d,-gun.recoil));
         if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/120;
@@ -900,14 +901,23 @@
     // Is this thing's blade live right now? A plain blade always is; a powered one (chainsaw, energy sword) only while it is switched on.
     cuts(body,how){const def=defs[body.plugin.kind];return !!def?.sharp?.[how]&&(!def.device||!!body.plugin.active);}
     pierce(pair,sword,part) {
-      const p=sword.plugin;if(!this.cuts(sword,'tip')||p.stuck||p.heldBy!==undefined||part.plugin.material!=='flesh'||part.isStatic)return false;
+      const p=sword.plugin;if(!this.cuts(sword,'tip')||p.stuck||p.heldBy!==undefined||this.time-(p.freedAt??-9)<REPIERCE_WAIT||part.plugin.material!=='flesh'||part.isStatic)return false;
       const {axis,tip}=this.blade(sword),contact=pair.collision.supports[0]||part.position;if(Vector.magnitude(Vector.sub(contact,tip))>26)return false;
       const arm=Vector.sub(tip,sword.position),tipVelocity={x:sword.velocity.x-sword.angularVelocity*arm.y,y:sword.velocity.y+sword.angularVelocity*arm.x};
-      const speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed)return false;
+      const sharp=defs[p.kind].sharp,speed=Vector.dot(Vector.sub(tipVelocity,part.velocity),axis);if(speed<this.settings.pierceSpeed*(sharp.ease??1))return false;
       // ponytail: the blade joins the victim's no-collide group, so one sword skewers one ragdoll at a time. Per-pair filtering if kebabs matter.
       pair.isSensor=true;p.stuck=part.plugin.entityId;p.bloody=true;sword.collisionFilter.group=part.collisionFilter.group;
       this.piercing.set(sword,{part,steps:40});
-      this.damage(part,clamp(20+speed*3,25,70),contact,'stab',axis);if(defs[p.kind].sharp.hot)this.sear(part);this.onEffect('impact',.4);return true;
+      this.damage(part,sharp.prick??clamp(20+speed*3,25,70),contact,'stab',axis);if(sharp.hot)this.sear(part);this.onEffect('impact',sharp.prick?.1:.4);
+      if(defs[p.kind].syringe&&!p.fill)this.syringe(sword); /* an empty syringe fills as it goes in */ return true;
+    }
+    // A syringe works on the body it is in. Empty, it draws a dose of blood (on going in, or when activated); holding something, activating it pushes that into the body - or, out of a body, onto the floor.
+    syringe(body) {
+      const p=body.plugin,dose=defs[p.kind].syringe.dose,host=p.stuck!==undefined?this.entities.find(e=>e.id===p.stuck):null,{axis,tip}=this.blade(body);
+      if(p.fill){const what=p.fill;delete p.fill;if(host&&host.blood!==undefined&&host.kind==='human'){host.blood=Math.min(100,host.blood+dose);return `Injected ${dose}% ${what}`;}
+        for(let i=0;i<10;i++)this.emit(tip.x,tip.y,axis.x*rnd(2,5)+rnd(-.5,.5),axis.y*rnd(2,5)+rnd(-.5,.5),rnd(.6,1.2),1.2,BLOOD,rnd(1,2.2),'blood');return 'Syringe emptied';}
+      if(!host||host.kind!=='human'||!(host.blood>0))return host?'Nothing to draw':'The syringe is empty: put it in a body';
+      const took=Math.min(dose,host.blood);host.blood-=took;p.fill='blood';host.restTime=0;return `Drew ${took}% blood`;
     }
     // The blade slides for a few steps, then the flesh grips it: two pins along the blade act as a weld. Pulled hard enough, it comes out and the wound opens up.
     blades(){
@@ -921,19 +931,19 @@
         const along=clamp(Vector.dot(Vector.sub(part.position,tip),Vector.neg(axis)),4,length-16);
         for(const offset of [0,14]){const point=Vector.add(tip,Vector.mult(axis,-(along+offset)));const c=Constraint.create({bodyA:part,bodyB:sword,pointA:Vector.sub(point,part.position),pointB:Vector.sub(point,sword.position),length:0,stiffness:.3,damping:.1});c.plugin={pierce:true};Composite.add(this.world,c);}
         // Anything else of the same body that the blade now passes through is wounded too, including the far side.
-        const e=this.getEntity(part);for(let d=2;d<length;d+=10){const point=Vector.add(tip,Vector.mult(axis,-d)),other=e&&Query.point(e.bodies,point)[0];if(other&&other!==part&&!other.plugin.run){other.plugin.run=true;this.damage(other,22,point,'stab');}}
-        if(e)for(const b of e.bodies)delete b.plugin.run;if(along>part.plugin.w)this.damage(part,12,tip,'stab');
+        const e=this.getEntity(part);if(!defs[sword.plugin.kind].sharp.prick)for(let d=2;d<length;d+=10){const point=Vector.add(tip,Vector.mult(axis,-d)),other=e&&Query.point(e.bodies,point)[0];if(other&&other!==part&&!other.plugin.run){other.plugin.run=true;this.damage(other,22,point,'stab');}}
+        if(e)for(const b of e.bodies)delete b.plugin.run;if(along>part.plugin.w&&!defs[sword.plugin.kind].sharp.prick)this.damage(part,12,tip,'stab');
       }
       for(const sword of this.bodies){const p=sword.plugin;if(p.stuck===undefined||this.piercing.has(sword))continue;
         const pins=this.joints.filter(c=>c.plugin.pierce&&c.bodyB===sword);
         // Matter's pins barely stretch, so a hand pull is measured on the grab itself: how far the cursor has drawn away from the hilt.
-        const pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4;
+        const sharp=defs[p.kind]?.sharp||{},pulled=this.drag?.bodyB===sword&&Constraint.currentLength(this.drag)>this.settings.bladeGrip*4*(sharp.ease??1);
         // A blade in the body hurts all the time, and much more when someone moves it.
-        if(pins.length){const host=this.getEntity(pins[0].bodyA);if(host&&host.kind==='human'&&host.alive){const moved=this.drag?.bodyB===sword;host.pain=Math.min(100,(host.pain||0)+(moved?14:1.6)/120*this.settings.painSensitivity);if(moved&&!(host.flinch>0)){host.flinch=FLINCH_TIME;host.flinchMag=.5;host.flinchSlot=pins[0].bodyA.plugin.slot;host.flinchDir=host.flinchDir||1;}}}
+        if(pins.length){const host=this.getEntity(pins[0].bodyA);if(host&&host.kind==='human'&&host.alive){const moved=this.drag?.bodyB===sword;host.pain=Math.min(100,(host.pain||0)+(moved?14:1.6)*(sharp.prick?.1:1)/120*this.settings.painSensitivity);if(moved&&!sharp.prick&&!(host.flinch>0)){host.flinch=FLINCH_TIME;host.flinchMag=.5;host.flinchSlot=pins[0].bodyA.plugin.slot;host.flinchDir=host.flinchDir||1;}}}
         if(pins.length&&!pulled&&(this.drag?.bodyB===sword||pins.every(c=>Constraint.currentLength(c)<PIN_TEAR)))continue; // a hand pull is what the grip setting governs; the pins themselves only give way to real violence
-        for(const c of pins){Composite.remove(this.world,c);{const host=c.bodyA.plugin,stab=(host.wounds||[]).filter(w=>w.type==='stab').pop();if(stab)stab.bleed=Math.min(4,(stab.bleed||0)+.8);this.bleedOf(host);}const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
+        for(const c of pins){Composite.remove(this.world,c);{const host=c.bodyA.plugin,stab=!sharp.prick&&(host.wounds||[]).filter(w=>w.type==='stab').pop();if(stab)stab.bleed=Math.min(4,(stab.bleed||0)+.8);this.bleedOf(host);}const owner=this.getEntity(c.bodyA);if(owner)owner.restTime=0;}
         // Collisions come back only once the blade is clear, otherwise the solver would fire it out of the body.
-        const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;}
+        const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;p.freedAt=this.time;} /* just drawn out: it does not go straight back in on the rebound */
       }
     }
     disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
