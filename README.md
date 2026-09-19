@@ -19,7 +19,7 @@ npm run dev
 - 16 anatomical joints with elbow/knee/shoulder/ankle limits and 120 Hz physics substeps
 - Swords pierce: thrust or thrown point-first at speed, the blade runs a body through, wounds every part it passes, lodges there and bleeds; a light pull slides it back out (Blade grip setting)
 - Hands: select a ragdoll's hand (click it or press S over it) and it takes the nearest loose object within 30 px. The pistol is sized to the body (about 20 cm against a 214 px ragdoll). It is raised and held level; F over any part of an armed ragdoll fires what it holds, and it never hits its own holder; grab the object with the cursor to take it back; it is dropped on death. Held blades slash but do not pierce
-- Balance: when the chest gets ahead of the feet (or is about to) the body takes a real recovery step — the foot is unloaded, lifted and placed under where the body is going — instead of tipping like a plank. Falls are landed in a crouch that the legs push out of; nothing dies perfectly balanced, a body going limp buckles to one side
+- Balance: a staggering body throws its arms out for balance — both forward when going over backwards, one ahead and one behind when stumbling forward. When the chest gets ahead of the feet (or is about to) the body takes a real recovery step — the foot is unloaded, lifted and placed under where the body is going — instead of tipping like a plank. Falls are landed in a crouch that the legs push out of; nothing dies perfectly balanced, a body going limp buckles to one side
 - Carrying: held off the ground and awake, a ragdoll kicks and its arms go for whatever has hold of it. Off the ground a ragdoll keeps its muscle tone, so it holds itself together and swings from wherever it is held rather than folding like a rag; only the pull toward upright needs the ground. Letting go is a throw: the body, and everything jointed to it, leaves with the cursor's velocity
 - Anatomy: the body is seen from the side, facing the way it was spawned. Elbows only flex forward, knees only fold back, the trunk bends forward further than it arches. A joint forced well past its limit breaks, but only under real violence — the cursor hauling from more than 70 px away, a blow of 45 or more, or a dead body landing on it; the neck and spine hold out several times longer than a limb, and carrying someone about never does it. When it does break: the limb fractures, a broken neck kills, a broken spine takes the legs away
 - Guns wound; they never dismember, and a bullet only destroys the part it hits when the muzzle is pressed against it (within 2 px, or pushed into it). From any distance a limb is left with a sliver of health however many rounds it takes. Bullets still kill through the head, the chest and the organs. Where an arm or leg overlaps its twin, the near one — the one you can see — is hit first
@@ -95,7 +95,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 93 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 94 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

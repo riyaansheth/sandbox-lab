@@ -404,6 +404,8 @@
         else{A[5]+=-.35*mag;A[6]+=-.7*mag;A[8]+=-.35*mag;A[9]+=-.7*mag;}}                                         // a blow to the trunk: both arms come in
       if(e.stagN>0){if(down||!awake){e.stagN=0;}else{e.stagT+=seconds;const swing=e.stagT<STEP_TIME*.5,hip=e.stagLeg?14:11,d=e.stagDir;
           A[hip]+=-d*m*(swing?.42:.2);A[hip+1]+=swing?.7:.1;P[hip]=1.5;P[hip+1]=1.5;                                             // pick a leg up and swing it the way the body is going, then set it down ahead
+          const fwd=d*m>0,arms=clamp(e.stagPush/STAGGER_MAX,.6,1);                                                                   // going over backwards both arms are thrown forward; stumbling forward they split, one ahead and one behind, swapping with each step
+          for(const sh of [5,8]){if(P[sh]>2)continue;/* a struck arm stays pulled in */const ahead=!fwd||(sh===5)===!e.stagLeg;A[sh]+=arms*(ahead?-1.25:.8);A[sh+1]+=-.7*arms;P[sh]=Math.max(P[sh],1.6);}
           if(e.stagT>=STEP_TIME){e.stagT=0;e.stagLeg^=1;e.stagN--;e.stagPush*=.45;if(!e.stagN)e.stepCool=STEP_COOL;}}}
       // Landing: knees and hips fold to take the fall, the trunk tips forward over them, the arms come forward for balance; then it straightens up.
       if(e.crouch>0){const cr=e.crouch;A[11]+=-.95*cr;A[14]+=-.95*cr;A[12]+=1.7*cr;A[15]+=1.7*cr;A[13]+=-.5*cr;A[16]+=-.5*cr;A[3]+=-.3*cr;A[5]+=-.7*cr;A[8]+=-.7*cr;P[11]=P[14]=P[12]=P[15]=1.6;}

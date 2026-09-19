@@ -549,3 +549,9 @@ test('partial revive brings the dead back as they are: wounds, fractures and mis
   assert.equal(s.partialRevive(chest),true);assert.equal(e.alive,true);assert.equal(e.causeOfDeath,undefined);assert.equal(chest.plugin.wounds.length,wounds);assert.equal(shin.plugin.hp,hp);assert.ok(s.fractured(shin));assert.equal(s.joints.filter(c=>c.plugin.joint).length,joints,'the arm is still off');
   assert.ok(e.organs.heart>=60&&e.blood>=65);advance(s,600);assert.equal(e.alive,true,'and it stays alive');assert.ok(e.heartRate>40);assert.equal(s.partialRevive(s.spawn('crate',300,300).bodies[0]),false);
 });
+
+test('a shoved ragdoll throws an arm out to catch its balance, and brings it back',()=>{
+  const {s,e}=standing(),rest=rel(e,8,2);for(const b of e.bodies)Body.setVelocity(b,{x:7,y:-1});
+  let out=0;for(let i=0;i<50;i++){s.step();out=Math.max(out,Math.abs(rel(e,8,2)-rest),Math.abs(rel(e,5,2)-rest));}
+  assert.ok(out>.5,`arm swung ${out.toFixed(2)} rad`);advance(s,240);assert.ok(Math.abs(rel(e,8,2)-rest)<.25&&s.balancing(e),'settles back, still standing');
+});
