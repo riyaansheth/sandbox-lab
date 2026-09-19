@@ -714,8 +714,8 @@
     // Blood that lands on a body stays where it landed, in that body's own frame, so it turns with it. Oldest goes first.
     stain(body,point,r,oil) {
       const p=body.plugin,local=Vector.rotate(Vector.sub(point,body.position),-body.angle);p.stains??=[];
-      for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(3.6,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
-      p.stains.push({x:local.x,y:local.y,r,wet:1,oil:oil||undefined});if(p.stains.length>BODY_STAINS)p.stains.shift();
+      for(const st of p.stains)if(Math.hypot(st.x-local.x,st.y-local.y)<st.r+2){st.r=Math.min(p.part?2.4:3.6,Math.sqrt(st.r*st.r+r*r*.4));st.wet=1;return;} // landing on a stain makes it bigger and wet again
+      p.stains.push({x:local.x,y:local.y,r:p.part?Math.min(r,2):r,wet:1,oil:oil||undefined});if(p.stains.length>BODY_STAINS)p.stains.shift();
     }
     addStain(st){const stains=this.stains;if(stains.length>=this.settings.maxStains)stains.shift();stains.push(st);return st;}
     // Blood that lands on the floor joins a pool if one is there. Pools grow by area, up to a limit, instead of stacking dots.
