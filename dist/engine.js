@@ -156,6 +156,7 @@
   const FALL_AREA={head:.45,neck:.5,chest:.25,abdomen:.27,pelvis:.3,thigh:.32,'upper arm':.34,shin:.55,forearm:.55,foot:.55,hand:.5},FALL_FLAT={shin:.3,forearm:.3,foot:.35,hand:.3},FALL_AXIAL=new Set(['foot','shin','hand','forearm']),FALL_SHARE=[1,.45,.24,.13,.08,.05]; // how much of the impact a part takes for its area; which parts pass load along the bone; what each part up the chain gets, as a share of what the landing part took
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
+  const CRUSH_PULL=90,CRUSH_HOLD=.35,CRUSH_RATE=60,CRUSH_MORE=1.2; // px the cursor must push past the surface (scaled by joint strength) - most of a metre, never by accident; seconds it must be held; damage per second at that push, and more per px beyond it
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
@@ -993,7 +994,18 @@
       this.falling=false;
       if(head&&e&&e.alive&&fixed&&amount>=NECK_FALL&&random()<(amount-NECK_FALL)/NECK_FALL)this.kill(e,'broken neck');
     }
-    disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
+    // Immense pressure against something hard bursts a part. The pressure is the cursor's: how far past the surface it is pushing the part it holds (or pushing something hard down onto a part that lies on something hard),
+    // measured along the contact normal. How far a part sinks into the floor would do as a reading, but under the same push a hand sinks 20 px and a thigh 6, so the push itself is used: the same for every part, and the player can feel it.
+    // It has to be held - a landing, however hard, is over too soon - and then it does damage by how far past the limit it is: the part bruises, its bone goes (the crack), and when there is nothing left of it, it bursts.
+    squeeze(pairs){const d=this.drag;if(!d||d.bodyB.isStatic)return;const held=d.bodyB,sx=d.pointA.x-(held.position.x+d.pointB.x),sy=d.pointA.y-(held.position.y+d.pointB.y);if(sx*sx+sy*sy<CRUSH_PULL*CRUSH_PULL)return;
+      for(const pair of pairs){if(!(pair.collision.depth>.5))continue;for(const [part,other] of [[pair.bodyA,pair.bodyB],[pair.bodyB,pair.bodyA]]){if(!part.plugin.part||part.isStatic)continue;const hard=other.isStatic||!!other.plugin.boundary||matOf(other.plugin).soft<.5;if(hard)part.squeezeHard=true;
+        if(held===part&&hard){let n=pair.collision.normal;{let best=0;for(const axis of other.axes||[]){const along=Math.abs(axis.x*n.x+axis.y*n.y);if(along>best){best=along;n=axis;}}} /* the face of the hard thing, not whatever normal the part's rounded corner happened to give: a pull along the floor is not a push into it */
+          const at=pair.collision.supports[0]||other.position,sign=Math.sign((at.x-part.position.x)*n.x+(at.y-part.position.y)*n.y)||1;part.squeeze=Math.max(part.squeeze||0,(sx*n.x+sy*n.y)*sign);} /* the push, along the normal, into the surface */
+        else if(held===other&&!other.plugin.part){const dx=part.position.x-other.position.x,dy=part.position.y-other.position.y,len=Math.hypot(dx,dy)||1;part.squeeze=Math.max(part.squeeze||0,(sx*dx+sy*dy)/len*(hard?1:.5));}}}}
+    press(bodies,seconds){for(const b of bodies){if(!b.plugin.part)continue;const p=b.plugin,over=b.squeezeHard?(b.squeeze||0)-CRUSH_PULL*this.settings.jointStrength:-1;
+      if(!(over>=0)){if(b.squeezeT)b.squeezeT=Math.max(0,b.squeezeT-seconds*2);continue;}b.squeezeT=(b.squeezeT||0)+seconds;if(b.squeezeT<CRUSH_HOLD||p.crushing)continue;
+      this.damage(b,(CRUSH_RATE+over*CRUSH_MORE)*seconds*(p.material==='flesh'?1:.5),b.position,'impact');if(p.hp<=0&&!p.crushing&&this.bodies.includes(b)){p.crushing=true;this.onEffect('crack',1);this.onEffect('wet',1.2);this.damageQueue.push(()=>this.crush(b));}}}
+    disturb(pairs){this.squeeze(pairs);for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
       if(other.plugin.active&&defs[other.plugin.kind]?.device==='chainsaw'&&!target.plugin.boundary&&this.time-(this.bites.get(target)||0)>.1){this.bites.set(target,this.time); /* ten bites a second into each thing the bar touches */ const at=Vector.mult(Vector.add(target.position,other.position),.5);this.damage(target,14,at,'cut',Vector.rotate({x:0,y:-1},other.angle));if(matOf(target.plugin).soft>=1)other.plugin.bloody=true;else this.burst(at.x,at.y,4,'#ffe7a0',5);}if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
     // The power hammer's ram: everything in front of the head is struck along the hammer's axis, and the hammer kicks back.
     ram(body) {
@@ -1094,7 +1106,7 @@
         if(Math.sign(impulse)===Math.sign(error))continue; // already returning faster than required
         if(ia)Body.setAngularVelocity(a,a.angularVelocity-impulse*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity+impulse*ib/total);
       }
-      this.touching.clear();for(const b of bodies){b.vx0=b.velocity.x;b.vy0=b.velocity.y;} /* how fast everything was going before this step's contacts were resolved */ Engine.update(this.engine,dt);
+      this.touching.clear();for(const b of bodies){b.vx0=b.velocity.x;b.vy0=b.velocity.y;b.squeeze=0;b.squeezeHard=false;} /* how fast everything was going before this step's contacts were resolved */ Engine.update(this.engine,dt);this.press(bodies,seconds);
       // Constraint solving leaves a limp pile jittering forever, and that residue crawls sideways; Matter's own sleeping never triggers on it.
       // So ragdolls sleep as a unit: fall at full speed, then once nearly still hold the whole pose. Holding every part adds no joint tension.
       for(const e of this.entities){if(e.blood===undefined)continue;
