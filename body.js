@@ -122,7 +122,7 @@
       case 'foot': lines([[x * 1.0, y * .55, x * 1.02, y * .78, x * 1.0, y * .98], [x * 1.25, y * .62, x * 1.27, y * .82, x * 1.26, y * .98], [-x * .2, -y * .3, -x * .55, y * .1, -x * .35, y * .5]], .4); break;   // toes, ankle bone
     }
     c.globalAlpha = 1;
-    if (state.far) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(40,22,14,.22)'; c.fillRect(-w * 2, -h, w * 4, h * 2); c.globalCompositeOperation = 'source-over'; }   // the far arm and leg sit in the body's shadow
+    if (state.far && !state.clothed) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(40,22,14,.22)'; c.fillRect(-w * 2, -h, w * 4, h * 2); c.globalCompositeOperation = 'source-over'; }   // the far arm and leg sit in the body's shadow
     if (part === 'head') face(c, x, y, state.face, state.gaze || 0);
   }
   // The face in profile, after reference/ragdoll.png: dark tousled hair over the crown and the back of the head, one brow and one eye, the ear, and a mouth at the front edge.
@@ -152,6 +152,81 @@
     else if (mood === 'dazed') { c.moveTo(mx + .3, my); c.quadraticCurveTo(mx - 2, my + 1.4, mx - 3.6, my + .6); c.stroke(); }
     else { c.moveTo(mx + .3, my); c.quadraticCurveTo(mx - 2, my + (mood === 'dead' ? .3 : .9), mx - 4, my + .1); c.stroke(); }
     c.strokeStyle = SKIN.line; c.globalAlpha = .45; c.lineWidth = .6; c.beginPath(); c.moveTo(x * .15, y * .88); c.quadraticCurveTo(-x * .1, y * .7, -x * .2, y * .35); c.stroke(); c.globalAlpha = 1;
+  }
+
+  // ---- clothes. An outfit is paint on the skin layer of the same body: the physics, the anatomy and the wounds underneath are exactly those of the bare human. Because it is on the skin layer, whatever opens the skin opens
+  // the cloth too, blood and scorching mark it, fire takes it with the skin, and the X-ray views leave it off. Garments stay inside the part's silhouette (source-atop); hats, hoods and belt gear may stand out from it, within PAD.
+  const cloth = (base, shade, line) => ({ base, shade, line });
+  const BLACK_SHOE = cloth('#26262a', '#101013', '#050507'), WHITE_SHOE = cloth('#eeede8', '#c6c4bc', '#7d7b73');
+  const OUTFITS = {
+    hoodie: { top: cloth('#2d2d32', '#18181b', '#0b0b0d'), sleeves: 'long', legs: cloth('#5c5d55', '#3d3e38', '#23241f'), shoes: WHITE_SHOE, hem: '#202024', tee: '#e9e7e1', hood: true, cargo: true },
+    cop: { top: cloth('#2b3052', '#191c35', '#0c0e1e'), sleeves: 'short', legs: cloth('#272b49', '#171a30', '#0c0e1e'), shoes: BLACK_SHOE, belt: '#131315', gear: true, badge: true, hat: 'cap', collar: true, placket: true },
+    criminal: { top: cloth('#d4d1ca', '#aba8a1', '#19191b'), stripes: '#222225', sleeves: 'long', legs: cloth('#363538', '#1f1f21', '#0d0d0f'), shoes: BLACK_SHOE, gloves: cloth('#2e2e31', '#19191b', '#09090a'), hat: 'beanie', mask: '#262629', hem: '#222225', cargo: true },
+    civilian: { top: cloth('#3f74bd', '#2a4f86', '#1a3157'), sleeves: 'short', legs: cloth('#26272b', '#141517', '#060607'), shoes: WHITE_SHOE, belt: '#3a2a1c', collar: true },
+    detective: { top: cloth('#b39162', '#86693f', '#4c3a20'), sleeves: 'long', legs: cloth('#3d3632', '#25201d', '#110e0c'), shoes: cloth('#54392a', '#332116', '#180e08'), hat: 'fedora', coat: true, shirt: '#ece9e2', tie: '#7a2a2e' }
+  };
+  const OUTFIT_IDS = Object.keys(OUTFITS), GLOBAL_Y = { chest: -60, abdomen: -32, 'upper arm': -54, forearm: -21 };   // where each striped part sits on the body, so the stripes line up across the joins
+  // The colour of the strip that closes a joint, by the slot of the joint's outer part: sleeve, trouser leg, glove - or null for bare skin.
+  function jointCloth(name, slot) { const o = OUTFITS[name]; if (!o) return null; if (slot === 3 || slot === 4 || slot === 5 || slot === 8) return o.top.base; if (slot === 6 || slot === 9) return o.sleeves === 'long' ? o.top.base : null;
+    if (slot === 7 || slot === 10) return o.gloves ? o.gloves.base : null; if (slot >= 11) return o.legs.base; if (slot <= 1) return o.mask || null; return null; }
+  function wear(c, part, w, h, slot, o, state) {
+    const x = w / 2, y = h / 2, near = slot === 8 || slot === 9 || slot === 14 || slot === 15; let line = null; c.globalCompositeOperation = 'source-atop'; c.lineCap = 'round'; c.lineJoin = 'round';
+    const band = (col, y0 = -h, y1 = h) => { if (typeof col === 'string') c.fillStyle = col; else { const g = c.createLinearGradient(-x, 0, x, 0); g.addColorStop(0, col.shade); g.addColorStop(.3, col.base); g.addColorStop(.65, col.base); g.addColorStop(1, col.shade); c.fillStyle = g; } c.fillRect(-w * 2, y0, w * 4, y1 - y0); };
+    const seam = (list, colour, width = .5, alpha = .75) => { c.strokeStyle = colour; c.lineWidth = width; c.globalAlpha = alpha; c.beginPath(); for (const [x0, y0, cx, cy, x1, y1] of list) { c.moveTo(x0, y0); c.quadraticCurveTo(cx, cy, x1, y1); } c.stroke(); c.globalAlpha = 1; };
+    const stripes = () => { if (!o.stripes) return; const at = GLOBAL_Y[part] ?? 0; c.fillStyle = o.stripes; for (let k = Math.floor((at - y) / 11) - 1; k * 11 < at + y + 11; k++) c.fillRect(-w * 2, k * 11 - at, w * 4, 5.5); };
+    const ribs = (y0, y1, colour, ink) => { band(colour, y0, y1); c.strokeStyle = ink; c.lineWidth = .35; c.globalAlpha = .6; c.beginPath(); for (let rx = -x * 1.3; rx < x * 1.3; rx += 1.6) { c.moveTo(rx, y0 + .6); c.lineTo(rx, y1 - .6); } c.stroke(); c.globalAlpha = 1; };
+    const over = () => { c.globalCompositeOperation = 'source-over'; }, atop = () => { c.globalCompositeOperation = 'source-atop'; };
+    switch (part) {
+      case 'chest': band(o.top); stripes(); line = o.top.line; seam([[-x * .7, -y * .6, -x * .85, 0, -x * .6, y * .7], [x * .25, -y * .2, x * .6, y * .1, x * .95, -y * .05]], o.top.line, .5, .45);
+        if (o.shirt) { c.fillStyle = o.shirt; c.beginPath(); c.moveTo(x * .2, -y); c.lineTo(x * .7, -y); c.lineTo(x * .98, -y * .3); c.lineTo(x * .62, -y * .1); c.closePath(); c.fill(); c.fillStyle = o.tie; c.beginPath(); c.moveTo(x * .62, -y * .95); c.lineTo(x * .82, -y * .8); c.lineTo(x * .86, -y * .2); c.lineTo(x * .7, -y * .12); c.closePath(); c.fill(); seam([[x * .2, -y, x * .35, -y * .5, x * .62, -y * .1], [x * .62, -y * .1, x * .8, y * .4, x * .78, y]], o.top.line, .7, .9); }
+        if (o.collar) { c.fillStyle = o.top.shade; c.strokeStyle = o.top.line; c.lineWidth = .5; c.beginPath(); c.moveTo(-x * .1, -y); c.lineTo(x * .55, -y); c.lineTo(x * .7, -y * .68); c.lineTo(x * .2, -y * .78); c.closePath(); c.fill(); c.stroke(); }
+        if (o.placket) { seam([[x * .78, -y * .7, x * .86, 0, x * .7, y]], o.top.line, .5, .8); c.fillStyle = '#c9ccd6'; for (const by of [-.45, -.05, .35, .75]) { c.beginPath(); c.arc(x * .8, y * by, .55, 0, 7); c.fill(); } c.strokeStyle = o.top.line; c.lineWidth = .45; c.strokeRect(x * .1, -y * .42, 6.5, 5.5); c.beginPath(); c.moveTo(x * .1, -y * .3); c.lineTo(x * .1 + 6.5, -y * .3); c.stroke(); c.fillStyle = '#d9a84a'; c.fillRect(x * .18, -y * .56, 4.5, 1.1);
+          c.fillStyle = '#121214'; c.beginPath(); c.roundRect(x * .42, -y * .98, 4, 6.5, 1); c.fill(); c.strokeStyle = '#121214'; c.lineWidth = .8; c.beginPath(); c.moveTo(x * .6, -y * .62); c.bezierCurveTo(x * 1.0, -y * .3, x * .9, y * .3, x * .82, y * .7); c.stroke(); }   // breast pocket, name bar, shoulder radio and its cord
+        if (o.hood) { seam([[x * .62, -y * .85, x * .74, -y * .5, x * .72, -y * .15]], '#8d8d93', .7, .95); c.fillStyle = '#e9e7e1'; c.fillRect(x * .66, -y * .17, 1.3, 2.2); } break;   // the drawstring
+      case 'abdomen': band(o.top); stripes(); line = o.top.line; if (o.hood) seam([[x * .15, -y * .5, x * .7, -y * .2, x * .95, y * .55]], o.top.line, .55, .7); if (o.placket) { seam([[x * .74, -y, x * .8, 0, x * .74, y]], o.top.line, .5, .8); c.fillStyle = '#c9ccd6'; c.beginPath(); c.arc(x * .78, y * .1, .55, 0, 7); c.fill(); } if (o.coat) seam([[x * .78, -y, x * .86, 0, x * .8, y]], o.top.line, .7, .9); else seam([[-x * .5, -y * .7, -x * .62, 0, -x * .55, y * .7]], o.top.line, .45, .4); break;
+      case 'pelvis': band(o.coat ? o.top : o.legs); line = (o.coat ? o.top : o.legs).line;
+        if (o.coat) { seam([[x * .78, -y, x * .85, 0, x * .62, y], [-x * .3, -y, -x * .5, 0, -x * .4, y]], o.top.line, .6, .8); band('#2a2018', -y * .55, -y * .25); c.fillStyle = '#c9a24a'; c.fillRect(x * .45, -y * .6, 3, 4.6); break; }   // the coat's belt
+        if (o.hem) { if (o.tee) band(o.tee, -y * .38, -y * .12); ribs(-h, -y * .38, o.hem, o.top.line); }
+        if (o.belt) { band(o.belt, -y * .8, -y * .32); c.fillStyle = o.gear ? '#8d9299' : '#c9a24a'; c.fillRect(x * .5, -y * .78, 3.2, 5); seam([[-x * 1.2, -y * .8, 0, -y * .82, x, -y * .8]], '#00000088', .4, .8); }
+        seam([[x * .7, -y * .2, x * .45, y * .3, x * .2, y * .9]], o.legs.line, .45, .45); break;
+      case 'upper arm': if (o.sleeves === 'long') { band(o.top); stripes(); line = o.top.line; seam([[x * .3, -y * .5, x * .75, 0, x * .3, y * .6]], o.top.line, .45, .4); } else { band(o.top, -h, y * .12); band(o.top.shade, y * .02, y * .12); seam([[-x * 1.3, y * .12, 0, y * .16, x * 1.3, y * .12]], o.top.line, .5, .9); }
+        if (o.badge && slot === 8) { c.fillStyle = '#1b2040'; c.strokeStyle = '#d9a84a'; c.lineWidth = .6; c.beginPath(); c.moveTo(-3.4, -y * .62); c.lineTo(3.4, -y * .62); c.lineTo(3.4, -y * .3); c.quadraticCurveTo(2.4, -y * .08, 0, 0 - y * .02); c.quadraticCurveTo(-2.4, -y * .08, -3.4, -y * .3); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#ece6d2'; c.fillRect(-2.2, -y * .54, 4.4, .9); c.fillStyle = '#d9a84a'; c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? .75 : 1.8; (i ? c.lineTo : c.moveTo).call(c, Math.cos(a) * r, -y * .26 + Math.sin(a) * r); } c.closePath(); c.fill(); } break;   // the shoulder patch: a shield, a bar of lettering, a star
+      case 'forearm': if (o.sleeves !== 'long') break; band(o.top); stripes(); line = o.top.line; if (o.hem) ribs(y - 4.5, h, o.hem, o.top.line); else { band(o.top.shade, y - 3.5, h); seam([[-x * 1.3, y - 3.5, 0, y - 3.2, x * 1.3, y - 3.5]], o.top.line, .45, .8); } break;
+      case 'hand': if (!o.gloves) break; band(o.gloves); line = o.gloves.line; seam([[-x * .3, y * .25, -x * .32, y * .6, -x * .3, y * .9], [x * .15, y * .3, x * .15, y * .62, x * .12, y * .95], [-x, -y * .7, 0, -y * .62, x, -y * .7]], o.gloves.line, .45, .7); break;
+      case 'neck': if (o.mask) { band(o.mask); line = '#09090a'; seam([[-x, -y * .2, 0, y * .1, x, -y * .3]], '#00000099', .4, .7); } else if (o.shirt) band(o.shirt, y * .35, h); else if (o.collar || o.hood) band(o.top, y * .45, h); break;
+      case 'thigh': band(o.legs); line = o.legs.line; seam([[x * .35, -y * .8, x * .55, 0, x * .3, y * .9]], o.legs.line, .45, .5);
+        if (o.coat) { band(o.top, -h, -y * .05); seam([[-x * 1.3, -y * .05, 0, -y * .02, x * 1.3, -y * .05], [x * .6, -h, x * .7, -y * .5, x * .55, -y * .05]], o.top.line, .6, .85); }
+        if (o.cargo && near) { c.strokeStyle = o.legs.line; c.lineWidth = .5; c.globalAlpha = .8; c.fillStyle = o.legs.base; c.beginPath(); c.roundRect(-x * .6, y * .08, x * 1.15, y * .62, 1); c.fill(); c.stroke(); c.beginPath(); c.moveTo(-x * .6, y * .26); c.lineTo(x * .55, y * .26); c.stroke(); c.globalAlpha = 1; } break;
+      case 'shin': band(o.legs); line = o.legs.line; seam([[x * .3, -y * .85, x * .42, 0, x * .25, y * .8], [-x * .7, y * .55, -x * .2, y * .7, x * .5, y * .6]], o.legs.line, .45, .5); band(o.legs.shade, y - 2.2, h); break;
+      case 'foot': { band(o.shoes); line = o.shoes.line; const white = o.shoes === WHITE_SHOE; band(white ? '#d9d7cf' : '#08080a', y - 2.6, h); seam([[-x * 1.2, y - 2.6, 0, y - 2.4, x * 1.7, y - 2.6]], o.shoes.line, .45, .9);
+        seam([[-x * .1, -y * .9, x * .5, -y * .2, x * 1.1, y * .1], [-x * .5, -y * .2, -x * .3, y * .3, -x * .6, y * .55]], o.shoes.line, .45, .7); c.strokeStyle = white ? '#55544f' : '#56565c'; c.lineWidth = .55; c.beginPath(); for (let i = 0; i < 4; i++) { const lx = x * (.08 + i * .22), ly = -y * .75 + i * y * .27; c.moveTo(lx - 1.3, ly + 1); c.lineTo(lx + 1.3, ly - .6); } c.stroke();
+        if (white) { c.fillStyle = '#b9b7ae'; c.globalAlpha = .7; c.beginPath(); c.ellipse(x * .2, y * .25, x * .5, y * .22, .25, 0, 7); c.fill(); c.globalAlpha = 1; } break; }   // sole, toe cap and heel seams, laces, the sneaker's side panel
+      case 'head':
+        if (o.mask) { c.fillStyle = o.mask; c.beginPath(); c.moveTo(-x * .5, y * .3); c.lineTo(x * .5, y * .02); c.lineTo(x * 1.4, y * .1); c.lineTo(x * 1.4, y * 1.3); c.lineTo(-x * .35, y * 1.3); c.closePath(); c.fill(); seam([[-x * .5, y * .3, 0, y * .08, x * .5, y * .02], [x * .5, y * .02, x * .8, y * .1, x * 1.1, y * .14], [x * .1, y * .5, x * .5, y * .62, x * .8, y * .5]], '#00000099', .5, .8); }
+        break;
+    }
+    if (state.far) { atop(); c.fillStyle = 'rgba(14,10,8,.28)'; c.fillRect(-w * 2, -h * 2, w * 4, h * 4); }   // the far arm and leg sit in the body's shadow
+    over(); return line;
+  }
+  // What stands out from the silhouette - a hat, a bunched hood, the gear on a belt - goes on after the part's outline has been inked, so the outline does not run across it.
+  function accessories(c, part, w, h, o) {
+    const x = w / 2, y = h / 2, seam = (list, colour, width = .5, alpha = .75) => { c.strokeStyle = colour; c.lineWidth = width; c.globalAlpha = alpha; c.beginPath(); for (const [x0, y0, cx, cy, x1, y1] of list) { c.moveTo(x0, y0); c.quadraticCurveTo(cx, cy, x1, y1); } c.stroke(); c.globalAlpha = 1; };
+    c.globalCompositeOperation = 'source-over'; c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = .6;
+    if (part === 'chest' && o.hood) { c.fillStyle = o.top.shade; c.strokeStyle = o.top.line; c.lineWidth = .6; c.beginPath(); c.moveTo(x * .1, -y * .98); c.bezierCurveTo(-x * .5, -y * 1.3, -x * 1.3, -y * 1.15, -x * 1.22, -y * .55); c.bezierCurveTo(-x * 1.15, -y * .3, -x * .7, -y * .5, -x * .45, -y * .8); c.closePath(); c.fill(); c.stroke(); seam([[-x * .2, -y * 1.02, -x * .8, -y * 1.0, -x * 1.05, -y * .6]], o.top.line, .45, .6); }
+    else if (part === 'pelvis' && o.gear) { c.strokeStyle = '#050506'; c.lineWidth = .5; c.fillStyle = '#17171a'; c.beginPath(); c.roundRect(x * .05, -y * .5, 6.5, 15, 1.4); c.fill(); c.stroke(); c.fillStyle = '#0b0b0d'; c.beginPath(); c.roundRect(x * .05 + 1.2, -y * .5 - 2.5, 3.6, 5, 1); c.fill(); c.fillStyle = '#17171a'; c.beginPath(); c.roundRect(-x * .75, -y * .7, 5.5, 8, 1.2); c.fill(); c.stroke();
+          c.strokeStyle = '#aeb4bb'; c.lineWidth = 1; c.beginPath(); c.arc(-x * 1.05, y * .02, 2.6, 0, 7); c.stroke(); c.lineWidth = .6; c.beginPath(); c.moveTo(-x * 1.0, -y * .2); c.lineTo(-x * .9, -y * .5); c.stroke(); }   // holster and pistol grip, a pouch, handcuffs
+    else if (part === 'head') {
+      if (o.mask) { c.save(); c.beginPath(); c.moveTo(-x * .5, y * .3); c.lineTo(x * .5, y * .02); c.lineTo(x * 1.4, y * .1); c.lineTo(x * 1.4, y * 1.3); c.lineTo(-x * .35, y * 1.3); c.closePath(); c.clip(); outline(c, part, w, h); c.strokeStyle = '#09090a'; c.lineWidth = 1; c.stroke(); c.restore(); c.lineWidth = .6; }   // the mask's own edge, over the jaw line
+        if (o.hat === 'cap') { c.fillStyle = o.top.base; c.strokeStyle = o.top.line; c.beginPath(); c.moveTo(-x * 1.12, -y * .5); c.bezierCurveTo(-x * 1.3, -y * 1.3, x * .5, -y * 1.5, x * 1.0, -y * 1.05); c.lineTo(x * .92, -y * .58); c.closePath(); c.fill(); c.stroke();
+          c.fillStyle = '#10121f'; c.beginPath(); c.moveTo(-x * 1.12, -y * .5); c.lineTo(-x * 1.13, -y * .72); c.lineTo(x * .94, -y * .82); c.lineTo(x * .92, -y * .58); c.closePath(); c.fill(); c.stroke();
+          c.fillStyle = '#0a0a0d'; c.beginPath(); c.moveTo(x * .7, -y * .6); c.quadraticCurveTo(x * 1.3, -y * .58, x * 1.58, -y * .34); c.lineTo(x * 1.5, -y * .26); c.quadraticCurveTo(x * 1.1, -y * .44, x * .68, -y * .46); c.closePath(); c.fill(); c.stroke();
+          c.fillStyle = '#d9a84a'; c.strokeStyle = '#7a5a1e'; c.lineWidth = .4; c.beginPath(); c.ellipse(x * .78, -y * 1.0, 1.5, 2.1, .15, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(x * .3, -y * .74, .8, 0, 7); c.fill(); }
+        else if (o.hat === 'beanie') { c.fillStyle = '#303033'; c.strokeStyle = '#0a0a0b'; c.beginPath(); c.moveTo(-x * 1.13, -y * .4); c.bezierCurveTo(-x * 1.25, -y * 1.45, x * 1.0, -y * 1.5, x * .94, -y * .5); c.closePath(); c.fill(); c.stroke();
+          c.fillStyle = '#232326'; c.beginPath(); c.moveTo(-x * 1.16, -y * .32); c.lineTo(-x * 1.17, -y * .74); c.quadraticCurveTo(0, -y * .95, x * .98, -y * .8); c.lineTo(x * .96, -y * .4); c.quadraticCurveTo(0, -y * .52, -x * 1.16, -y * .32); c.closePath(); c.fill(); c.stroke();
+          c.strokeStyle = '#0a0a0b'; c.lineWidth = .35; c.globalAlpha = .7; c.beginPath(); for (let rx = -x * 1.05; rx < x * .95; rx += 1.9) { c.moveTo(rx, -y * .42 - (1 - Math.abs(rx) / x) * 1.2); c.lineTo(rx, -y * .78 - (1 - Math.abs(rx) / x) * 1.6); } for (let rx = -x * .8; rx < x * .8; rx += 3.2) { c.moveTo(rx, -y * .92); c.quadraticCurveTo(rx * .8, -y * 1.2, rx * .3, -y * 1.38); } c.stroke(); c.globalAlpha = 1; }
+        else if (o.hat === 'fedora') { const felt = '#6f5539', dark = '#3b2c1c'; c.fillStyle = felt; c.strokeStyle = dark; c.beginPath(); c.moveTo(-x * .95, -y * .6); c.bezierCurveTo(-x * 1.05, -y * 1.45, -x * .2, -y * 1.32, x * .05, -y * 1.4); c.bezierCurveTo(x * .5, -y * 1.46, x * .98, -y * 1.25, x * .9, -y * .6); c.closePath(); c.fill(); c.stroke();
+          c.fillStyle = '#241a10'; c.fillRect(-x * .96, -y * .8, x * 1.87, 2.8); c.fillStyle = felt; c.beginPath(); c.ellipse(-x * .02, -y * .58, x * 1.55, 2.3, -.05, 0, 7); c.fill(); c.stroke(); seam([[-x * .2, -y * 1.3, 0, -y * 1.15, x * .1, -y * 1.38]], dark, .5, .7); }
+    }
   }
 
   // ---- wounds. Every cause has its own shape, so a body can be read: what hit it, how hard, how long ago.
@@ -223,7 +298,7 @@
   }
 
   function paintPart(canvas, p, state) {
-    const w = p.w, h = p.h, part = p.part, slot = p.slot ?? 0; state.far = FAR.has(slot) && !!p.part; const size = { w: Math.ceil((w + PAD * 2) * SCALE), h: Math.ceil((h + PAD * 2) * SCALE) };
+    const w = p.w, h = p.h, part = p.part, slot = p.slot ?? 0, outfit = OUTFITS[p.outfit]; let clothLine = null; state.far = FAR.has(slot) && !!p.part; state.clothed = !!outfit; const size = { w: Math.ceil((w + PAD * 2) * SCALE), h: Math.ceil((h + PAD * 2) * SCALE) };
     canvas.width = size.w; canvas.height = size.h; const c = canvas.getContext('2d'); c.setTransform(SCALE, 0, 0, SCALE, size.w / 2, size.h / 2); c.lineJoin = 'round';
     const wounds = state.noGore ? [] : p.wounds || [], hp = p.hp ?? 100, broken = (p.bone ?? 100) <= 50 && slot >= 5 && !state.noGore;   // limbs only, like the engine's fractured()
     // Beyond its individual wounds, a part that is nearly destroyed loses skin, and then muscle, in seeded patches.
@@ -244,7 +319,7 @@
       c.save(); outline(c, part, w, h); c.strokeStyle = view > 1 ? '#8fb6c455' : '#c98a7a88'; c.lineWidth = .6; c.stroke(); c.restore(); }
     // A fracture swells: over twenty seconds the limb bulges at the break and the skin over it goes tight and dark.
     const swell = broken && p.brokeAt !== undefined ? clamp((state.time - p.brokeAt) / 20, 0, 1) : 0;
-    if (!view) layer(c, 1, size, s => { outline(s, part, w, h); if (swell > .05) { s.moveTo(w / 2 + 1.8 * swell, h * .04); s.ellipse(0, h * .04, w / 2 + 1.8 * swell, Math.min(h * .2, 7), 0, 0, 7); } drawSkin(s, part, w, h, slot, state);
+    if (!view) layer(c, 1, size, s => { outline(s, part, w, h); if (swell > .05) { s.moveTo(w / 2 + 1.8 * swell, h * .04); s.ellipse(0, h * .04, w / 2 + 1.8 * swell, Math.min(h * .2, 7), 0, 0, 7); } drawSkin(s, part, w, h, slot, state); if (outfit) clothLine = wear(s, part, w, h, slot, outfit, state);
       // bruises, burns and charring are changes to the skin itself, so they are painted before the holes are cut
       if (!state.noGore) { s.globalCompositeOperation = 'source-atop'; for (const wd of wounds) mark(s, wd, w, h, state.time);
         if (swell > .05) { const g = s.createRadialGradient(0, h * .04, 0, 0, h * .04, w * .85); g.addColorStop(0, `rgba(120,44,92,${.5 * swell})`); g.addColorStop(.6, `rgba(170,60,70,${.3 * swell})`); g.addColorStop(1, 'rgba(170,60,70,0)'); s.fillStyle = g; s.fillRect(-w, -h, w * 2, h * 2); }
@@ -254,7 +329,7 @@
         if (p.bruise > .05) { const r = Math.max(w, h) * .6 * p.bruise + 3, g = s.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, `rgba(70,28,78,${Math.min(.75, p.bruise)})`); g.addColorStop(1, 'rgba(96,60,44,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
       }
       if (state.char > 0) { s.globalCompositeOperation = 'source-atop'; s.fillStyle = `rgba(24,17,14,${Math.min(.75, state.char * 1.6)})`; s.fillRect(-w, -h, w * 2, h * 2); }   // the skin that is still there blackens fast
-      s.globalCompositeOperation = 'source-over'; outline(s, part, w, h); s.strokeStyle = SKIN.line; s.lineWidth = .7; s.stroke();
+      s.globalCompositeOperation = 'source-over'; outline(s, part, w, h); s.strokeStyle = clothLine || SKIN.line; s.lineWidth = .7; s.stroke(); if (outfit) accessories(s, part, w, h, outfit);
     }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } for (const [bx, by, r, i] of burnSkin) { s.beginPath(); ragged(s, bx, by, r, slot * 2 + i, 12); s.fill(); } });
     if (state.noGore || view) return;
     // finishing: the dark bore of a bullet hole, torn edges round the big wounds, the shard of a broken bone
@@ -276,14 +351,14 @@
   // ---- cache. A numeric signature of everything that changes the picture; string keys only for the shared pristine sprites.
   const perBody = new WeakMap(), pristine = new Map();
   function signature(p, state) {
-    let sig = (state.view ? state.view * 86028121 + (state.organs ? Math.round(state.organs.brain / 10) + Math.round(state.organs.heart / 10) * 11 + Math.round(state.organs.lungs / 10) * 121 + Math.round(state.organs.gut / 10) * 1331 : 0) * 7919 : 0) + (state.livor > .05 ? (Math.round(state.livor * 4) * 8 + state.down) * 1299709 : 0) + (p.brokeAt !== undefined && (p.bone ?? 100) <= 50 ? Math.round(clamp((state.time - p.brokeAt) / 20, 0, 1) * 4) * 15485863 : 0) + (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
+    let sig = (p.outfit ? (OUTFIT_IDS.indexOf(p.outfit) + 1) * 49979687 : 0) + (state.view ? state.view * 86028121 + (state.organs ? Math.round(state.organs.brain / 10) + Math.round(state.organs.heart / 10) * 11 + Math.round(state.organs.lungs / 10) * 121 + Math.round(state.organs.gut / 10) * 1331 : 0) * 7919 : 0) + (state.livor > .05 ? (Math.round(state.livor * 4) * 8 + state.down) * 1299709 : 0) + (p.brokeAt !== undefined && (p.bone ?? 100) <= 50 ? Math.round(clamp((state.time - p.brokeAt) / 20, 0, 1) * 4) * 15485863 : 0) + (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i], age = state.time - (w.t ?? 0); sig += ((w.seed * 1e5 | 0) + depthOf(w) * 7 + stageOf(w, state.time) * 3 + (w.hits || 0) * 11 + Math.round((w.radius || 0) * 2) * 13 + Math.round((w.force || 0) / 8) * 17 + (w.type === 'impact' ? (age < 10 ? Math.floor(age) : 10 + Math.floor(age / 15)) * 19 : 0)) * (i + 3); }
     const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {
     const p = body.plugin; state.down = state.livor > .05 ? ((Math.round((Math.PI / 2 - (body.angle || 0)) / (Math.PI / 4)) % 8) + 8) % 8 : undefined; if (state.down !== undefined && p.flip) state.down = (12 - state.down) % 8; /* which way is down, in this part's own frame, to the nearest 45 degrees */ const sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;
     const clean = !state.view && p.grow === undefined && !(state.livor > .05) && !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
-    if (clean) { const key = `${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 20)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
+    if (clean) { const key = `${p.outfit || ''}|${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 20)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
       if (!shared) { if (pristine.size > 400) pristine.clear(); shared = document.createElement('canvas'); paintPart(shared, p, state); pristine.set(key, shared); } perBody.set(body, { sig, canvas: shared, own: false }); return shared; }
     const canvas = entry?.own ? entry.canvas : document.createElement('canvas'); paintPart(canvas, p, state); perBody.set(body, { sig, canvas, own: true }); return canvas;
   }
@@ -296,11 +371,12 @@
     trace(ctx, p) { ctx.beginPath(); outline(ctx, p.part, p.w, p.h); },   // the part's silhouette as a path, for clipping what lies on the skin
     // The strip that closes the gap at a joint, drawn just before the outer part so it sits in that limb's layer.
     filler(ctx, c, a, b) { const pa = c.bodyA.plugin, pb = c.bodyB.plugin, organic = pb.material === 'flesh', burnt = Math.max(Math.min(pa.char || 0, pb.char || 0), pb.grow !== undefined ? 1 - pb.grow : 0);   /* a joint to a part that is still growing is bare bone, then raw, then skinned */ ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); const strain = clamp((Math.hypot(b.x - a.x, b.y - a.y) - 3) / ((c.plugin.breakForce || 30) - 3), 0, 1);   // 0 seated .. 1 about to tear
-      if (!organic) { ctx.strokeStyle = '#596d67'; ctx.lineWidth = 6; } else if (burnt > .8) { ctx.strokeStyle = burnt > .95 ? '#b9ad92' : '#7a2429'; ctx.lineWidth = 2.2; } else { ctx.strokeStyle = burnt > .45 || strain > .6 ? '#a8434a' : depth(pb) === 0 ? '#b48d6e' : '#d6ab88'; ctx.lineWidth = Math.min(pa.w, pb.w) * .72 * (1 - .65 * strain); }
+      if (!organic) { ctx.strokeStyle = '#596d67'; ctx.lineWidth = 6; } else if (burnt > .8) { ctx.strokeStyle = burnt > .95 ? '#b9ad92' : '#7a2429'; ctx.lineWidth = 2.2; } else { const worn = jointCloth(pb.outfit, pb.slot); ctx.strokeStyle = burnt > .45 || strain > .6 ? '#a8434a' : worn || (depth(pb) === 0 ? '#b48d6e' : '#d6ab88'); if (worn && depth(pb) === 0 && !(burnt > .45 || strain > .6)) { ctx.stroke(); ctx.strokeStyle = 'rgba(14,10,8,.28)'; } ctx.lineWidth = Math.min(pa.w, pb.w) * .72 * (1 - .65 * strain); }
       ctx.stroke(); ctx.lineCap = 'butt'; },
     // Draw a human part at the origin of the current transform (already translated, rotated and mirrored by the caller).
     draw(ctx, body, state) { const canvas = sprite(body, state); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); },
     // For previews (library card, spawn ghost): a pristine part from its dimensions alone.
-    preview(ctx, part, slot, w, h) { const canvas = sprite({ plugin: { part, slot, w, h, hp: 100, bone: 100 } }, { pale: 0, char: 0, face: 'neutral', faceId: 1, gaze: 0, noGore: true, dead: false, time: 0 }); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); }
+    outfits: OUTFIT_IDS,
+    preview(ctx, part, slot, w, h, outfit) { const canvas = sprite({ plugin: { part, slot, w, h, hp: 100, bone: 100, outfit } }, { pale: 0, char: 0, face: 'neutral', faceId: 1, gaze: 0, noGore: true, dead: false, time: 0 }); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

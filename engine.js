@@ -215,6 +215,7 @@
       if(this.bodies.length>=this.settings.maxObjects)return null;
       if(kind==='human'||kind==='android')return this.ragdoll(kind,x,y,flip);
       const d=defs[kind];if(!d)return null;
+      if(d.ragdoll){const e=this.ragdoll(d.ragdoll,x,y,flip);if(e)for(const b of e.bodies)b.plugin.outfit=d.outfit;return e;} /* a dressed human is a human: only the paint differs, so nothing in the simulation can tell them apart */
       const opts={density:d.density??d.mat.density,friction:d.mat.friction,frictionStatic:.9,restitution:d.restitution??d.mat.restitution,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
       const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:d.sharp?1:3}});
       this.meta(b,kind,flip?{flip:true}:{});return this.entity(kind,[b]);

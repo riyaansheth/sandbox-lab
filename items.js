@@ -39,6 +39,12 @@
   //   static     spawns frozen           indestructible   never shatters
   const ITEMS = [
     { id: 'human',    name: 'Human',          category: 'Entities',   description: 'An articulated, very breakable volunteer.', color: '#e2bb98' },
+    // Dressed humans. ragdoll names the body they are - the same one, with the same physics, anatomy and wounds - and outfit the clothes painted on it (body.js).
+    { id: 'human1',   name: 'Human 1',        category: 'Entities',   description: 'Black hoodie, grey cargo trousers, white trainers. Underneath, the same volunteer.', ragdoll: 'human', outfit: 'hoodie', color: '#2d2d32' },
+    { id: 'civilian', name: 'Civilian',       category: 'Entities',   description: 'Blue shirt, black trousers, white shoes.', ragdoll: 'human', outfit: 'civilian', color: '#3f74bd' },
+    { id: 'cop',      name: 'Cop',            category: 'Entities',   description: 'Uniform, peaked cap, shoulder patch, duty belt. No tougher than anyone else.', ragdoll: 'human', outfit: 'cop', color: '#2b3052' },
+    { id: 'criminal', name: 'Criminal',       category: 'Entities',   description: 'Striped jumper, beanie, mask and gloves.', ragdoll: 'human', outfit: 'criminal', color: '#d4d1ca' },
+    { id: 'detective',name: 'Detective',      category: 'Entities',   description: 'Trench coat, fedora, shirt and tie.', ragdoll: 'human', outfit: 'detective', color: '#b39162' },
     { id: 'android',  name: 'Android',        category: 'Entities',   description: 'Stronger joints. Conducts electricity. Feels nothing.', color: '#91aaa7' },
     { id: 'sword',    name: 'Sword',          category: 'Melee',      description: 'Slashes on impact. Thrown or thrust point-first, it runs a body through and stays in.', w: 12, h: 100, material: 'metal', hp: 200, density: .0025, sharp: { tip: true, edge: true }, color: '#c7d2d2' },
     { id: 'knife',    name: 'Knife',          category: 'Melee',      description: 'Short, sharp and easy to throw. Sticks in whatever soft thing it meets point-first.', w: 8, h: 38, material: 'metal', hp: 120, density: .0025, sharp: { tip: true, edge: true, power: 38, length: .6 }, grip: { x: 0, y: 12 }, color: '#c9d2d4' },

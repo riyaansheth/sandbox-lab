@@ -696,3 +696,13 @@ test('the neck holds: swung about by the chest, a head never turns past its limi
   assert.ok(over<.2,`past a neck limit by ${over.toFixed(2)} rad`);assert.ok(spin<40,`neck spun at ${spin.toFixed(0)} rad/s`);assert.ok(e.alive,'and being carried about does not break it');
   const shoved=standing(),head=shoved.e.bodies[0],c2=shoved.e.bodies[2];for(const b of shoved.e.bodies)Body.setVelocity(b,{x:7,y:-1});let nod=0;for(let i=0;i<120;i++){shoved.s.step();const a=head.angle-c2.angle;nod=Math.max(nod,Math.abs(Math.atan2(Math.sin(a),Math.cos(a))));}assert.ok(nod<.25,`head nodded ${nod.toFixed(2)} rad`);
 });
+
+test('dressed ragdolls are the same human: same parts, masses, joints and limits, and the simulation cannot tell them apart',()=>{
+  const build=kind=>{const s=new Simulation().seed(6);s.configure({organDamage:false});const e=s.spawn(kind,1000,555);return {s,e};},shape=({s,e})=>JSON.stringify({kind:e.kind,parts:e.bodies.map(b=>[b.plugin.part,b.plugin.slot,b.mass.toFixed(6),b.inertia.toFixed(3),b.plugin.hp,b.plugin.material]),joints:s.joints.map(c=>[c.plugin.name,c.plugin.min,c.plugin.max,c.plugin.breakForce])});
+  const bare=build('human'),want=shape(bare);
+  for(const item of require('../items.js').ITEMS.filter(i=>i.ragdoll)){const d=build(item.id);assert.equal(shape(d),want,`${item.id} is built like a human`);assert.ok(d.e.bodies.every(b=>b.plugin.outfit===item.outfit&&b.plugin.kind==='human'));
+    const run=kind=>{const t=build(kind);t.s.damage(t.e.bodies[2],30,t.e.bodies[2].position,'bullet',{x:1,y:0});for(const b of t.e.bodies)Body.setVelocity(b,{x:5,y:-2});advance(t.s,240);return t;},a=run('human'),d2=run(item.id); /* one simulation at a time: the engine's random source belongs to whichever simulation stepped last */
+    a.e.bodies.forEach((b,i)=>{assert.ok(Math.abs(b.position.x-d2.e.bodies[i].position.x)<1e-9&&Math.abs(b.angle-d2.e.bodies[i].angle)<1e-9,`${item.id}: ${b.plugin.part} moved differently`);});assert.equal(a.e.blood,d2.e.blood);assert.equal(a.e.pain,d2.e.pain);
+    const saved=JSON.parse(JSON.stringify(d2.s.serialize())),r=new Simulation();r.restore(saved);assert.ok(r.bodies.filter(b=>b.plugin.part).every(b=>b.plugin.outfit===item.outfit),'the outfit survives save and load');}
+  assert.ok(require('../items.js').ITEMS.filter(i=>i.ragdoll).map(i=>i.id).join()==='human1,civilian,cop,criminal,detective');
+});
