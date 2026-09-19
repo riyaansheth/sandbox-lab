@@ -235,9 +235,9 @@ test('a lifted ragdoll dangles from where it is held, then lands, crumples and g
   assert.equal(s.joints.filter(c=>c.plugin.joint).length,16,'carrying must not tear anyone apart');s.endDrag();advance(s,45);assert.ok(chest.position.y>540,'it should land in a heap, not on its feet');advance(s,600);assert.ok(chest.position.y<505&&Math.abs(Math.sin(chest.angle))<.3&&Math.cos(chest.angle)>0,'and then get back up');
 });
 test('bullets lose power with distance; a distant one stops in what it hits, a close one goes clean through with an entry and an exit wound',()=>{
-  const shot=(from)=>{const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false});const e=s.spawn('human',1000,400),behind=s.spawn('human',1150,400),head=e.bodies[0],y=head.position.y;
-    assert.equal(s.shoot({x:head.bounds.min.x-from,y},{x:1600,y}),head);return {head:head.plugin,e,behind,others:e.bodies.filter(b=>b!==head&&b.plugin.hp<100)};};
-  const far=shot(650),near=shot(12);assert.ok(100-near.head.hp>0&&far.head.hp>near.head.hp+5,`a close shot should hurt more: far leaves ${far.head.hp}, near ${near.head.hp}`);
+  const shot=(from)=>{const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,bulletDamage:25}); /* low enough that neither round takes the head to its floor, so the two can be compared */const e=s.spawn('human',1000,400),behind=s.spawn('human',1150,400),head=e.bodies[0],y=head.position.y;
+    assert.equal(s.shoot({x:head.bounds.min.x-from,y},{x:1600,y},null,{energy:3.5,diameter:5.56}),head); /* a 5.56 round: close in it goes through a head, 900 px off it has lost too much */return {head:head.plugin,e,behind,others:e.bodies.filter(b=>b!==head&&b.plugin.hp<100)};};
+  const far=shot(900),near=shot(12);assert.ok(100-near.head.hp>0&&far.head.hp>near.head.hp+5,`a close shot should hurt more: far leaves ${far.head.hp}, near ${near.head.hp}`);
   assert.equal(far.head.wounds.filter(w=>w.type==='exit').length,0,'a spent bullet stays in');assert.ok(far.behind.bodies.every(b=>b.plugin.hp===100));assert.equal(far.others.length,0,'and hurts nothing but what it hit');
   const entry=near.head.wounds.find(w=>w.type==='bullet'),exit=near.head.wounds.find(w=>w.type==='exit');assert.ok(entry&&exit,'a close shot goes through and through');assert.ok(exit.x>entry.x&&exit.radius>entry.radius,'in one side, out the other, and bigger on the way out');
   assert.ok(near.behind.bodies.some(b=>b.plugin.hp<100),'and carries on into whoever is behind');
@@ -259,8 +259,8 @@ test('each damage type is its own kind of injury',()=>{
   s.ignite(arm);const before=arm.plugin.bleed;advance(s,30);assert.ok(arm.plugin.bleed<before,'so does being on fire');
 });
 test('a powerful round goes straight through a fresh body part: entry, exit, and the body behind is hit',()=>{
-  const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,bulletDamage:120,organDamage:false});const front=s.spawn('human',1000,400),back=s.spawn('human',1150,400),y=front.bodies[0].position.y; // head height: nothing hangs in front of it
-  s.shoot({x:700,y},{x:1500,y});const belly=front.bodies[0].plugin;assert.ok(belly.wounds.some(w=>w.type==='bullet')&&belly.wounds.some(w=>w.type==='exit'));assert.ok(back.bodies.some(b=>b.plugin.hp<100),'the body behind should be hit');
+  const s=new Simulation();s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false});const front=s.spawn('human',1000,400),back=s.spawn('human',1150,400),y=front.bodies[0].position.y; // head height: nothing hangs in front of it
+  s.shoot({x:700,y},{x:1500,y},null,{energy:6,diameter:7.62}); /* a rifle round: what makes a round powerful is its energy */const belly=front.bodies[0].plugin;assert.ok(belly.wounds.some(w=>w.type==='bullet')&&belly.wounds.some(w=>w.type==='exit'));assert.ok(back.bodies.some(b=>b.plugin.hp<100),'the body behind should be hit');
   const entry=belly.wounds.find(w=>w.type==='bullet'),exit=belly.wounds.find(w=>w.type==='exit');assert.ok(exit.x>entry.x&&exit.radius>entry.radius,'exit wound is on the far side and larger');
 });
 test('a heart shot kills without severing anything, and says why',()=>{
@@ -598,7 +598,7 @@ test('a blast takes limbs off by chance, likelier close in; a shock has a good c
 });
 
 test('every firearm has its own round: faster rounds arrive sooner, heavier ones hurt more, buckshot scatters, automatics keep firing, a crossbow throws a real bolt',()=>{
-  const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok((g.firearm.rate>0||['gun','revolver'].includes(g.id))&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||g.firearm.damage>0);}
+  const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok((g.firearm.rate>0||['gun','revolver'].includes(g.id))&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||(g.firearm.energy>0&&g.firearm.diameter>0));}
   const shot=(kind,steps)=>{const s=new Simulation().seed(2);s.gravity=0;const gun=s.spawn(kind,400,300).bodies[0],wall=s.spawn('metal',1400,300).bodies[0];s.freeze(wall);const hp=wall.plugin.hp;s.activate(gun);let t=0;while(wall.plugin.hp===hp&&t<steps){s.step(1000/120);t++;}return {t,hurt:hp-wall.plugin.hp,s,gun,wall};};
   const pistol=shot('gun',200),sniper=shot('sniper',200),hunting=shot('hunting',200);assert.ok(pistol.t>5,'a pistol round takes time to cross a room');assert.ok(sniper.t<pistol.t*.6,`.50 (${sniper.t}) outruns 9 mm (${pistol.t})`);assert.ok(sniper.hurt>hunting.hurt&&hunting.hurt>pistol.hurt,'heavier rounds hurt more');
   const pellets=new Simulation().seed(2);pellets.gravity=0;pellets.activate(pellets.spawn('shotgun',400,300).bodies[0]);assert.equal(pellets.shots.length,9);assert.ok(new Set(pellets.shots.map(x=>x.dy.toFixed(4))).size>5,'pellets spread');
@@ -918,4 +918,24 @@ test('falling follows real physics: 9.81 m/s2, the speed of impact grows with th
   const speeds=[1,2,5,10,20,40].map(h=>impact('human',h));for(let i=1;i<speeds.length;i++)assert.ok(speeds[i]>speeds[i-1],`higher is faster: ${speeds.map(v=>v.toFixed(1)).join(' < ')}`);
   assert.ok(speeds[0]>vac(1)*.9,'from low down, air hardly matters');assert.ok(speeds[5]>20&&speeds[5]<vac(40),`from 40 m a person lands at ${speeds[5].toFixed(1)} m/s: fast, but below free fall`);
   assert.ok(impact('crate',40)>impact('ball',40),'a light ball meets more air for its weight than a crate, and tops out sooner');const shirt=impact('blueshirt',10);assert.ok(shirt<6,`a shirt flutters down at ${shirt.toFixed(1)} m/s`);
+});
+
+// ---- ballistics, phase 1: energy
+const range=(kind,set={})=>{const s=new Simulation().seed(2);s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,...set});return s;};
+const round=kind=>{const f=require('../items.js').ITEMS.find(i=>i.id===kind).firearm;return {energy:f.energy,diameter:f.diameter};};
+const fire=(s,kind,y,x=600)=>{s.shotLog=[];const spec=round(kind);s.shoot({x,y},{x:x+100,y},null,spec);return s.shotLog;};
+
+test('energy: a pistol round stops in the first torso, a 5.56 goes through and into the body behind, a .50 through two bodies and a crate, a pellet never leaves a torso',()=>{
+  const two=()=>{const s=range();const a=s.spawn('human',1000,400),b=s.spawn('human',1160,400);return {s,a,b,y:a.bodies[3].position.y};}; /* belly height: the arm hangs clear of it */
+  const pistol=two();const log=fire(pistol.s,'gun',pistol.y);assert.ok(log.length>=1&&!log[log.length-1].through,'the pistol round stops');assert.ok(log.every(h=>pistol.a.bodies.includes(h.body)),'inside the first body');assert.ok(pistol.b.bodies.every(b=>b.plugin.hp===100));
+  const rifle=two();const r=fire(rifle.s,'rifle',rifle.y);assert.ok(r.some(h=>rifle.b.bodies.includes(h.body)),'the 5.56 reaches the body behind');assert.ok(rifle.b.bodies.some(b=>b.plugin.hp<100));
+  const big=two(),crate=big.s.spawn('crate',1320,big.y).bodies[0];big.s.freeze(crate);const fifty=fire(big.s,'sniper',big.y);assert.ok(fifty.some(h=>h.body===crate)&&crate.plugin.hp<crate.plugin.maxHp,'the .50 goes through both bodies and into the crate');assert.ok(fifty.filter(h=>h.body!==crate).every(h=>h.through),'and through everything before it');
+  for(let seed=1;seed<=5;seed++){const s=range();s.seed(seed);const e=s.spawn('human',1000,400);const log=fire(s,'shotgun',e.bodies[3].position.y);const inside=log.filter(h=>h.body.plugin.part==='abdomen');assert.ok(inside.every(h=>!h.through),'a pellet never leaves the belly');assert.ok(!e.bodies[3].plugin.wounds.some(w=>w.type==='exit'));}
+});
+
+test('energy: it only ever falls along the path, and the damage done is exactly the energy spent (x the Bullet damage setting)',()=>{
+  for(const kind of ['gun','rifle','lmg','sniper']){const s=range();const a=s.spawn('human',1000,400),b=s.spawn('human',1160,400),y=a.bodies[2].position.y;let dealt=0;const dmg=s.damage.bind(s);s.damage=(body,amount,...r)=>{if(!s.contactShot)dealt+=amount;return dmg(body,amount,...r);};
+    const log=fire(s,kind,y);for(let i=1;i<log.length;i++)assert.ok(log[i].E<=log[i-1].E-log[i-1].use+1e-9,`${kind}: energy falls along the path`);const spent=log.reduce((n,h)=>n+h.use,0);assert.ok(spent>0);assert.ok(Math.abs(dealt-spent*s.settings.bulletDamage)<1e-6,`${kind}: damage ${dealt.toFixed(2)} = energy spent ${(spent*s.settings.bulletDamage).toFixed(2)}`);}
+  const big=range(),small=range();for(const s of [big,small])s.spawn('human',1000,400);const hitBig=fire(big,'sniper',big.bodies[3].position.y),hitSmall=fire(small,'gun',small.bodies[3].position.y);assert.ok(hitBig[0].use>hitSmall[0].use*3,'a heavier round spends more of itself in the same flesh');
+  const wood=range(),plank=wood.spawn('crate',1000,400).bodies[0];wood.freeze(plank);const w=fire(wood,'gun',400);assert.ok(w[0].through&&w[0].use<.5,'a pistol round goes through a crate, losing some of itself');const steel=range(),beam=steel.spawn('metal',1000,400).bodies[0];Body.setAngle(beam,Math.PI/2);steel.freeze(beam);assert.ok(!fire(steel,'gun',400)[0].through,'and stops in steel');
 });

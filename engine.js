@@ -5,7 +5,7 @@
   'use strict';
   const { Engine, Bodies, Body, Composite, Constraint, Events, Query, Vector } = M;
   // Items and materials are data (items.js). defs is the item row by id, with its material's properties folded in as .mat; CATALOG is what the library shows.
-  const {MATERIALS,ITEMS,CATEGORIES}=Items,defs=Object.fromEntries(ITEMS.map(item=>[item.id,{...item,mat:MATERIALS[item.material]||MATERIALS.flesh}])),CATALOG=ITEMS;
+  const {MATERIALS,ITEMS,CATEGORIES}=Items,defs=Object.fromEntries(ITEMS.map(item=>[item.id,{...item,mat:MATERIALS[item.material]||MATERIALS.flesh,...(item.firearm&&item.firearm.energy!==undefined?{firearm:{...item.firearm,damage:item.firearm.damage??item.firearm.energy}}:{})}])),CATALOG=ITEMS;
   const matOf=p=>MATERIALS[p.material]||MATERIALS.metal;
   // Every random choice in the simulation goes through here, so a test (or a replay) can seed it: sim.seed(n). Unseeded, it is Math.random.
   let random=Math.random;
@@ -144,7 +144,14 @@
   const CONTACT_SHOT=2,BULLET_FLOOR=8;
   const G_SCALE=9.81*110/1e6,RAGDOLL_TERMINAL=55,SPIN_AIR={part:.015,other:.006}; // Matter's gravity scale for 9.81 m/s2 at 110 px to the metre (its acceleration is gravity.y x scale, in px per ms2); a body falling belly-down tops out at about 55 m/s; how much of its spin a body loses to the air each 1/60 s
   const PX_PER_M=110,SHOT_SCALE=.1,SHOT_REACH=2500; // a standing body is about 1.8 m; rounds fly at this fraction of their real speed; how far a round goes
-  const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
+  const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3;
+  // Does the segment a->b (in a part's frame, scaled to -1..1) cross the rectangle z? Liang-Barsky clipping, no allocation.
+  const crosses=(ax,ay,bx,by,z)=>{let t0=0,t1=1;const dx=bx-ax,dy=by-ay;for(const [p,q] of [[-dx,ax-z[0]],[dx,z[2]-ax],[-dy,ay-z[1]],[dy,z[3]-ay]]){if(p===0){if(q<0)return false;continue;}const r=q/p;if(p<0){if(r>t1)return false;if(r>t0)t0=r;}else{if(r<t0)return false;if(r<t1)t1=r;}}return true;};
+  // Energy. A round carries E (9 mm pistol = 1) and spends it on what it passes: in flesh FLESH_E per px, more for a faster, harder round (x (1 + FLESH_FAST x E): a rifle round yaws and dumps energy where a pistol round pushes through),
+  // a fixed BONE_E where its line crosses a part's bone, and in anything else the material's resist per px (0.15 x absorb^4). It goes on while E is left. Damage is the energy spent, x the Bullet damage setting.
+  const FLESH_E=.03,FLESH_FAST=.4,RESIST_K=.15,BONE_E={head:.5,neck:.25,chest:.3,abdomen:.25,pelvis:.4,'upper arm':.35,forearm:.25,hand:.15,thigh:.45,shin:.35,foot:.15};
+  // Where each part's bone is, as a rectangle in the part's own frame (-1..1 each way, x back to front): the long bones down the middle of a limb, the skull and the ribs throughout, the spine at the back of the neck and the belly.
+  const BONE_ZONE={head:[-1,-1,1,1],neck:[-.75,-1,.05,1],chest:[-1,-1,1,1],abdomen:[-1,-1,-.45,1],pelvis:[-1,-1,1,1],'upper arm':[-.35,-1,.35,1],forearm:[-.4,-1,.4,1],hand:[-.8,-1,.8,1],thigh:[-.35,-1,.35,1],shin:[-.35,-1,.35,1],foot:[-.9,-1,.9,1]};
   const FROST_STIFF=.92,NECK_INERTIA=14,NECK_DAMP={atlas:.3,neck:.3},HARD_STOP={atlas:.1,neck:.1,other:.3}; // share of the relative spin a neck joint loses each substep; rad past its limit at which a joint stops dead
   const WRENCH_PULL=70,WRENCH_BLOW=45,VITAL_JOINT={atlas:4,neck:4,spine:3,waist:3}; // px the cursor must be hauling from the body; damage a blow must do; how much longer the neck and spine hold out than a limb
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
@@ -165,6 +172,7 @@
   const BATTERY_EVERY=1.2; // seconds between a battery's discharges: a short burst, then quiet. (The shock power is the continuous one.)
   const SHOCK_CHAIN_HELD=12,SHOCK_TICK=.08,SHOCK_DOSE=.44,SHOCK_ARCS=3,HEAL_HP=35,HEAL_WOUND=7,HEAL_BLOOD=14,HEAL_PAIN=45,HEAL_ORGAN=18,HEAL_TEMP=260; // a held shock is one tick every 80 ms at the dose that matches the old one-a-click rate; heal: hp and bone per second, px of wound closed per second, and the body's blood, pain and organs
   const GARMENT_TOUCH={top:['chest','abdomen','upper arm','forearm'],pants:['pelvis','thigh','shin'],hat:['head'],mask:['head','neck'],shoes:['foot'],gloves:['hand']},GARMENT_NEEDS={top:'chest',pants:'pelvis',hat:'head',mask:'head',shoes:'foot',gloves:'hand'},GARMENT_ORDER=['hat','top','mask','pants','shoes','gloves'],REDRESS_WAIT=1.2; // the parts a garment must touch to be put on; the part a body must have to wear it; which comes off first where a part wears two; seconds before a garment just taken off can be put on again
+  const SHOT_ENTRY=.7,CHANNEL_NEAR=4,CHANNEL_EASE=.3; // of the energy a round spends in a part it passes through, the share that goes into the entry wound; the rest makes the exit
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
@@ -802,7 +810,7 @@
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
         if(profile.wound&&!(type==='shock'&&amount<SHOCK_MARK)){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
-          const made=this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),...(artery?{artery:true}:{}),...(zone&&(zone!=='artery'||artery)?{hit:zone}:{}),...(FATAL_SPOTS.has(p.part)||artery?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
+          const made=this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:this.woundRadius??clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),...(artery?{artery:true}:{}),...(zone&&(zone!=='artery'||artery)?{hit:zone}:{}),...(FATAL_SPOTS.has(p.part)||artery?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
         if(e&&e.alive&&zone==='spine'&&(profile.deep||type==='exit')&&amount>=(type==='exit'?SPINE_HIT*.3:SPINE_HIT)){if(p.slot<=2)e.upright=false;e.paralysed=true;e.restTime=0;} /* the cord: below the chest it takes the legs, at the chest or neck everything */
@@ -909,14 +917,12 @@
     // Bullets are rays. Each body the ray crosses is hit in order; whether the bullet stops there depends on what it is made of and the state it is in.
     // Flesh stops a first bullet. A limb that is already perforated or destroyed no longer does: the next bullet goes in one side and out the other
     // (entry and exit wound) and carries on, weaker, into whatever is behind it.
-    passes(body,damage){const p=body.plugin,mat=matOf(p);if(p.boundary||body.isStatic||mat.absorb>=1)return false;if(mat.brittle)return true;if(p.material!=='flesh')return p.hp-damage<=p.maxHp*.3; // brittle things never stop a bullet; wood, plastic and rubber do until they are nearly destroyed
-      return p.hp<=0||damage>=THROUGH||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');} // flesh: already holed, already destroyed, or a round too powerful to stop
     // A shot is one or more rounds (spec.pellets) leaving a muzzle. spec comes from the weapon's row: damage (multiple of the bullet-damage setting), speed (muzzle velocity, m/s), spread (radians), force.
     // Without a speed (the shoot tool) the round arrives at once and the first thing it hit is returned. With one it flies: step() moves it along at SHOT_SCALE of its real speed, so a rifle round visibly outruns a pistol's.
     shoot(from,to,ignore=null,spec={}) {
       const aim=Vector.normalise(Vector.sub(to,from));if(!aim.x&&!aim.y)return;let first=null;
       for(let i=0;i<(spec.pellets||1);i++){const direction=spec.spread?Vector.rotate(aim,rnd(-spec.spread,spec.spread)):aim,speed=spec.speed?spec.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed:0;
-        const shot={x:from.x,y:from.y,dx:direction.x,dy:direction.y,speed,damage:spec.damage??1,force:spec.force??spec.damage??1,ignore,done:new Set(),travelled:0,power:1,first:null};
+        const E0=spec.energy??spec.damage??1,shot={x:from.x,y:from.y,dx:direction.x,dy:direction.y,speed,E0,E:E0,diameter:spec.diameter??9,force:spec.force??1,ignore,done:new Set(),travelled:0,first:null,spent:0};
         if(speed)this.shots.push(shot);else{this.fly(shot,SHOT_REACH,.14);first=shot.first;}}
       this.burst(from.x,from.y,5,'#ffe1a2',3);this.onEffect('shot',.3);return first;
     }
@@ -929,17 +935,24 @@
           if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
         if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;if(near*SHOT_REACH<=L)hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
       hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */
-      const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let stop=null,spent=false,grazed=0;
+      const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK),bd=this.settings.bulletDamage;let stop=null,spent=false,grazed=0;
       this.shotPool=shot.pool??={left:SHOT_BLOOD}; /* every wound one round makes outside the fatal spots - through an arm, the belly and the other arm, entries and exits - draws on one allowance. ponytail: a saved game turns the shared allowance into one per wound */
-      for(const {body,near,far} of hits){shot.first??=body;stop=at(near);shot.done.add(body);if(body.plugin.boundary){spent=true;break;}const gone=shot.travelled+near*SHOT_REACH;
-        this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;const damage=this.settings.bulletDamage*shot.damage*shot.power*range(gone),through=this.passes(body,damage)&&far>near;
-        if(body.plugin.material==='flesh'&&far>near&&(far-near)*SHOT_REACH<GRAZE_CHORD&&!this.contactShot){this.damage(body,damage*.2,stop,'bullet',direction);const turn=(random()<.5?-1:1)*GRAZE_TURN,c=Math.cos(turn),sn=Math.sin(turn);shot.dx=direction.x*c-direction.y*sn;shot.dy=direction.x*sn+direction.y*c;shot.power*=.85;grazed=near*SHOT_REACH;break;} /* it clipped the edge: a furrow in the skin, and the round glances off on a new line */
-        Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*shot.power*(through?.4:1)));
-        const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through){spent=true;break;}
-        // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
-        const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
-        stop=exit;shot.power*=1-absorb;if(shot.power<.2){spent=true;break;}}
-      this.contactShot=false;this.shotPool=null;const to=spent||grazed?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};if(grazed)L=grazed;this.traces.push({from,to,life:glow,maxLife:glow});
+      for(const {body,near,far} of hits){const p=body.plugin,first=!shot.first;shot.first??=body;stop=at(near);shot.done.add(body);if(p.boundary){spent=true;shot.E=0;break;}const gone=shot.travelled+near*SHOT_REACH;
+        if(first)shot.E=shot.E0*range(gone); /* the round has lost energy to the air on the way: the range falloff */
+        this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;const flesh=p.material==='flesh',chord=far>near?(far-near)*SHOT_REACH:Math.min(p.w||p.r*2||10,p.h||p.r*2||10);
+        let rate=flesh?FLESH_E*(1+FLESH_FAST*shot.E):RESIST_K*matOf(p).absorb**4;const exitAt=at(far>near?far:near+chord/SHOT_REACH);
+        let bone=0,channel=false;if(flesh&&p.part){const toLocal=q=>{const l=Vector.rotate(Vector.sub(q,body.position),-body.angle);return {x:(p.flip?-l.x:l.x)/(p.w/2),y:l.y/(p.h/2)};},a=toLocal(stop),b=toLocal(exitAt);if(BONE_ZONE[p.part]&&crosses(a.x,a.y,b.x,b.y,BONE_ZONE[p.part]))bone=BONE_E[p.part]; /* the line crosses the bone */
+          const ex=a.x*p.w/2,ey=a.y*p.h/2;channel=!!p.wounds?.some(w=>(w.type==='bullet'||w.type==='exit')&&Math.hypot(w.x-ex,w.y-ey)<CHANNEL_NEAR);} /* a round going in where one went before follows the channel it tore: little flesh and no whole bone in the way */
+        const open=channel?CHANNEL_EASE:1;if(channel)bone=0;
+        if(flesh&&chord<GRAZE_CHORD&&!this.contactShot){const use=Math.min(shot.E,chord*rate);shot.E-=use;shot.spent+=use;this.woundRadius=null;this.damage(body,use*bd,stop,'bullet',direction);const turn=(random()<.5?-1:1)*GRAZE_TURN,c=Math.cos(turn),sn=Math.sin(turn);shot.dx=direction.x*c-direction.y*sn;shot.dy=direction.x*sn+direction.y*c;grazed=near*SHOT_REACH;break;} /* it clipped the edge: a furrow in the skin, and the round glances off on a new line */
+        rate*=open;const need=chord*rate+bone,use=Math.min(shot.E,need),through=shot.E>need;if(this.shotLog)this.shotLog.push({body,E:shot.E,use,through}); /* tests only: what the round had going in, and spent */shot.E-=use;shot.spent+=use;const left=shot.E;
+        Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*Math.min(3,use+left*.2)));
+        if(flesh){this.woundRadius=clamp(shot.diameter*.28,1.5,4);this.damage(body,this.contactShot&&p.part?Math.max(use*bd,p.hp+p.maxHp):use*bd*(through?SHOT_ENTRY:1),stop,'bullet',direction); /* the entry is always about the calibre. With the muzzle against the body the gas goes in with the round and the part is destroyed, whatever the round */
+          if(through&&this.bodies.includes(body)){this.woundRadius=clamp(2.6+left*1.4,2.6,11);this.damage(body,use*bd*(1-SHOT_ENTRY),exitAt,'exit',direction);for(let i=0;i<8;i++)this.emit(exitAt.x,exitAt.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');} /* out the far side: small from a pistol, ragged from a rifle */
+          this.woundRadius=null;}
+        else this.damage(body,use*bd,stop,'bullet',direction);
+        if(!through){spent=true;stop={x:stop.x+direction.x*chord*(use/need||0),y:stop.y+direction.y*chord*(use/need||0)};break;}stop=exitAt;}
+      this.contactShot=false;this.shotPool=null;this.woundRadius=null;const to=spent||grazed?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};if(grazed)L=grazed;this.traces.push({from,to,life:glow,maxLife:glow});
       shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
