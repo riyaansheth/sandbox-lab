@@ -661,3 +661,8 @@ test('blood runs down from the wound, a stab flows where a cut drips, a dragged 
   for(let i=0;i<240;i++){for(const b of d.e.bodies)Body.setVelocity(b,{x:2.5,y:b.velocity.y});d.s.step();}const trail=d.s.stains.filter(st=>!st.wall).map(st=>st.x);assert.ok(trail.length>=4&&Math.max(...trail)-Math.min(...trail)>120,`a trail of ${trail.length} marks`);
   const h=standing(),bat=h.s.spawn('bat',h.e.bodies[2].position.x-60,h.e.bodies[2].position.y).bodies[0];Body.setAngle(bat,Math.PI/2);Body.setVelocity(bat,{x:30,y:0});advance(h.s,20);assert.ok(bat.plugin.stains?.length>0,'the bat is marked');
 });
+
+test('freezing any one part of a living ragdoll never loses it (a frozen part must not count as infinite weight to carry)',()=>{
+  for(const slot of [0,2,5,8,14]){const s=new Simulation().seed(4);const e=s.spawn('human',1000,555);advance(s,30);s.freeze(e.bodies.find(b=>b.plugin.slot===slot));advance(s,600);
+    assert.equal(s.bodies.filter(b=>b.plugin.part).length,17,`slot ${slot} frozen`);assert.ok(s.bodies.every(b=>Number.isFinite(b.position.x)&&Number.isFinite(b.force.x)));}
+});

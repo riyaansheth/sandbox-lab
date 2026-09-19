@@ -439,7 +439,7 @@
       if(e.bracing>0){e.bracing-=seconds;const f=e.braceDir;A[5]=A[8]=(-f*1.25-tilt*.5)*m;A[6]=A[9]=-.3;A[7]=A[10]=0;A[0]=-f*m*.4;P[5]=P[8]=6;P[6]=P[9]=4;P[0]=2;want.armsFree=true;}else want.armsFree=false;
     }
     // The weight the muscles are working against: only what is still attached to the chest. Severed limbs stay in the entity but are no longer carried. Refreshed ten times a second.
-    carried(e,chest){if(!(this.time-(e.massAt??-1)<.1)){e.massAt=this.time;let m=0;for(const b of this.connected(chest))m+=b.mass;e.liveMass=m;}return e.liveMass;}
+    carried(e,chest){if(!(this.time-(e.massAt??-1)<.1)){e.massAt=this.time;let m=0;for(const b of this.connected(chest))if(!b.isStatic)m+=b.mass;e.liveMass=m;} /* a frozen part weighs infinity: counted, it made every balance force infinite and the body was deleted as non-finite */return e.liveMass;}
     // Blend toward the wanted pose. Layers are applied in order, later ones overriding the joints they mention; an armed hand's arm is aimed last of all.
     pose(e,base,aiming,chest,down,seconds,rung) {
       const now=e.poseNow??={angle:new Array(17).fill(0),power:new Array(17).fill(1)},want=this.poseWant,k=1-Math.exp(-seconds/(e.flinch>0?.05:POSE_BLEND));want.angle.fill(0);want.power.fill(1); // a flinch is quick: the blend tightens while it lasts
@@ -1081,5 +1081,5 @@
       Body._nextNonCollidingGroup=Math.min(Body._nextNonCollidingGroup,...bodies.map(b=>b.collisionFilter.group-1));
     }
   }
-  return {Simulation,CATALOG,CATEGORIES,MATERIALS,SETTINGS,defaults,sanitize,defs,clamp,ANATOMY};
+  return {Simulation,CATALOG,CATEGORIES,MATERIALS,SETTINGS,defaults,sanitize,defs,clamp,ANATOMY,ORGANS,CLOT_AT,SCAB_AT};
 });

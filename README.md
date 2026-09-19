@@ -40,6 +40,7 @@ npm run dev
 - Particles are pooled and recycled; stains are capped per body and globally, fade after a settable lifetime, and none are created with decals off
 - Wounds say what caused them: a bullet is a small neat hole with a dark bore and ring, its exit a bigger ragged one with skin flapped outward along the shot; a cut is a long line that gapes wider the deeper it is; a stab a short slit the width of the blade; a blunt blow a bruise, splitting the skin only when very hard; a blast a scorched scatter of shrapnel pits drawn out along the blast, torn open at the centre when heavy; a burn red, then blistered, then cracked black char; a shock an entry burn, an exit burn and a red fern between them
 - Depth through the layers: a wound's depth follows its force — light marks the skin (a scratch, a graze, a peppering), medium opens the skin to the muscle, heavy goes through the muscle to bone. A hit on an existing wound of the same kind joins it and digs deeper instead of adding another beside it, so a body carries at most ten wounds per part and a burst into one spot is one big hole
+- Inspecting: the detail view (S) lists every wound on the part — what caused it, how deep it goes, whether it is spurting, bleeding, wet, clotted, scabbed or bandaged, and what it hit (artery, joint, spine, or an organ). X cycles an X-ray of every ragdoll: the muscle layer, then the skeleton, with each organ shown in its place coloured green to red by its health, and a red ring round every fracture
 - Wounds age: fresh ones are bright and wet, after 30 s they darken and clot, after a few minutes a dark scab closes them. Bruises come up a few seconds after the blow, spread, and go from red to purple to yellow-green before fading. A clot that is not yet a scab tears open again if the limb is thrown about. A fracture swells over twenty seconds. Fire on skin reddens it, then blisters it, then starts to go through it. The dead go pale, their bleeding soon stops with no heart behind it, and after a while their blood settles into whichever side of each part is down
 - Layered bodies (`body.js`, after `reference/ragdoll.png`): every human part is three drawings — skeleton, muscle, skin. Wounds cut holes through the upper layers instead of painting over them: a bullet is a small hole with a dark bore, an exit wound a ragged crater down to bone, a cut a long slit along the blade's path, a stab a short one, a blast a crater; bruises fade from purple to yellow, burns char, fractures split the bone under a tear, stumps are a ragged cap of muscle round a bone nub with strands that swing for a moment. Badly damaged parts lose skin, then muscle, in a few small patches. Wounds stay small and crisp however hard the hit — a big hit is more wounds, not one blotch — and blood on the skin is clipped to the body's outline
 - A proper face, turned three-quarters the way the body faces: dark tousled hair, brows, eyes with irises that glance, nose, mouth, an ear under the hair. Six moods driven by the simulation: neutral, tense, dazed, closed (unconscious), crosses (dead), mouth open on a big hit. A body keeps its colour in death
@@ -101,13 +102,14 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
 | 1–9, \\, ;, ', -, =, [, ], 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, partial revive, stop bleeding, bandage, regrow, reattach, graft, dismember, delete |
+| X | X-ray: skin → muscle layer → skeleton, with organs and fractures lit |
 | R | Flip the ragdoll or object under the cursor to face the other way |
 
 Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores tissue and extinguishes fire, but does not bring anyone back or recreate severed joints. Revive brings a dead or collapsed ragdoll back to life; it stands up again if it still has a spine and at least one whole leg. Saves use one device-local browser slot; loading pauses simulation.
 
 ## Validation
 
-`npm test` runs 108 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 109 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 
