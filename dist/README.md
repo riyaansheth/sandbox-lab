@@ -34,6 +34,7 @@ npm run dev
 - Location decides the outcome. The same round: mid-thigh is a limp; at the knee or elbow end of a limb it cripples it even at low damage (bone damage ×3); high in the thigh (femoral) or high in the upper arm (brachial) or in the neck (carotid) it opens an artery — it spurts with the pulse, is not capped, and kills in roughly twenty to thirty seconds unless it is bandaged or the bleeding is stopped; in the back edge of the trunk it cuts the spine — below the chest the legs go limp, at the chest or neck everything does. A wounded arm drops what its hand was holding. Hands and feet hurt most and are never fatal
 - Fatal spots: only the head, the neck and the upper torso (and the three arteries above). Everywhere else one bullet can never kill, whatever fired it: all the wounds a round makes outside the fatal spots (through an arm, the belly and the other arm, entries and exits) share one allowance of blood and close when it is spent, and gut bleeding is capped over the whole body. Several rounds still kill, and a lost limb still bleeds out. Blood loss overall is slower (open wounds drain at 0.3× their rate, was 0.5×)
 - Blood runs out: a corpse keeps draining after death, a severed limb has only the little blood that is in it, and once a body is empty nothing more comes out of it. A severed piece stops being part of the ragdoll it came from — it is remains of its own, so a grafted replacement never gets confused with the limb it replaced
+- Blood behaves: it comes out at the wound and runs down the skin from it, further the more it bleeds, stopping at the body's edge and drying dark. How much comes out follows the wound — a cut drips, a stab flows, an artery pulses. It marks what it touches: the floor (one pool under a still body that grows and then stops), walls, other bodies, the hand that clutches the wound, and whatever hits a bleeding body or hits a body hard. A bleeding body dragged along the floor leaves a trail of small marks that join up
 - Blood: every wound bleeds at its own rate and clots (fast on a still limb, slowly on a moving one; a new blow nearby reopens it). Deep wounds to the neck, upper arms and thighs hit an artery and spurt in time with a heart rate that races with pain and early blood loss, then fails. Skin pales below 75% blood
 - Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Blood only stains — no smears, no footprints, no wet shine — and dries from red to brown in about 30 s. Androids leak teal coolant and sparks instead
 - Particles are pooled and recycled; stains are capped per body and globally, fade after a settable lifetime, and none are created with decals off
@@ -106,7 +107,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 107 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 108 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

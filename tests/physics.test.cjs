@@ -652,3 +652,12 @@ test('where a blow lands decides what it does: thigh = limp, knee = collapse, fe
   const spine=shot(3,0,-10);assert.ok(spine.e.paralysed&&spine.e.alive);advance(spine.s,300);assert.ok(!spine.s.canStand(spine.e),'a round in the spine takes the legs');
   const {s,e}=standing(),hand=e.bodies[10],gun=s.spawn('gun',hand.position.x+20,hand.position.y).bodies[0];assert.match(s.equip(hand),/Picked up/);advance(s,60);s.damage(e.bodies[9],20,e.bodies[9].position,'cut',{x:1,y:0});assert.equal(gun.plugin.heldBy,undefined,'a wounded arm lets go');
 });
+
+test('blood runs down from the wound, a stab flows where a cut drips, a dragged body leaves a trail, and what hits a bleeding body comes away marked',()=>{
+  const {s,e}=standing(),chest=e.bodies[2];s.damage(chest,30,chest.position,'stab',{x:1,y:0});advance(s,180);const w=chest.plugin.wounds[0];assert.ok(w.run>2&&w.run<=18,`run ${w.run}`);assert.ok(Math.abs(Math.sin(w.runDir)-Math.cos(chest.angle))<.2,'it runs downward');
+  const drops=type=>{const t=standing();const part=t.e.bodies[14];t.s.damage(part,30,part.position,type,{x:1,y:0});part.plugin.wounds[0].bleed=1;t.s.particles.length=0;let n=0;for(let i=0;i<240;i++){part.plugin.wounds[0].bleed=1;const before=t.s.particles.length;t.s.step();n+=Math.max(0,t.s.particles.filter(p=>p.type==='blood').length-before);}return n;};
+  assert.ok(drops('stab')>drops('cut')*1.5,'a stab flows, a cut drips');
+  const d=standing();d.s.kill(d.e,'test');advance(d.s,240);const thigh=d.e.bodies[14];for(const b of d.e.bodies){b.plugin.wounds=[{x:0,y:0,radius:3,type:'cut',seed:1,t:d.s.time,wet:d.s.time,depth:2,bleed:3}];b.plugin.bleed=3;}d.s.stains.length=0;
+  for(let i=0;i<240;i++){for(const b of d.e.bodies)Body.setVelocity(b,{x:2.5,y:b.velocity.y});d.s.step();}const trail=d.s.stains.filter(st=>!st.wall).map(st=>st.x);assert.ok(trail.length>=4&&Math.max(...trail)-Math.min(...trail)>120,`a trail of ${trail.length} marks`);
+  const h=standing(),bat=h.s.spawn('bat',h.e.bodies[2].position.x-60,h.e.bodies[2].position.y).bodies[0];Body.setAngle(bat,Math.PI/2);Body.setVelocity(bat,{x:30,y:0});advance(h.s,20);assert.ok(bat.plugin.stains?.length>0,'the bat is marked');
+});
