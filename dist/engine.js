@@ -863,10 +863,10 @@
       if(under){this.shock(under,LIGHTNING_DOSE);this.damage(under,45,{x,y},'burn');under.plugin.heat+=520;if(!under.isStatic)Body.setVelocity(under,{x:under.velocity.x,y:under.velocity.y+3});}
       this.onEffect('thunder',1);return under||null;
     }
-    shock(body,dose=1) {
-      if(!body)return;const deadBefore=new Set(this.entities.filter(e=>e.alive===false)); /* only someone who was already dead can be brought back by this shock: the one that stops a heart does not also restart it */const touched=new Set(),queue=[body];
+    shock(body,dose=1,at=null) {
+      if(!body)return;{const point=at||body.position;this.traces.push({from:{...point},to:{...point},life:.24,maxLife:.24,electric:true,contact:true});this.burst(point.x,point.y,5,'#cfeeff',4);} /* where the current goes in: a flash, a star of short arcs, a few sparks that fall */const deadBefore=new Set(this.entities.filter(e=>e.alive===false)); /* only someone who was already dead can be brought back by this shock: the one that stops a heart does not also restart it */const touched=new Set(),queue=[body];
       while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
-        for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
+        for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);const edge=(of,toward)=>({x:clamp(toward.x,of.bounds.min.x,of.bounds.max.x),y:clamp(toward.y,of.bounds.min.y,of.bounds.max.y)}),from=edge(b,other.position);this.traces.push({from,to:edge(other,from),life:.3,maxLife:.3,electric:true});} /* arcs jump surface to surface, not centre to centre */
       }this.onEffect('electric',.3);
       // What current does to a person depends on the state they are in, and on how much of it they have had.
       // Out cold: it brings them round - the stun goes, and pain that had put them under is cut through (it cannot wake someone who is out for want of blood, air or brain).
@@ -1027,7 +1027,7 @@
           if(device==='wheel')Body.setAngularVelocity(b,.18);
           if(device==='chainsaw')Body.setVelocity(b,{x:b.velocity.x+rnd(-.25,.25),y:b.velocity.y+rnd(-.25,.25)});
         }
-        if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b);}
+        if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b,1,Vector.add(b.position,Vector.rotate({x:0,y:-(p.h||0)/2},b.angle)));} /* from the terminals */
       }
       if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,clamp(wrap(this.dragAngle-this.drag.bodyB.angle)*.35,-.3,.3));
       // Limits are equal-and-opposite angular impulses: momentum-neutral, so a body pinned against the floor cannot walk itself sideways.

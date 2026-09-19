@@ -142,8 +142,18 @@
     if(t.bolt){if(!t.shape){const shape=boltShape(t);t.shape={main:pathOf([shape.main]),forks:pathOf(shape.forks)};}const light=strokeLight(t),first=t.maxLife-t.life<.12,z=1/Math.max(.5,camera.zoom);if(light<.02)return;
       stroke(t.shape.main,26*z,`rgba(110,150,255,${.07*light})`);stroke(t.shape.main,12*z,`rgba(140,175,255,${.16*light})`);stroke(t.shape.main,5*z,`rgba(185,210,255,${.45*light})`);stroke(t.shape.main,2*z,`rgba(255,255,255,${Math.min(1,light*1.25)})`);
       if(first){stroke(t.shape.forks,4*z,`rgba(150,185,255,${.22*light})`);stroke(t.shape.forks,1.1*z,`rgba(240,246,255,${.85*light})`);}ctx.lineCap='butt';return;}
-    // Arcs between conductors are short-lived and restless: a new path several times a second.
-    const fade=t.life/t.maxLife,arc=pathOf([jagged(t.from,t.to,.42,3,Math.floor(sim.time*28)+t.from.x)]);stroke(arc,5,`rgba(120,200,255,${.22*fade})`);stroke(arc,1.4,`rgba(235,250,255,${fade})`);ctx.lineCap='butt';}
+    // Arcs are restless: a new path thirty times a second, flickering in brightness, drawn as light (additive) - a wide blue halo, a bright channel, a white core, a fainter second strand wandering beside it and a twig or two leaving it.
+    const fade=t.life/t.maxLife,tick=Math.floor(sim.time*30),flick=.55+.45*hash(tick*1.3+t.from.x);ctx.globalCompositeOperation='lighter';
+    if(t.contact){const r=(26*fade+8),rays=[]; // where current enters: a flash and a star of short arcs that shrinks as it dies
+      ctx.globalAlpha=fade;ctx.drawImage(glowSprite('arcGlow','150,215,255',.6),t.to.x-r*1.7,t.to.y-r*1.7,r*3.4,r*3.4);ctx.globalAlpha=1;
+      for(let i=0;i<6;i++){const a=hash(tick+i*7.3)*6.28,len=(10+hash(tick*2+i)*24)*(.4+.6*fade);rays.push(jagged(t.to,{x:t.to.x+Math.cos(a)*len,y:t.to.y+Math.sin(a)*len},.5,2,tick+i*13));}
+      const star=pathOf(rays);stroke(star,3.5,`rgba(120,200,255,${.32*fade})`);stroke(star,1.1,`rgba(240,252,255,${fade})`);}
+    else{const main=jagged(t.from,t.to,.38,4,tick+t.from.x),strand=jagged(t.from,t.to,.62,3,tick*1.7+t.to.y),twigs=[];
+      for(let k=0;k<2;k++){const at=main[2+Math.floor(hash(tick+k*3.1)*(main.length-4))],a=hash(tick*1.1+k)*6.28,len=8+hash(tick+k*9)*16;twigs.push(jagged(at,{x:at.x+Math.cos(a)*len,y:at.y+Math.sin(a)*len},.5,2,tick+k*21));}
+      const arc=pathOf([main]);stroke(arc,8,`rgba(90,165,255,${.16*fade*flick})`);stroke(arc,3.2,`rgba(140,210,255,${.42*fade*flick})`);stroke(arc,1.2,`rgba(245,252,255,${fade*flick})`);
+      stroke(pathOf([strand]),.8,`rgba(190,230,255,${.45*fade*flick})`);stroke(pathOf(twigs),.8,`rgba(215,240,255,${.7*fade*flick})`);
+      for(const end of [t.from,t.to]){ctx.globalAlpha=.7*fade*flick;ctx.drawImage(glowSprite('arcGlow','150,215,255',.6),end.x-11,end.y-11,22,22);}ctx.globalAlpha=1;}
+    ctx.globalCompositeOperation='source-over';ctx.lineCap='butt';}
   // With the floodlights off the chamber is dark, and anything that burns, flashes or arcs cuts a hole in the dark.
   let shade=null;
   function darkness(){shade??=document.createElement('canvas');if(shade.width!==canvas.width||shade.height!==canvas.height){shade.width=canvas.width;shade.height=canvas.height;}
@@ -218,7 +228,10 @@
       if(p.char&&p.kind!=='human'){ctx.fillStyle=`rgba(14,11,9,${Math.min(.8,p.char*.85)})`;ctx.beginPath();if(p.r)ctx.arc(0,0,p.r,0,7);else ctx.roundRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24,2);ctx.fill();}
       if(p.heat>100&&p.kind!=='human'){ctx.fillStyle=`rgba(219,99,49,${Math.min(.55,(p.heat-100)/1000)})`;ctx.fillRect(-(p.w||24)/2,-(p.h||24)/2,p.w||24,p.h||24);}
       if(b.isStatic){ctx.fillStyle='#acd4e9';ctx.fillRect(-2,-2,4,4);}
-      if(p.charge>.05){ctx.strokeStyle='#a7d9e8';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-8,-15);ctx.lineTo(4,-4);ctx.lineTo(-4,4);ctx.lineTo(7,17);ctx.stroke();}
+      if(p.charge>.05){ /* a charged body crawls with arcs: two or three that run from one point on its edge to another, new ones thirty times a second, dying away with the charge */
+        const tick=Math.floor(sim.time*30),hw=(p.w||p.r*2||20)/2,hh=(p.h||p.r*2||20)/2,edge=k=>{const u=hash(tick*1.9+b.id*.37+k*5.1)*4,v=(u%1)*2-1;return u<1?{x:v*hw,y:-hh}:u<2?{x:hw,y:v*hh}:u<3?{x:v*hw,y:hh}:{x:-hw,y:v*hh};},arcs=[];
+        for(let k=0;k<(p.part?(p.charge>.6?2:1):(p.charge>.5?3:2));k++)arcs.push(jagged(edge(k),edge(k+9),.5,3,tick+k*17+b.id));const crawl=pathOf(arcs),reach=Math.max(hw,hh)+14;ctx.lineJoin='round';ctx.lineCap='round';ctx.globalCompositeOperation='lighter';
+        ctx.globalAlpha=(p.part?.06:.28)*Math.min(1,p.charge);/* a ragdoll is seventeen parts, and light adds up */ctx.drawImage(glowSprite('arcGlow','150,215,255',.6),-reach,-reach,reach*2,reach*2);ctx.globalAlpha=1;stroke(crawl,p.part?2.4:3.2,`rgba(110,190,255,${(p.part?.2:.32)*Math.min(1,p.charge)})`);stroke(crawl,1,`rgba(238,250,255,${Math.min(1,p.charge*1.3)})`);ctx.globalCompositeOperation='source-over';ctx.lineCap='butt';}
       ctx.restore();
     }
     ctx.globalCompositeOperation='lighter';for(const b of sim.bodies)if(b.plugin.burning&&b.bounds.max.x>left&&b.bounds.min.x<right)fireGlow(b);drawFire(state.paused?0:frameDt*state.speed,left,right);ctx.globalCompositeOperation='source-over';
@@ -251,7 +264,7 @@
       // Point blank: the shot starts just outside whatever is under the cursor, so it hits that and not the first thing on a long line from the left.
       case'shoot':if(performance.now()-lastShot>120){const from={x:(body?body.bounds.min.x:point.x)-8,y:point.y-1};sim.shoot(from,{x:from.x+100,y:point.y+.5});lastShot=performance.now();}break;
       case'fire':if(body)sim.ignite(body);break;
-      case'shock':if(body&&performance.now()-lastAction>180){sim.shock(body);lastAction=performance.now();}break;
+      case'shock':if(body&&performance.now()-lastAction>180){sim.shock(body,1,point);lastAction=performance.now();}break;
       case'blast':if(!continuous)sim.explode(point.x,point.y);break;
       case'heal':if(body){sim.heal(body);select(body);}break;
       case'revive':if(body&&!continuous){toast(sim.revive(body)?'Revived':'Only humans and androids can be revived');select(body);}break;
