@@ -71,7 +71,7 @@
     {id:'bladeGrip',section:'Weapons',label:'Blade grip',help:'How firmly flesh holds a lodged blade. Low values let it slide out with a light pull, or under the body\'s own weight.',type:'range',min:1,max:30,step:1,def:2,unit:''},
     {id:'iterations',section:'Physics',label:'Physics iterations',help:'Solver passes per step. Higher is more accurate and slower.',type:'range',min:4,max:64,step:1,def:10,unit:''},
     {id:'airDrag',section:'Physics',label:'Air resistance',help:'Multiplier on air drag. Zero is a vacuum.',type:'range',min:0,max:5,step:.1,def:1,unit:'×'},
-    {id:'grabStrength',section:'Physics',label:'Grab strength',help:'How firmly the cursor holds what it drags. Higher also throws harder.',type:'range',min:.04,max:.6,step:.01,def:.16,unit:''},
+    {id:'grabStrength',section:'Physics',label:'Grab strength',help:'How tightly what you drag follows the cursor. Low is loose and swingy, high is tight. Things leave the cursor with whatever speed they had.',type:'range',min:.04,max:.6,step:.01,def:.16,unit:''},
     {id:'maxObjects',section:'Physics',label:'Object limit',help:'Spawning stops at this many bodies. A ragdoll is 17.',type:'range',min:100,max:1000,step:50,def:500,unit:''},
     {id:'slowMotion',section:'Physics',label:'Slow-motion speed',help:'How fast time runs while slow motion (G) is on.',type:'range',min:5,max:90,step:5,def:20,unit:'%'},
     {id:'decals',section:'Visuals',label:'Decals',help:'Blood stains and scorch marks on the floor.',type:'toggle',def:true},
@@ -133,7 +133,8 @@
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
-  const THROW_MAX=38; // px per frame
+  const THROW_MAX=38; // px per 1/60 s: nothing leaves the cursor faster than this
+  const GRAB_RATE=100,GRAB_DAMP=1,GRAB_GEAR=30,GRAB_STABLE=90,GRAB_ACCEL=14000,GRAB_FORCE=260000,GRAB_CALM=.06,GRAB_CALM_PART=.2,GRAB_INERTIA=25; // spring rate (rad/s) per unit of the Grab strength setting; damping ratio; most a part may haul, in its own masses; the stiffest a spring the step can carry (rad/s); limits on the pull, px/s2 per unit mass and outright; share of its spin a held thing loses each substep
   const PIN_TEAR=14; // px a lodged blade's pins may stretch before it is torn out
   const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
@@ -150,8 +151,8 @@
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
   const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
-  // Falls and blunt impacts (see land()). Speeds are px per substep: with this gravity and air a 1.5 m drop lands at about 8.3, 3 m at 10.4, 5 m at 12.4, 8 m at 14.2.
-  const FALL_SAFE=8.3,FALL_SAFE_HEAD=7.4,FALL_K=3,FALL_FLOOR=8,FALL_HP=.6,FALL_MASS=3,OBJECT_K=.5,LAND_WINDOW=.25,LAND_ABSORB=.6,FALL_SPINE=30,NECK_FALL=95,TRAUMA_SAFE=45,TRAUMA_SPAN=70,TRAUMA_BLEED=2.5; // blunt damage to the trunk in one fall that is survivable for certain; how much more makes internal injuries certain; how fast those bleed (% of blood a second - about half a minute to live, unless the bleeding is stopped)
+  // Falls and blunt impacts (see land()). Speeds are px per 1/60 s, as Matter reports them between steps: with this gravity and air a 1.5 m drop lands at about 8.3 (4.5 m/s), 3 m at 10.4, 5 m at 12.4, 7 m at 13.6.
+  const FALL_SAFE=8.3,FALL_SAFE_HEAD=7.4,FALL_K=3,FALL_FLOOR=8,FALL_HP=.6,FALL_MASS=3,OBJECT_K=.5,OBJECT_SAFE=14,LAND_WINDOW=.25,LAND_ABSORB=.6,FALL_SPINE=30,NECK_FALL=95,TRAUMA_SAFE=45,TRAUMA_SPAN=70,TRAUMA_BLEED=2.5; // blunt damage to the trunk in one fall that is survivable for certain; how much more makes internal injuries certain; how fast those bleed (% of blood a second - about half a minute to live, unless the bleeding is stopped)
   const FALL_AREA={head:.45,neck:.5,chest:.25,abdomen:.27,pelvis:.3,thigh:.32,'upper arm':.34,shin:.55,forearm:.55,foot:.55,hand:.5},FALL_FLAT={shin:.3,forearm:.3,foot:.35,hand:.3},FALL_AXIAL=new Set(['foot','shin','hand','forearm']),FALL_SHARE=[1,.45,.24,.13,.08,.05]; // how much of the impact a part takes for its area; which parts pass load along the bone; what each part up the chain gets, as a share of what the landing part took
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
@@ -626,7 +627,7 @@
         const p=b.plugin;if(p.flip)delete p.flip;else p.flip=true;for(const st of p.stains||[])st.x=-st.x;}
       for(const c of this.joints){let touched=false;if(c.bodyA&&set.has(c.bodyA)){c.pointA.x=-c.pointA.x;c.angleA=c.bodyA.angle;touched=true;}if(c.bodyB&&set.has(c.bodyB)){c.pointB.x=-c.pointB.x;c.angleB=c.bodyB.angle;touched=true;}
         if(touched&&c.plugin.joint&&c.plugin.min!==undefined){const min=c.plugin.min;c.plugin.min=-c.plugin.max;c.plugin.max=-min;}}
-      if(this.drag&&set.has(this.drag.bodyB)){this.drag.pointB.x=-this.drag.pointB.x;if(this.dragAngle!=null)this.dragAngle=-this.dragAngle;}
+      if(this.drag&&set.has(this.drag.bodyB)){this.drag.pointB.x=-this.drag.pointB.x;this.drag.angleB=this.drag.bodyB.angle;if(this.dragAngle!=null)this.dragAngle=-this.dragAngle;}
       for(const owner of new Set([...set].map(b=>this.getEntity(b)).filter(Boolean))){owner.pin=null;owner.restTime=0;if(owner.flinchDir)owner.flinchDir=-owner.flinchDir;if(owner.stagDir)owner.stagDir=-owner.stagDir;if(owner.braceDir)owner.braceDir=-owner.braceDir;}
       return true;
     }
@@ -637,8 +638,10 @@
     freeze(body){if(!body)return;Body.setStatic(body,!body.isStatic);return body.isStatic;}
     beginDrag(body,point) {
       this.endDrag();if(!body)return;if(body.plugin.heldBy!==undefined)this.release(body); // grabbing a held thing takes it out of the hand
-      this.drag=Constraint.create({pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),length:0,stiffness:this.settings.grabStrength,damping:.15});
-      this.drag.plugin={drag:true};Composite.add(this.world,this.drag);
+      // The grab is not a Matter constraint: a pin dragged about by the cursor either snaps the body to it or, softened, rings. It is the cursor pulling on the grabbed point with a damped spring (see grab()), the way
+      // People Playground does it: the thing lags a little, swings about the point it is held by, hangs under its own weight, and when it is let go it simply keeps the velocity it has. It has the shape of a constraint so that everything that measures the pull still can.
+      this.drag={pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),angleB:body.angle,plugin:{drag:true},load:0,loadAt:-9};
+      if(body.plugin.part&&!body.isStatic){this.drag.inertia=body.inertia;Body.setInertia(body,body.inertia*GRAB_INERTIA);} /* a hand or a foot with a whole body hanging from it is a very stiff pendulum on almost no inertia: held, it is given the steadiness of the grip that holds it, and gets its own back when let go */
     }
     moveDrag(point){if(this.drag)this.drag.pointA={...point};}
     translateConnected(body,delta){
@@ -646,9 +649,22 @@
       while(queue.length){const current=queue.shift();for(const c of joints){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!connected.has(other)){connected.add(other);queue.push(other);}}}
       for(const b of connected)Body.translate(b,delta);
     }
-    endDrag(throwVelocity){if(this.drag&&throwVelocity&&!this.drag.bodyB.isStatic){const v={x:clamp(throwVelocity.x,-THROW_MAX,THROW_MAX),y:clamp(throwVelocity.y,-THROW_MAX,THROW_MAX)},held=this.drag.bodyB;
-      for(const b of this.connected(held,this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce)))if(!b.isStatic)Body.setVelocity(b,b===held?v:Vector.add(Vector.mult(b.velocity,.4),Vector.mult(v,.6)));}
-      if(this.drag){if(this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,0);Composite.remove(this.world,this.drag);}this.drag=null;this.dragAngle=null;} // let go without spin, so it leaves the hand at the chosen angle
+    // Letting go changes nothing: what was held carries on with the velocity the pull had given it. That is the whole of throwing. (A last sanity limit, far above any real throw.)
+    endDrag(){if(this.drag&&!this.drag.bodyB.isStatic)for(const b of this.connected(this.drag.bodyB,this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce)))if(!b.isStatic&&b.speed>THROW_MAX)Body.setVelocity(b,Vector.mult(b.velocity,THROW_MAX/b.speed));
+      if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,0); /* turned to an angle with A / D, it leaves at that angle, without spin */
+      if(this.drag?.inertia&&!this.drag.bodyB.isStatic)Body.setInertia(this.drag.bodyB,this.drag.inertia);this.drag=null;this.dragAngle=null;}
+    // One substep of the cursor's pull. A spring-damper on the grabbed point, critically damped, sized to the mass it has to move: the body's own plus a share of whatever hangs off it (a ragdoll held by the hand),
+    // capped so that a light part hauling a heavy body does not turn into a spring too stiff for the step. Gravity is not cancelled - held things hang and dangle - and there is a limit to the force, so very heavy things trail.
+    grab(seconds) {
+      const d=this.drag,b=d.bodyB;if(!this.bodies.includes(b)){this.drag=null;this.dragAngle=null;return;}if(b.isStatic)return;
+      Vector.rotate(d.pointB,b.angle-d.angleB,d.pointB);d.angleB=b.angle; /* the grabbed point turns with the body */
+      if(this.time-d.loadAt>.25){d.loadAt=this.time;d.load=0;for(const x of this.connected(b,this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce)))if(!x.isStatic)d.load+=x.mass;}
+      const rate=GRAB_RATE*this.settings.grabStrength,m=Math.min(d.load||b.mass,b.mass*Math.min(GRAB_GEAR,(GRAB_STABLE/rate)**2)),per=60,/* outside collision events Matter reports velocity per 1/60 s, whatever the substep */ax=b.position.x+d.pointB.x,ay=b.position.y+d.pointB.y,
+        vx=(b.velocity.x-b.angularVelocity*d.pointB.y)*per,vy=(b.velocity.y+b.angularVelocity*d.pointB.x)*per; /* the grabbed point's own velocity, px/s */
+      let fx=m*(rate*rate*(d.pointA.x-ax)-2*GRAB_DAMP*rate*vx),fy=m*(rate*rate*(d.pointA.y-ay)-2*GRAB_DAMP*rate*vy);const f=Math.hypot(fx,fy),most=Math.min(m*GRAB_ACCEL,GRAB_FORCE);if(f>most){fx*=most/f;fy*=most/f;}
+      Body.applyForce(b,{x:ax,y:ay},{x:fx*1e-6,y:fy*1e-6}); /* px/s2 to Matter's px/ms2 */
+      if(this.dragAngle==null)Body.setAngularVelocity(b,b.angularVelocity*(1-(b.plugin.part?GRAB_CALM_PART:GRAB_CALM))); /* a hand steadies what it holds: it swings, it does not spin */
+    }
     // Rotating a held body sets a target angle that the grab keeps steering to, so it stays put when the key is released.
     rotate(body,amount,immediate=false){
       if(!body)return;const held=this.drag?.bodyB===body;
@@ -995,7 +1011,7 @@
         if(target.plugin.material==='flesh'&&target.plugin.part&&!other.plugin.part&&!other.plugin.boundary&&this.settings.decals&&(target.plugin.bleed>.1&&closing>3||closing>11))this.stain(other,point,rnd(1.2,2.2)); /* what hits a bleeding body, or hits a body hard, comes away marked */
         if(blade){if(speed>7){this.damage(target,Math.min(od.sharp.power??60,(speed-7)*4.5),point,'cut',toward);if(od.sharp.hot)this.sear(target);}}
         else if(target.plugin.part)this.land(target,other,closing,point,toward,n);
-        else if(closing>7)this.damage(target,(closing-7)*(matOf(target.plugin).brittle?3:1)*1.5*(od?.blunt||1),point,'impact',toward);}
+        else if(closing>OBJECT_SAFE)this.damage(target,(closing-OBJECT_SAFE)*(matOf(target.plugin).brittle?3:1)*.75*(od?.blunt||1),point,'impact',toward);}
       if(closing>3)this.onEffect('impact',Math.min(.5,closing/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
@@ -1061,6 +1077,7 @@
         }
         if(p.active&&defs[p.kind]?.device==='battery'&&Math.floor(this.time*3)!==p.lastPulse){p.lastPulse=Math.floor(this.time*3);this.shock(b,1,Vector.add(b.position,Vector.rotate({x:0,y:-(p.h||0)/2},b.angle)));} /* from the terminals */
       }
+      if(this.drag)this.grab(seconds);
       if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,clamp(wrap(this.dragAngle-this.drag.bodyB.angle)*.35,-.3,.3));
       // Limits are equal-and-opposite angular impulses: momentum-neutral, so a body pinned against the floor cannot walk itself sideways.
       for(const c of this.joints){if(!c.plugin.joint||c.plugin.min===undefined)continue;const a=c.bodyA,b=c.bodyB,slack=this.fractured(a)||this.fractured(b)||c.plugin.broken?FRACTURE_SLACK:0,relative=wrap(b.angle-a.angle),error=relative-clamp(relative,c.plugin.min-slack,c.plugin.max+slack);
