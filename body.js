@@ -188,12 +188,13 @@
     const torn = []; if (!state.noGore) { const skinLoss = Math.floor(clamp((40 - hp) / 8, 0, 4)), deep = Math.floor(clamp((16 - hp) / 5, 0, 3));
       for (let i = 0; i < skinLoss; i++) torn.push({ x: (hash(slot * 9.1 + i) - .5) * w * .8, y: (hash(slot * 5.3 + i * 2.7) - .5) * h * .8, r: 2.2 + hash(i + slot) * 2, seed: slot + i, deep: i < deep }); }
     // Fire eats the body from the outside in. char runs 0..1 over about sixteen seconds of burning: the skin is gone by the middle of that, the muscle by the end, and the bone is left, blackened.
-    const burn = state.noGore ? 0 : state.char || 0, reach = Math.max(w, h), burnSkin = [], burnMuscle = [];
+    // A regrowing part is the same picture run backwards: bone first, then the flesh closes over it, then the skin (p.grow runs 0..1). It shows even with gore off - it is growth, not injury.
+    const charred = state.noGore ? 0 : state.char || 0, burn = Math.max(charred, p.grow !== undefined ? clamp(1.08 - p.grow * 1.1, 0, 1) : 0), reach = Math.max(w, h), burnSkin = [], burnMuscle = [];
     if (burn > .04) for (let i = 0; i < 12; i++) { const bx = (hash(slot * 3.7 + i * 1.9) - .5) * w * .9, by = (hash(slot * 7.1 + i * 4.3) - .5) * h * .9, rs = clamp(burn * 1.2 - i * .035, 0, 1) * reach * (burn > .8 ? 1.6 : .62), rm = clamp((burn - .45) * 2 - i * .04, 0, 1) * reach * (burn > .92 ? 1.6 : .6); if (rs > .6) burnSkin.push([bx, by, rs, i]); if (rm > .6) burnMuscle.push([bx, by, rm, i]); }
     const intact = !wounds.length && !torn.length && !broken && !burnSkin.length;
     if (!intact) { c.save(); outline(c, part, w, h); c.clip(); outline(c, part, w, h); drawBone(c, part, w, h, broken, clamp((1 - burn) / .22, 0, 1)); c.restore();
       layer(c, 0, size, m => { outline(m, part, w, h); drawMuscle(m, part, w, h); }, m => { for (const wd of wounds) if (hole(m, wd, 1)) m.fill(); for (const t of torn) if (t.deep) { m.beginPath(); ragged(m, t.x, t.y, t.r * .6, t.seed); m.fill(); } if (broken) { m.beginPath(); m.ellipse(0, h * .04, w * .34, h * .07, .25, 0, 7); m.fill(); } for (const [bx, by, r, i] of burnMuscle) { m.beginPath(); ragged(m, bx, by, r, slot + i, 12); m.fill(); } });
-      if (burn > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${Math.min(.28, (burn - .5) * .6)})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
+      if (charred > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${Math.min(.28, (charred - .5) * .6)})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
     layer(c, 1, size, s => { outline(s, part, w, h); drawSkin(s, part, w, h, slot, state);
       // bruises, burns and charring are changes to the skin itself, so they are painted before the holes are cut
       if (!state.noGore) { for (const wd of wounds) { if (wd.type === 'impact') { const fade = clamp(1 - (state.time - (wd.t ?? state.time)) / 150, .25, 1), r = (wd.radius || 3) * 1.7, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, `rgba(88,40,96,${.62 * fade})`); g.addColorStop(.6, `rgba(120,70,60,${.4 * fade})`); g.addColorStop(1, 'rgba(150,130,60,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
@@ -225,13 +226,13 @@
   // ---- cache. A numeric signature of everything that changes the picture; string keys only for the shared pristine sprites.
   const perBody = new WeakMap(), pristine = new Map();
   function signature(p, state) {
-    let sig = Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
+    let sig = (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i]; sig += (w.seed * 1e5 | 0) * (i + 3) + (w.type === 'impact' ? Math.floor((state.time - (w.t ?? 0)) / 12) * 17 : 0); }
     const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {
     const p = body.plugin, sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;
-    const clean = !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
+    const clean = p.grow === undefined && !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
     if (clean) { const key = `${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 20)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
       if (!shared) { if (pristine.size > 400) pristine.clear(); shared = document.createElement('canvas'); paintPart(shared, p, state); pristine.set(key, shared); } perBody.set(body, { sig, canvas: shared, own: false }); return shared; }
     const canvas = entry?.own ? entry.canvas : document.createElement('canvas'); paintPart(canvas, p, state); perBody.set(body, { sig, canvas, own: true }); return canvas;
@@ -244,7 +245,7 @@
     SCALE, PAD, FACES, layer: depth,
     trace(ctx, p) { ctx.beginPath(); outline(ctx, p.part, p.w, p.h); },   // the part's silhouette as a path, for clipping what lies on the skin
     // The strip that closes the gap at a joint, drawn just before the outer part so it sits in that limb's layer.
-    filler(ctx, c, a, b) { const pa = c.bodyA.plugin, pb = c.bodyB.plugin, organic = pb.material === 'flesh', burnt = Math.min(pa.char || 0, pb.char || 0); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    filler(ctx, c, a, b) { const pa = c.bodyA.plugin, pb = c.bodyB.plugin, organic = pb.material === 'flesh', burnt = Math.max(Math.min(pa.char || 0, pb.char || 0), pb.grow !== undefined ? 1 - pb.grow : 0);   /* a joint to a part that is still growing is bare bone, then raw, then skinned */ ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
       if (!organic) { ctx.strokeStyle = '#596d67'; ctx.lineWidth = 6; } else if (burnt > .8) { ctx.strokeStyle = burnt > .95 ? '#b9ad92' : '#7a2429'; ctx.lineWidth = 2.2; } else { ctx.strokeStyle = burnt > .45 ? '#8e3034' : depth(pb) === 0 ? '#b48d6e' : '#d6ab88'; ctx.lineWidth = Math.min(pa.w, pb.w) * .72; }
       ctx.stroke(); ctx.lineCap = 'butt'; },
     // Draw a human part at the origin of the current transform (already translated, rotated and mirrored by the caller).

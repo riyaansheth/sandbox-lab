@@ -164,7 +164,7 @@
     [4,14,{x:0,y:11},{x:0,y:-22},-1.9,.6,'hip'],[14,15,{x:0,y:22},{x:0,y:-20},-.05,2.4,'knee'],[15,16,{x:0,y:20},{x:0,y:-4},-.5,.6,'ankle']
   ];
   const LOCK_STIFFNESS=2,SLOT_MUSCLE=Array.from({length:17},(_,slot)=>{const t=JOINTS.find(j=>j[1]===slot);return t?MUSCLE[t[6]]:1;}); // each slot's usual muscle strength, so a pose can ask for one absolute stiffness everywhere
-  const LIMIT_GAIN=.6,LIMIT_SPEED=.4,LIMIT_SHARE=.5,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.8,AIR_UPRIGHT=.15,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
+  const LIMIT_GAIN=.6,LIMIT_SPEED=.4,LIMIT_SHARE=.5,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.8,AIR_UPRIGHT=.15,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,REGROW_LAYERS=1.8,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
@@ -918,7 +918,7 @@
         // A sanity limit, not a behaviour: if solver and muscles ever gang up on a limb, it is slowed rather than fired across the room. Far above anything a throw, a blast or a fall produces.
         if(p.part&&!b.isStatic){if(b.speed>LIMB_SPEED)Body.setVelocity(b,Vector.mult(b.velocity,LIMB_SPEED/b.speed));if(b.angularSpeed>LIMB_SPIN)Body.setAngularVelocity(b,Math.sign(b.angularVelocity)*LIMB_SPIN);}
         if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
-        p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/REGROW_SWELL;if(p.grow>=1){delete p.grow;delete p.growFrom;}}
+        p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
           const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate);let sum=0,drop=null;
