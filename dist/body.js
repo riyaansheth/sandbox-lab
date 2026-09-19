@@ -154,22 +154,64 @@
     c.strokeStyle = SKIN.line; c.globalAlpha = .45; c.lineWidth = .6; c.beginPath(); c.moveTo(x * .15, y * .88); c.quadraticCurveTo(-x * .1, y * .7, -x * .2, y * .35); c.stroke(); c.globalAlpha = 1;
   }
 
-  // ---- wounds: what each one removes from the skin and from the muscle
+  // ---- wounds. Every cause has its own shape, so a body can be read: what hit it, how hard, how long ago.
+  // depth says which layers a wound opens (0 none: a bruise, a burn, a shock mark; 1 marks the skin; 2 opens it to the muscle; 3 goes through the muscle to bone). wet is when it last bled freely.
+  const CLOT_AT = 30, SCAB_AT = 150, lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1), mix = (a, b, t) => a.map((v, i) => Math.round(lerp(v, b[i], t)));
+  const stageOf = (w, time) => { const age = time - (w.wet ?? w.t ?? time); return w.bleed > .05 && age < CLOT_AT ? 0 : age < SCAB_AT ? 1 : 2; };   // 0 fresh and wet, 1 clotted, 2 scabbed over
+  const depthOf = w => w.depth ?? (w.type === 'impact' || w.type === 'burn' || w.type === 'shock' ? 0 : 3), grown = w => Math.min(4, (w.hits || 1) - 1);
+  const crater = w => w.type === 'exit' ? clamp(w.radius || 3, 3, 4.4) + grown(w) * .8 : clamp((w.radius || 3) * .95, 3, 5) + grown(w) * .6;   // wounds stay small and crisp; hits in one place make one bigger wound
   function ragged(c, x, y, r, seed, points = 11) { for (let i = 0; i < points; i++) { const a = i / points * Math.PI * 2, rr = r * (.72 + .42 * hash(seed + i * 3.1)); (i ? c.lineTo : c.moveTo).call(c, x + Math.cos(a) * rr, y + Math.sin(a) * rr); } c.closePath(); }
   function slit(c, x, y, length, width, angle) { c.save(); c.translate(x, y); c.rotate(angle); c.moveTo(-length / 2, 0); c.quadraticCurveTo(0, -width, length / 2, 0); c.quadraticCurveTo(0, width, -length / 2, 0); c.closePath(); c.restore(); }
-  // depth 0 = the hole in the skin, 1 = the hole in the muscle under it
-  const crater = w => w.type === 'exit' ? clamp(w.radius || 3, 3, 4.4) : clamp((w.radius || 3) * .95, 3, 5);   // wounds stay small and crisp: a big hit is more wounds, not one blotch
-  function hole(c, w, depth) {
-    const r = w.radius || 3, k = depth ? .5 : 1; c.beginPath();
+  const along = (c, w, sx, sy, draw) => { c.save(); c.translate(w.x, w.y); c.rotate(w.dir ?? w.seed); c.scale(sx, sy); draw(); c.restore(); };   // a wound is longer along the line of the blow
+  // shrapnel: a scatter of small pits, each drawn out along the way the blast was going
+  function pits(c, w, k) { const r = w.radius || 3, n = 5 + Math.round(r * .8), spread = r * 1.5 + 2, dir = w.dir ?? w.seed; for (let i = 0; i < n; i++) { const a = hash(w.seed + i * 1.7) * 6.28, d = Math.sqrt(hash(w.seed * 2 + i * 5.3)) * spread, px = w.x + Math.cos(a) * d, py = w.y + Math.sin(a) * d, pr = (.55 + hash(w.seed + i * 9.1) * .9) * k; c.moveTo(px + pr * 1.7, py); c.ellipse(px, py, pr * 1.7, pr * .8, dir, 0, 7); } }
+  const cutLength = w => clamp((w.radius || 3) * 3.4, 7, 22), slitAngle = w => (w.dir ?? w.seed) + Math.PI / 2;
+  // layer 0 = the hole in the skin, 1 = the hole in the muscle under it. Returns false when this wound does not reach that layer.
+  function hole(c, w, layer) {
+    const d = depthOf(w); if (d < layer + 2) return false; const r = w.radius || 3, k = layer ? .55 : 1; c.beginPath();
     switch (w.type) {
-      case 'bullet': c.arc(w.x, w.y, depth ? 1.1 : 2.3, 0, 7); break;
-      case 'exit': ragged(c, w.x, w.y, crater(w) * k, w.seed); break;
-      case 'blast': ragged(c, w.x, w.y, crater(w) * k, w.seed, 13); break;
-      case 'stab': slit(c, w.x, w.y, clamp(r * 1.5, 4, 9) * (depth ? .7 : 1), depth ? .9 : 1.7, (w.dir ?? w.seed) + Math.PI / 2); break;
-      case 'cut': if (depth && r < 5) return false; slit(c, w.x, w.y, clamp(r * 3.4, 7, 22) * (depth ? .6 : 1), depth ? .7 : 1.5, (w.dir ?? w.seed) + Math.PI / 2); break;
-      default: return false;                                 // bruises and burns leave the layers intact
+      case 'bullet': c.arc(w.x, w.y, (layer ? 1.1 : 2.1) + grown(w) * (layer ? .4 : .7), 0, 7); break;                              // small and neat
+      case 'exit': along(c, w, 1.35, .85, () => ragged(c, 0, 0, crater(w) * k, w.seed)); break;                                          // bigger, ragged, blown outward
+      case 'blast': pits(c, w, k); if (d >= 3) along(c, w, 1.25, .9, () => ragged(c, 0, 0, crater(w) * .7 * k, w.seed, 13)); break;
+      case 'stab': slit(c, w.x, w.y, clamp(r * 1.5, 4, 9) * (layer ? .7 : 1), layer ? .8 : 1.3, slitAngle(w)); break;                  // the width of the blade, and it stays narrow
+      case 'cut': slit(c, w.x, w.y, cutLength(w) * (layer ? .6 : 1), (d >= 3 ? 2.8 : 1.5) * (layer ? .5 : 1), slitAngle(w)); break;      // long, and it gapes wider the deeper it is
+      case 'impact': slit(c, w.x, w.y, 5 + grown(w), layer ? .5 : 1, w.seed); break;                                                     // only a very hard blow splits the skin
+      default: return false;
     }
     return true;
+  }
+  // What a wound does to the skin round it, painted on the skin before the holes are cut: the bruise, the burn, the scorch, the fern, the halo, and wounds too shallow to open anything.
+  function mark(s, w, W, H, time) {
+    const r = w.radius || 3, tint = (x, y, rad, stops) => { const g = s.createRadialGradient(x, y, 0, x, y, rad); for (const [at, col] of stops) g.addColorStop(at, col); s.fillStyle = g; s.fillRect(-W, -H, W * 2, H * 2); };
+    if (w.type === 'impact') { // nothing for the first seconds, then red, spreading and turning purple, then yellow-green as it fades over minutes
+      const age = time - (w.t ?? time), col = age < 8 ? mix([214, 84, 76], [88, 40, 96], (age - 2) / 6) : mix([88, 40, 96], [146, 150, 62], (age - 90) / 150), alpha = clamp(age / 3, 0, 1) * lerp(.62, 0, (age - 200) / 100), rad = r * 1.7 * lerp(.55, 1, age / 8) * lerp(1, 1.35, age / 120);
+      if (alpha > .02) tint(w.x, w.y, rad, [[0, `rgba(${col},${alpha})`], [.6, `rgba(${mix(col, [120, 70, 60], .5)},${alpha * .6})`], [1, `rgba(${col},0)`]]); }
+    else if (w.type === 'burn') { const dose = w.force ?? 99, rad = r * 2; // red, then blistered, then black char; never any blood
+      if (dose < 40) { tint(w.x, w.y, rad, [[0, 'rgba(206,62,50,.7)'], [.7, 'rgba(206,80,60,.4)'], [1, 'rgba(206,80,60,0)']]);
+        if (dose >= 15) for (let i = 0; i < 5; i++) { const a = hash(w.seed + i) * 6.28, d = hash(w.seed + i * 4.1) * rad * .55, bx = w.x + Math.cos(a) * d, by = w.y + Math.sin(a) * d, br = .9 + hash(w.seed + i * 7.7) * 1.1; s.fillStyle = 'rgba(238,214,160,.9)'; s.strokeStyle = 'rgba(150,60,46,.8)'; s.lineWidth = .35; s.beginPath(); s.arc(bx, by, br, 0, 7); s.fill(); s.stroke(); s.fillStyle = '#ffffffaa'; s.beginPath(); s.arc(bx - br * .3, by - br * .3, br * .3, 0, 7); s.fill(); } }
+      else { tint(w.x, w.y, rad, [[0, 'rgba(14,10,9,.95)'], [.5, 'rgba(30,18,14,.85)'], [.75, 'rgba(150,50,36,.5)'], [1, 'rgba(150,70,40,0)']]); s.strokeStyle = 'rgba(190,80,50,.55)'; s.lineWidth = .4; for (let i = 0; i < 5; i++) { const a = hash(w.seed + i * 2.3) * 6.28; s.beginPath(); s.moveTo(w.x, w.y); s.lineTo(w.x + Math.cos(a) * rad * .3 + hash(i) - .5, w.y + Math.sin(a) * rad * .3); s.lineTo(w.x + Math.cos(a + .3) * rad * .55, w.y + Math.sin(a + .3) * rad * .55); s.stroke(); } } }
+    else if (w.type === 'shock') { // where the current went in, where it came out, and the red fern it drew under the skin between them
+      const ex = clamp(-w.x * .7 + (hash(w.seed) - .5) * W * .4, -W / 2 + 2, W / 2 - 2), ey = clamp(w.y + (hash(w.seed * 3) > .5 ? 1 : -1) * H * .38, -H / 2 + 2, H / 2 - 2), heading = Math.atan2(ey - w.y, ex - w.x), reach = Math.hypot(ex - w.x, ey - w.y);
+      s.strokeStyle = 'rgba(168,44,56,.75)'; s.lineCap = 'round'; const fern = (x, y, a, len, n) => { if (n < 0 || len < 1) return; const bend = a + (hash(x * 3.1 + y * 1.7 + n) - .5) * .7, x2 = x + Math.cos(bend) * len, y2 = y + Math.sin(bend) * len; s.lineWidth = .3 + n * .18; s.beginPath(); s.moveTo(x, y); s.lineTo(x2, y2); s.stroke(); fern(x2, y2, bend + .55, len * .62, n - 1); fern(x2, y2, bend - .55, len * .62, n - 1); if (n > 1) fern(x2, y2, bend, len * .8, n - 1); };
+      fern(w.x, w.y, heading, reach * .3, 3 + Math.min(1, grown(w))); s.lineCap = 'butt';
+      for (const [x, y, size] of [[w.x, w.y, 1.5], [ex, ey, 1.9]]) tint(x, y, size * 2.4, [[0, 'rgba(16,10,9,.95)'], [.42, 'rgba(40,20,14,.9)'], [.6, 'rgba(190,60,44,.6)'], [1, 'rgba(190,60,44,0)']]); }
+    else { const st = stageOf(w, time), d = depthOf(w);
+      if (w.type === 'blast') tint(w.x, w.y, r * 2.4 + 3, [[0, 'rgba(22,15,12,.6)'], [.6, 'rgba(40,24,18,.35)'], [1, 'rgba(40,24,18,0)']]);   // scorched
+      const halo = Math.min(7, r * (w.type === 'cut' ? 1 : 1.25) + 1.5), red = st === 0 ? .5 : st === 1 ? .28 : .1; tint(w.x, w.y, halo, [[0, `rgba(140,28,36,${red})`], [1, 'rgba(140,28,36,0)']]);
+      if (d === 1) { s.strokeStyle = s.fillStyle = st === 0 ? '#9c2630' : st === 1 ? '#5d1820' : '#4a2a20'; s.lineCap = 'round'; // too shallow to open the skin: a scratch, a graze, a peppering
+        if (w.type === 'cut') { s.lineWidth = .7; s.save(); s.translate(w.x, w.y); s.rotate(slitAngle(w)); s.beginPath(); s.moveTo(-cutLength(w) / 2, 0); s.quadraticCurveTo(0, -.8, cutLength(w) / 2, 0); s.stroke(); s.restore(); }
+        else if (w.type === 'bullet') { s.lineWidth = 1.5; const a = w.dir ?? w.seed; s.beginPath(); s.moveTo(w.x - Math.cos(a) * 3.5, w.y - Math.sin(a) * 3.5); s.lineTo(w.x + Math.cos(a) * 3.5, w.y + Math.sin(a) * 3.5); s.stroke(); }
+        else if (w.type === 'blast') { s.beginPath(); pits(s, w, .8); s.fill(); } s.lineCap = 'butt'; } }
+  }
+  // Over the finished layers: what is in the hole (wet blood, a clot, a scab), its rim, and the skin torn outward by exit wounds and blasts.
+  function finish(c, w, time) {
+    const d = depthOf(w); if (d < 2) return; const st = stageOf(w, time), rim = st === 0 ? '#a3222c' : st === 1 ? '#5d1820' : '#3a2018';
+    if (st > 0 && hole(c, w, 0)) { c.fillStyle = st === 1 ? 'rgba(70,14,20,.62)' : 'rgba(44,25,19,.93)'; c.fill(); }             // the clot darkens it; the scab closes it
+    if (w.type === 'bullet') { if (st < 2) { c.fillStyle = '#16060a'; c.beginPath(); c.arc(w.x, w.y, 1 + grown(w) * .3, 0, 7); c.fill(); } c.strokeStyle = rim; c.lineWidth = .7; c.beginPath(); c.arc(w.x, w.y, 2.3 + grown(w) * .7, 0, 7); c.stroke(); }
+    else if (w.type === 'exit' || w.type === 'blast') { c.strokeStyle = rim; c.lineWidth = .7; c.beginPath(); along(c, w, w.type === 'exit' ? 1.35 : 1.25, w.type === 'exit' ? .85 : .9, () => ragged(c, 0, 0, crater(w) * (w.type === 'exit' || d < 3 ? 1 : .7), w.seed, w.type === 'exit' ? 11 : 13)); if (w.type === 'exit' || d >= 3) c.stroke();
+      const a = w.dir ?? w.seed, reach = crater(w) * (w.type === 'exit' ? 1.3 : 1); c.fillStyle = '#c99a78'; for (const off of [-.55, 0, .55]) { const b = a + off, bx = w.x + Math.cos(b) * reach, by = w.y + Math.sin(b) * reach; c.beginPath(); c.moveTo(bx - Math.sin(b) * 1.1, by + Math.cos(b) * 1.1); c.lineTo(bx + Math.cos(b) * 1.8, by + Math.sin(b) * 1.8); c.lineTo(bx + Math.sin(b) * 1.1, by - Math.cos(b) * 1.1); c.closePath(); c.fill(); c.stroke(); } }   // flaps of skin, thrown the way the force went
+    else if (hole(c, w, 0)) { c.strokeStyle = rim; c.lineWidth = .5; c.stroke(); }
+    if (st === 0) { c.fillStyle = '#ffffff66'; c.beginPath(); c.arc(w.x - .7, w.y - .7, .55, 0, 7); c.fill(); }                        // wet
   }
 
   const scratch = [0, 1].map(() => document.createElement('canvas'));
@@ -197,19 +239,16 @@
       if (charred > .5) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = `rgba(20,14,11,${Math.min(.28, (charred - .5) * .6)})`; c.fillRect(-w, -h, w * 2, h * 2); c.globalCompositeOperation = 'source-over'; } }   // and what is left chars
     layer(c, 1, size, s => { outline(s, part, w, h); drawSkin(s, part, w, h, slot, state);
       // bruises, burns and charring are changes to the skin itself, so they are painted before the holes are cut
-      if (!state.noGore) { for (const wd of wounds) { if (wd.type === 'impact') { const fade = clamp(1 - (state.time - (wd.t ?? state.time)) / 150, .25, 1), r = (wd.radius || 3) * 1.7, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, `rgba(88,40,96,${.62 * fade})`); g.addColorStop(.6, `rgba(120,70,60,${.4 * fade})`); g.addColorStop(1, 'rgba(150,130,60,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
-          else if (wd.type === 'burn') { const r = (wd.radius || 3) * 2, g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, 'rgba(18,12,10,.9)'); g.addColorStop(.55, 'rgba(96,40,24,.6)'); g.addColorStop(1, 'rgba(150,70,40,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); } }
+      if (!state.noGore) { s.globalCompositeOperation = 'source-atop'; for (const wd of wounds) mark(s, wd, w, h, state.time);
         if (p.bruise > .05) { const r = Math.max(w, h) * .6 * p.bruise + 3, g = s.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, `rgba(70,28,78,${Math.min(.75, p.bruise)})`); g.addColorStop(1, 'rgba(96,60,44,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); }
-        // every open wound reddens the skin around it
-        for (const wd of wounds) if (wd.type !== 'impact' && wd.type !== 'burn') { const r = Math.min(7, (wd.radius || 3) * (wd.type === 'cut' ? 1 : 1.25) + 1.5), g = s.createRadialGradient(wd.x, wd.y, 0, wd.x, wd.y, r); g.addColorStop(0, 'rgba(140,28,36,.5)'); g.addColorStop(1, 'rgba(140,28,36,0)'); s.fillStyle = g; s.globalCompositeOperation = 'source-atop'; s.fillRect(-w, -h, w * 2, h * 2); } }
+      }
       if (state.char > 0) { s.globalCompositeOperation = 'source-atop'; s.fillStyle = `rgba(24,17,14,${Math.min(.75, state.char * 1.6)})`; s.fillRect(-w, -h, w * 2, h * 2); }   // the skin that is still there blackens fast
       s.globalCompositeOperation = 'source-over'; outline(s, part, w, h); s.strokeStyle = SKIN.line; s.lineWidth = .7; s.stroke();
     }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } for (const [bx, by, r, i] of burnSkin) { s.beginPath(); ragged(s, bx, by, r, slot * 2 + i, 12); s.fill(); } });
     if (state.noGore) return;
     // finishing: the dark bore of a bullet hole, torn edges round the big wounds, the shard of a broken bone
     c.save(); outline(c, part, w, h); c.clip();   // a wound's rim never shows outside the body it is on
-    for (const wd of wounds) { if (wd.type === 'bullet') { c.fillStyle = '#16060a'; c.beginPath(); c.arc(wd.x, wd.y, 1, 0, 7); c.fill(); c.strokeStyle = '#5d1820'; c.lineWidth = .6; c.beginPath(); c.arc(wd.x, wd.y, 2.3, 0, 7); c.stroke(); }
-      else if (wd.type === 'exit' || wd.type === 'blast') { c.strokeStyle = '#6b1b24'; c.lineWidth = .7; c.beginPath(); ragged(c, wd.x, wd.y, crater(wd), wd.seed, wd.type === 'exit' ? 11 : 13); c.stroke(); } }
+    for (const wd of wounds) finish(c, wd, state.time);
     c.restore();
     if (broken) { c.fillStyle = BONE.base; c.strokeStyle = '#6b1b24'; c.lineWidth = .5; c.beginPath(); c.moveTo(-w * .08, h * .08); c.lineTo(w * .5, -h * .06); c.lineTo(w * .36, h * .05); c.lineTo(w * .05, h * .14); c.closePath(); c.fill(); c.stroke(); }
     // dressings: a cloth band round the part over each sealed wound (bands that overlap merge), with a little blood showing through where the wound is
@@ -227,7 +266,7 @@
   const perBody = new WeakMap(), pristine = new Map();
   function signature(p, state) {
     let sig = (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
-    const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i]; sig += (w.seed * 1e5 | 0) * (i + 3) + (w.type === 'impact' ? Math.floor((state.time - (w.t ?? 0)) / 12) * 17 : 0); }
+    const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i], age = state.time - (w.t ?? 0); sig += ((w.seed * 1e5 | 0) + depthOf(w) * 7 + stageOf(w, state.time) * 3 + (w.hits || 0) * 11 + Math.round((w.radius || 0) * 2) * 13 + Math.round((w.force || 0) / 8) * 17 + (w.type === 'impact' ? (age < 10 ? Math.floor(age) : 10 + Math.floor(age / 15)) * 19 : 0)) * (i + 3); }
     const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {

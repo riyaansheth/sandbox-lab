@@ -245,8 +245,8 @@ test('bullets lose power with distance; a distant one stops in what it hits, a c
   const arm=new Simulation();arm.configure({organDamage:false});const a=arm.spawn('human',1000,555),hand=a.bodies[10];arm.damage(hand,40,hand.position,'bullet',{x:1,y:0});assert.ok(!(a.stun>0)&&!(a.stunNext>0),'a hand wound does not knock anyone down');
   const hs=new Simulation();const h=hs.spawn('human',1000,555).bodies[0];hs.shoot({x:h.bounds.min.x-12,y:h.position.y},{x:1600,y:h.position.y});const he=hs.getEntity(h);assert.ok(he.stun>0||he.stunNext>0||!he.alive,'a head shot does');
 });
-test('electric shocks hurt without leaving wounds, weaker with each hop',()=>{
-  const s=new Simulation();const e=s.spawn('human',1000,555);s.shock(e.bodies[2]);assert.ok(e.bodies.every(b=>b.plugin.wounds.length===0&&!b.plugin.bleed));const hurt=e.bodies.map(b=>100-b.plugin.hp).filter(Boolean);assert.ok(Math.max(...hurt)>Math.min(...hurt)*3,'far parts take much less');
+test('electric shocks burn a mark where the current is strongest, never bleed, and weaken with each hop',()=>{
+  const s=new Simulation();const e=s.spawn('human',1000,555);s.shock(e.bodies[2]);assert.ok(e.bodies.every(b=>b.plugin.wounds.every(w=>w.type==='shock')&&!b.plugin.bleed));const marked=e.bodies.filter(b=>b.plugin.wounds.length).length;assert.ok(marked>=1&&marked<=6,`${marked} parts marked`);s.shock(e.bodies[2]);assert.equal(e.bodies[2].plugin.wounds.length,1,'a second shock deepens the same mark');const hurt=e.bodies.map(b=>100-b.plugin.hp).filter(Boolean);assert.ok(Math.max(...hurt)>Math.min(...hurt)*3,'far parts take much less');
 });
 // ---- gore spec, section 1: damage model
 const dry=body=>{for(const w of body.plugin.wounds)w.bleed=0;body.plugin.bleed=0;}; // stop the visible bleeding so a test can watch something else
@@ -624,4 +624,12 @@ test('one bullet cannot kill outside the fatal spots (head, neck, upper torso), 
     let low=100;for(let i=0;i<7200&&e.alive;i++){s.step();low=Math.min(low,e.blood);if(i>60&&!e.bodies.some(b=>b.plugin.bleed>.01||b.plugin.internal>.01))break;} /* until it is dead or has stopped bleeding */return {alive:e.alive,low,cause:e.causeOfDeath};};
   for(const slot of [3,4,9,14,15,16])for(const mult of [1,5]){ /* not the upper arm: in profile it lies over the chest, and a round that carries on into the upper torso has found a fatal spot */const r=once(slot,mult);assert.ok(r.alive,`slot ${slot} x${mult}: died of ${r.cause}`);assert.ok(r.low>30,`slot ${slot} x${mult}: blood fell to ${r.low.toFixed(0)}`);}
   assert.ok(!once(14,2,6).alive,'six rounds through a thigh do kill');assert.ok(!once(0,5).alive,'a .50 to the head kills');assert.ok(!once(2,5).alive||once(2,5).low<60,'the upper torso is a fatal spot');
+});
+
+test('wounds go deeper with force, dig deeper when hit again in the same place, and merge instead of piling up',()=>{
+  const hit=(type,amounts,spread=0)=>{const {s,e}=standing(),part=e.bodies[14];amounts.forEach((a,i)=>s.damage(part,a,{x:part.position.x+1,y:part.position.y-10+i*spread},type,{x:1,y:0}));return part.plugin.wounds.filter(w=>w.type===type);};
+  assert.deepEqual(hit('cut',[9]).map(w=>w.depth),[1],'a light cut only marks the skin');assert.deepEqual(hit('cut',[24]).map(w=>w.depth),[2],'a medium one opens it to the muscle');assert.deepEqual(hit('cut',[60]).map(w=>w.depth),[3],'a heavy one reaches bone');
+  assert.deepEqual(hit('impact',[20]).map(w=>w.depth),[0],'a blunt blow bruises');assert.deepEqual(hit('impact',[60]).map(w=>w.depth),[2],'only a very hard one splits the skin');
+  const dug=hit('cut',[18,18,18]);assert.equal(dug.length,1,'three cuts in one place are one wound');assert.equal(dug[0].depth,3,'dug to the bone');assert.equal(dug[0].hits,3);
+  assert.equal(hit('bullet',[40,40,40,40],9).length,4,'wounds apart stay apart');const many=hit('bullet',Array(40).fill(20),1.1);assert.ok(many.length<=10,`${many.length} wounds drawn for 40 rounds`);
 });

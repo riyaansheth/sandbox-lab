@@ -99,7 +99,7 @@
     exit:  {bone:.2, bleed:1/30, pain:.5, stun:0,  deep:false,wound:'exit'},    // the far side of a through-shot: bigger, wetter
     blast: {bone:1,  bleed:1/70, pain:1,  stun:1.3,deep:true, wound:'blast'},
     burn:  {bone:.1, bleed:0,    pain:1.2,stun:.5, deep:false,wound:'burn'},    // cauterises: see damage()
-    shock: {bone:0,  bleed:0,    pain:.22,stun:0,  deep:false,wound:null}       // current cooks; it does not cut
+    shock: {bone:0,  bleed:0,    pain:.22,stun:0,  deep:false,wound:'shock'}    // current cooks; it does not cut: an entry burn, an exit burn and a fern between them
   };
   const PAIN_PART={head:1.4,pelvis:1.4,neck:1.2,hand:1.1,foot:1.1}; // where it hurts more than elsewhere
   // Organs by body part: [organ, region in the part's own frame as x0,y0,x1,y1 fractions of its half-size, damage multiplier].
@@ -148,6 +148,8 @@
   const HOLD_LEVER=16;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
+  // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
+  const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},WOUND_MAX=10,BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
   const FATAL_SPOTS=new Set(['head','neck','chest']),BLEED_DRAIN=.3,WOUND_BLOOD=14,ARTERY_BLOOD=24,SHOT_BLOOD=40,GUT_BLEED=.7;
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
@@ -697,8 +699,8 @@
         const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
         else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
-        if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
-          p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined,...(FATAL_SPOTS.has(p.part)?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});if(p.wounds.length>14)p.wounds.shift();
+        if(profile.wound&&!(type==='shock'&&amount<SHOCK_MARK)){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
+          this.wound(p,{x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,wet:this.time,force:amount,depth:WOUND_DEPTH[type](amount),hits:1,bleed:Math.min(4,rate),artery:artery||undefined,...(FATAL_SPOTS.has(p.part)?{}:this.shotPool?{pool:this.shotPool}:{left:artery?ARTERY_BLOOD:WOUND_BLOOD})});
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
         this.bleedOf(p);
         if(e&&e.kind==='human'&&e.alive){if(set.organDamage&&(profile.deep||(type==='impact'&&amount>20)))this.organHit(e,body,lx,local.y,amount*(profile.deep?1:.4),type);
@@ -742,6 +744,14 @@
       }
     }
     // A part's bleeding is the sum of its wounds and stumps.
+    // A new wound either joins one of its own kind that it overlaps, or is added. Joining digs deeper rather than wider: the force adds up, and depth follows the total - skin (1), muscle (2), bone (3).
+    // So three cuts in one place are one deep gash, a burst into one spot is one big hole, and a body never carries more than a handful of wounds to draw.
+    wound(p,w) {
+      p.wounds??=[];const old=w.type==='shock'?p.wounds.find(o=>o.type==='shock'):p.wounds.find(o=>o.type===w.type&&!o.sealed&&Math.hypot(o.x-w.x,o.y-w.y)<Math.max(5,(o.radius+w.radius)*.7));
+      if(!old){p.wounds.push(w);if(p.wounds.length>WOUND_MAX)p.wounds.splice(p.wounds.findIndex(o=>!(o.bleed>0))>=0?p.wounds.findIndex(o=>!(o.bleed>0)):0,1);return w;} /* the oldest dry one makes room */
+      const a=old.radius,b=w.radius;old.x=(old.x*a+w.x*b)/(a+b);old.y=(old.y*a+w.y*b)/(a+b);old.radius=Math.min(11,Math.hypot(a,b*.6));old.force=(old.force||0)+w.force;old.depth=Math.min(3,Math.max(old.depth||0,w.depth,WOUND_DEPTH[w.type](old.force*.7)));
+      old.hits=(old.hits||1)+1;old.bleed=Math.min(4,(old.bleed||0)+w.bleed*.7);old.wet=w.t;old.artery=old.artery||w.artery;if(w.type==='impact')old.t=Math.min(old.t,w.t-BRUISE_RISE);return old; /* a fresh blow on a bruise does not send it back to invisible */
+    }
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
     kill(e,cause){if(!e.alive)return;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
       e.twitchAt=e.kind==='human'&&!/destroyed/.test(cause)?[rnd(.4,1.4),random()<.6?rnd(1.8,TWITCH_WINDOW):99]:[];}
