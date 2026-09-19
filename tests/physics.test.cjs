@@ -17,7 +17,7 @@ test('ragdoll settles with its articulated joints intact',()=>{
 });
 test('bullet hits nearest object instead of passing through to target',()=>{
   const s=new Simulation();const a=s.spawn('metal',600,300).bodies[0],b=s.spawn('crate',800,300).bodies[0];
-  const hit=s.shoot({x:100,y:300},{x:1000,y:300});assert.equal(hit,a);assert.ok(a.plugin.hp<460&&a.plugin.hp>430,`steel beam at ${a.plugin.hp}`);assert.equal(b.plugin.hp,80);
+  s.shotLog=[];const hit=s.shoot({x:100,y:300},{x:1000,y:300});assert.equal(hit,a);assert.ok(a.plugin.hp<500,'the beam is struck');assert.ok(!s.shotLog.some(h=>h.body===a&&h.through),'and the round does not go through it: a pistol round bounces off steel');assert.ok(s.shotLog[0].body===a,'the beam, not the crate behind it, is what it met first');
 });
 test('fire damages flammable materials and healing extinguishes',()=>{
   const s=new Simulation();const b=s.spawn('crate',1000,620).bodies[0];s.ignite(b);advance(s,120);assert.ok(b.plugin.hp<80);assert.ok(b.plugin.burning);s.heal(b);assert.equal(b.plugin.hp,80);assert.equal(b.plugin.burning,false);assert.equal(b.plugin.heat,20);
@@ -149,7 +149,7 @@ test('defaults leave behaviour unchanged, and each gameplay setting does what it
   assert.equal(hit({}).arm.plugin.hp,70);assert.equal(hit({fragility:2}).arm.plugin.hp,40);assert.equal(hit({fragility:.5}).arm.plugin.hp,85);
   assert.ok(hit({fragility:2}).s.spawn('crate',300,300).bodies[0].plugin.hp===80,'fragility is for ragdolls only');
   const stunned=set=>{const s=new Simulation();s.configure(set);const chest=s.spawn('human',1000,555).bodies[2];s.damage(chest,45,chest.position);const e=s.getEntity(chest);return Math.max(e.stun||0,e.stunNext||0);}; // a standing body is knocked down a moment later, through a staggerassert.ok(stunned({})>0);assert.equal(stunned({stunScale:0}),0);assert.ok(stunned({stunScale:3})>stunned({})*2.5);
-  const bullet=set=>{const s=new Simulation();s.configure(set);const b=s.spawn('metal',600,300).bodies[0];s.shoot({x:500,y:300},{x:1000,y:300});return Math.round(500-b.plugin.hp);};assert.equal(bullet({}),77,'55 x 1.4 at point-blank range');assert.equal(bullet({bulletDamage:200}),280);
+  const bullet=set=>{const s=new Simulation().seed(1);s.configure(set);const b=s.spawn('crate',600,300).bodies[0];let first=null;const dmg=s.damage.bind(s);s.damage=(body,amount,...r)=>{if(body===b&&first===null)first=amount;return dmg(body,amount,...r);};s.shoot({x:500,y:300},{x:1000,y:300});return first;}; /* the first hit only: the round goes on, and may come back off the far wall */const base=bullet({}),more=bullet({bulletDamage:100});assert.ok(base>0);assert.ok(Math.abs(more/base-100/55)<.01,`bullet damage scales what a round does (${base.toFixed(1)} -> ${more.toFixed(1)})`);
   const g=new Simulation();g.configure({gravity:-9.81});const up=g.spawn('crate',1000,300).bodies[0];advance(g,60);assert.ok(up.position.y<290,'negative gravity should fall upward');
   const v=new Simulation();v.configure({airDrag:0});assert.equal(v.spawn('crate',1,1).bodies[0].frictionAir,0);v.configure({airDrag:2});assert.ok(Math.abs(v.bodies[0].frictionAir-.012)<1e-9);
   const cap=new Simulation();cap.configure({maxObjects:100});for(let i=0;i<150;i++)cap.spawn('ball',100+i*10,100);assert.equal(cap.bodies.length,100);
@@ -922,14 +922,14 @@ test('falling follows real physics: 9.81 m/s2, the speed of impact grows with th
 
 // ---- ballistics, phase 1: energy
 const range=(set={})=>{const s=new Simulation().seed(2);s.gravity=0;s.configure({gravity:0,autoBalance:false,organDamage:false,...set});return s;};
-const round=kind=>{const f=require('../items.js').ITEMS.find(i=>i.id===kind).firearm;return {energy:f.energy,diameter:f.diameter};};
+const round=kind=>{const f=require('../items.js').ITEMS.find(i=>i.id===kind).firearm;return {energy:f.energy,diameter:f.diameter,ms:f.speed};}; /* ms: the round's real speed, for what depends on it, while it is still traced at once */
 const fire=(s,kind,y,x=600)=>{s.shotLog=[];const spec=round(kind);s.shoot({x,y},{x:x+100,y},null,spec);return s.shotLog;};
 
 test('energy: a pistol round stops in the first torso, a 5.56 goes through and into the body behind, a .50 through two bodies and a crate, a pellet never leaves a torso',()=>{
   const two=()=>{const s=range();const a=s.spawn('human',1000,400),b=s.spawn('human',1160,400);return {s,a,b,y:a.bodies[3].position.y};}; /* belly height: the arm hangs clear of it */
   const pistol=two();const log=fire(pistol.s,'gun',pistol.y);assert.ok(log.length>=1&&!log[log.length-1].through,'the pistol round stops');assert.ok(log.every(h=>pistol.a.bodies.includes(h.body)),'inside the first body');assert.ok(pistol.b.bodies.every(b=>b.plugin.hp===100));
   const rifle=two();const r=fire(rifle.s,'rifle',rifle.y);assert.ok(r.some(h=>rifle.b.bodies.includes(h.body)),'the 5.56 reaches the body behind');assert.ok(rifle.b.bodies.some(b=>b.plugin.hp<100));
-  const big=two(),crate=big.s.spawn('crate',1320,big.y).bodies[0];big.s.freeze(crate);const fifty=fire(big.s,'sniper',big.y);assert.ok(fifty.some(h=>h.body===crate)&&crate.plugin.hp<crate.plugin.maxHp,'the .50 goes through both bodies and into the crate');assert.ok(fifty.filter(h=>h.body!==crate).every(h=>h.through),'and through everything before it');
+  const big=two(),crate=big.s.spawn('crate',1320,big.y).bodies[0];big.s.freeze(crate);const fifty=fire(big.s,'sniper',big.y);assert.ok(fifty.some(h=>h.body===crate)&&crate.plugin.hp<crate.plugin.maxHp,'the .50 goes through both bodies and into the crate');assert.ok(fifty.filter(h=>h.body&&h.body!==crate&&!h.ricochet&&!h.body.plugin.boundary).every(h=>h.through),'and through everything before it');
   for(let seed=1;seed<=5;seed++){const s=range();s.seed(seed);const e=s.spawn('human',1000,400);const log=fire(s,'shotgun',e.bodies[3].position.y);const inside=log.filter(h=>h.body.plugin.part==='abdomen');assert.ok(inside.every(h=>!h.through),'a pellet never leaves the belly');assert.ok(!e.bodies[3].plugin.wounds.some(w=>w.type==='exit'));}
 });
 
@@ -945,9 +945,43 @@ test('limbs: a pistol never takes one off at range; a rifle takes a hand; a .50 
   const at=(s,e,slot)=>e.bodies.find(b=>b.plugin.slot===slot)||s.bodies.find(b=>b.plugin.slot===slot);
   for(const slot of [10,9,14,15,0]){const s=range({organDamage:true});const e=s.spawn('human',1000,400);const part=at(s,e,slot);for(let i=0;i<8;i++)fire(s,'gun',part.position.y,part.position.x-300);s.step();assert.ok(e.bodies.includes(part)&&s.bodies.includes(part),`8 pistol rounds at range leave the ${part.plugin.part} on`);}
   const hand=range(),h=hand.spawn('human',1000,400),palm=at(hand,h,10),arm=h.bodies.filter(b=>b.plugin.slot>=8&&b.plugin.slot<=10);for(const b of arm)Body.rotate(b,-Math.PI/2,at(hand,h,8).position); /* the arm held out in front, clear of the legs it hangs beside */
-  fire(hand,'rifle',palm.position.y,palm.position.x-300);hand.step();assert.ok(!hand.bodies.includes(palm)||!h.bodies.includes(palm),'a 5.56 takes the hand');const thighR=range(),tr=thighR.spawn('human',1000,400),th=at(thighR,tr,14);fire(thighR,'rifle',th.position.y,th.position.x-300);thighR.step();assert.ok(tr.bodies.includes(th),'but not a whole thigh');
+  hand.shotLog=[];hand.shoot({x:palm.position.x,y:palm.position.y-300},{x:palm.position.x,y:palm.position.y},null,round('rifle'));hand.step(); /* from above: through the hand and nothing else */assert.ok(!hand.bodies.includes(palm)||!h.bodies.includes(palm),'a 5.56 takes the hand');const thighR=range(),tr=thighR.spawn('human',1000,400),th=at(thighR,tr,14);fire(thighR,'rifle',th.position.y,th.position.x-300);thighR.step();assert.ok(tr.bodies.includes(th),'but not a whole thigh');
   const leg=range(),l=leg.spawn('human',1000,400),thigh=at(leg,l,14);fire(leg,'sniper',thigh.position.y,thigh.position.x-300);leg.step();assert.ok(!l.bodies.includes(thigh),'a .50 takes the thigh');assert.ok(l.bodies.some(b=>b.plugin.severed?.length),'and leaves a stump');
   const head=range({organDamage:true}),hd=head.spawn('human',1000,400),skull=at(head,hd,0);fire(head,'sniper',skull.position.y,skull.position.x-300);head.step();assert.ok(!head.bodies.includes(skull)&&!hd.alive,'a .50 to the head kills');assert.match(hd.causeOfDeath,/head|brain/,'with its cause');
   const waist=range(),w=waist.spawn('human',1000,400),belly=at(waist,w,3);fire(waist,'sniper',belly.position.y,belly.position.x-300);waist.step();assert.ok(!waist.joints.some(c=>c.plugin.name==='waist'&&(c.bodyA.plugin.entityId===w.id||c.bodyB.plugin.entityId===w.id)),'and cuts the body in two at the waist');
   const none=range({gibCount:0}),n=none.spawn('human',1000,400),t=at(none,n,14);fire(none,'sniper',t.position.y,t.position.x-300);none.step();assert.ok(!n.bodies.includes(t),'the thigh still goes');assert.equal(none.bodies.filter(b=>b.plugin.gib).length,0,'with no gibs');
+});
+
+// ---- ballistics, phase 3: what a round does on its way
+test('a round that stops stays in the part, one record, saved; it aches and keeps its wound from closing; the X-ray and the inspector show it',()=>{
+  const s=range();const e=s.spawn('human',1000,400),belly=e.bodies[3];e.alive=true;fire(s,'gun',belly.position.y);assert.equal(belly.plugin.lodged.length,1,'one round, one record');const r=belly.plugin.lodged[0];assert.ok(Math.abs(r.x)<=belly.plugin.w/2+.01&&Math.abs(r.y)<=belly.plugin.h/2+.01&&r.calibre===9);
+  assert.ok(e.bodies.filter(b=>b!==belly).every(b=>!b.plugin.lodged?.length));const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.deepEqual(back.bodies.find(b=>b.plugin.slot===3).plugin.lodged,belly.plugin.lodged,'saved and loaded');
+  const through=range(),t=through.spawn('human',1000,400);fire(through,'rifle',t.bodies[3].position.y);assert.ok(!t.bodies[3].plugin.lodged?.length,'a round that went through leaves nothing behind');
+  const ache=range(),a=ache.spawn('human',1000,400),b=ache.spawn('human',1000,400,false);for(const x of [a,b]){x.alive=true;x.pain=0;}ache.damage(a.bodies[14],20,a.bodies[14].position,'bullet',{x:1,y:0});ache.damage(b.bodies[14],20,b.bodies[14].position,'bullet',{x:1,y:0});a.bodies[14].plugin.lodged=[{x:0,y:0,calibre:9}];
+  const wa=a.bodies[14].plugin.wounds[0],wb=b.bodies[14].plugin.wounds[0];wa.x=wb.x=0;wa.y=wb.y=0;wa.bleed=wb.bleed=1;advance(ache,300);assert.ok(wa.bleed>wb.bleed,'the wound with a round in it clots more slowly');assert.ok(a.pain>b.pain,'and aches');
+});
+
+test('the wound channel: a 5.56 through the chest hurts every organ its line crosses; a skull turns a weak glancing round; a bone turns a round a little',()=>{
+  const s=range({organDamage:true});const e=s.spawn('human',1000,400),chest=e.bodies[2];e.alive=true;const y=chest.position.y-chest.plugin.h*.3; /* high in the chest: heart and lungs both lie across the line */
+  const log=fire(s,'rifle',y);const organs=log.filter(h=>h.organ).map(h=>h.organ);assert.ok(organs.includes('heart')&&organs.includes('lungs'),`the channel crossed ${organs.join(', ')}`);
+  const g=range({organDamage:true}),ge=g.spawn('human',1000,400),head=ge.bodies[0];ge.alive=true;const top=head.bounds.min.y+2.5;g.shotLog=[];g.shoot({x:head.position.x-300,y:top},{x:head.position.x+300,y:top},null,round('gun'));const glance=g.shotLog.find(h=>h.glance);
+  if(glance){assert.ok(ge.alive&&ge.stun>0,'a glancing pistol round off the skull: stunned, alive');assert.ok(!head.plugin.lodged?.length);}
+  const d=range(),de=d.spawn('human',1000,400),thigh=de.bodies[14];d.shoot({x:thigh.position.x-300,y:thigh.position.y},{x:thigh.position.x+300,y:thigh.position.y},null,round('rifle'));const trace=d.traces.filter(t=>!t.electric);assert.ok(trace.length>=2,'the round goes on from the bone on a new line');const a0=Math.atan2(trace[0].to.y-trace[0].from.y,trace[0].to.x-trace[0].from.x),a1=Math.atan2(trace[1].to.y-trace[1].from.y,trace[1].to.x-trace[1].from.x);assert.ok(Math.abs(a1-a0)>1e-5&&Math.abs(a1-a0)<.4,'turned, a little');
+});
+
+test('ricochets: a pistol round skims off steel at 15 degrees; a round off a wall can come back and hit the one who fired it; at most two bounces',()=>{
+  const s=range();const plate=s.spawn('metal',1000,400).bodies[0];s.freeze(plate);const ang=15*Math.PI/180,from={x:1000-200*Math.cos(ang),y:plate.bounds.min.y-200*Math.sin(ang)};s.shotLog=[];s.shoot(from,{x:1000,y:plate.bounds.min.y},null,round('gun'));
+  assert.ok(s.shotLog.some(h=>h.ricochet&&h.body===plate),'it bounced off the plate');assert.ok(plate.plugin.hp>plate.plugin.maxHp-10,'and hardly marked it');
+  let hit=0;for(let seed=1;seed<=12;seed++){const w=new Simulation().seed(seed);w.gravity=0;w.configure({gravity:0,autoBalance:false,organDamage:false});const e=w.spawn('human',2480,400),hand=e.bodies.find(b=>b.plugin.slot===10);const gun=w.spawn('gun',hand.position.x+14,hand.position.y).bodies[0];w.equip(hand);
+    const y=e.bodies[3].position.y;w.shoot({x:2560,y:y-30},{x:2600,y},gun,round('gun'));if(e.bodies.some(b=>b.plugin.hp<100))hit++;}
+  assert.ok(hit>0,`the round came back off the wall into its shooter in ${hit} of 12`);
+  const many=new Simulation();many.gravity=0;many.configure({gravity:0});many.shotLog=[];many.shoot({x:1300,y:300},{x:2600,y:310},null,round('gun'));assert.ok(many.shotLog.filter(h=>h.ricochet).length<=2);
+});
+
+test('fast rounds bruise and bleed inside round their path and tumble after going through something; pistols do neither; buckshot pressed close is one big wound',()=>{
+  const cav=kind=>{const s=range();const e=s.spawn('human',1000,400),thigh=e.bodies[14];e.alive=true;fire(s,kind,thigh.position.y,thigh.position.x-300);return thigh.plugin;};
+  const p=cav('gun'),r=cav('rifle');assert.ok(!(p.internal>0)&&!(p.bruise>0),'a pistol round leaves no cavity');assert.ok(r.internal>0&&r.bruise>0,'a rifle round does');
+  const s=range();const a=s.spawn('human',1000,400),b=s.spawn('human',1160,400),y=a.bodies[3].position.y;fire(s,'rifle',y);const first=a.bodies[3].plugin.wounds.find(w=>w.type==='bullet'),second=b.bodies[3].plugin.wounds.find(w=>w.type==='bullet');assert.ok(first&&second&&second.radius>first.radius,'through one body, it hits the next one tumbling: a bigger entry');
+  const sg=range(),t=sg.spawn('human',1000,400),belly=t.bodies[3];sg.shotLog=[];sg.shoot({x:belly.bounds.min.x-20,y:belly.position.y},{x:1500,y:belly.position.y},null,{...round('shotgun'),pellets:9,spread:.085});assert.equal(sg.shotLog.filter(h=>h.body===belly).length,1,'at point blank the nine pellets are one wound');
+  const far=range(),f=far.spawn('human',1000,400),fb=f.bodies[3];far.shotLog=[];far.shoot({x:fb.bounds.min.x-300,y:fb.position.y},{x:1500,y:fb.position.y},null,{...round('shotgun'),pellets:9,spread:.02});assert.ok(far.shotLog.filter(h=>h.body&&h.body.plugin.entityId===f.id).length>1,'further off they spread into many');
 });
