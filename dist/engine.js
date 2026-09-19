@@ -143,6 +143,7 @@
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
+  const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
@@ -634,6 +635,7 @@
       const c=Constraint.create({bodyA:a||undefined,bodyB:b||undefined,pointA:a?Vector.sub(pa,a.position):{...pa},pointB:b?Vector.sub(pb,b.position):{...pb},stiffness:.8,damping:.06});
       c.plugin={rope:true};Composite.add(this.world,c);return c;
     }
+    unrope(c){if(!c?.plugin?.rope||!this.joints.includes(c))return false;Composite.remove(this.world,c);return true;}
     // Blood thrown by a blow. With a direction it is a cone: forward says how much of it carries on with the blow (negative = back-spatter toward the attacker,
     // which is what an entry wound does; an exit wound throws it all forward). Without a direction it is the old radial burst.
     spray(point,direction,count,speed,forward) {
@@ -657,7 +659,16 @@
         p.severed??=[];p.severed.push({x:p.flip?-local.x:local.x,y:local.y,bleed:p.material==='flesh'?1.8:0,fresh:1.6});this.bleedOf(p); // the stump's bone is not marked fractured: losing an arm must not break the chest it hung from
         if(p.material==='flesh')this.burst(b.position.x+point.x,b.position.y+point.y,16,'#a32e31',4,'blood');
       }
-      Composite.remove(this.world,c);const owner=this.getEntity(c.bodyA||c.bodyB);if(owner)owner.restTime=0;
+      Composite.remove(this.world,c);const owner=this.getEntity(c.bodyA||c.bodyB);if(owner){owner.restTime=0;this.split(owner);}
+    }
+    // What is no longer joined to a ragdoll is no longer part of it: each loose piece becomes remains of its own, with the little blood that is in it. The side with the chest keeps the identity (failing that, the bigger side).
+    // Without this a severed arm still slept, woke and answered to its old slot number along with the body it came from.
+    split(e) {
+      if(e.blood===undefined)return;const links=this.joints.filter(c=>c.plugin.joint),sets=[];for(const b of e.bodies)if(!sets.some(set=>set.has(b)))sets.push(this.connected(b,links));if(sets.length<2)return;
+      const keep=sets.find(set=>[...set].some(b=>b.plugin.slot===2))||sets.reduce((a,b)=>b.size>a.size?b:a);
+      for(const set of sets){if(set===keep)continue;const bodies=e.bodies.filter(b=>set.has(b)),left={id:this.nextId++,kind:e.kind,bodies,joints:e.joints.filter(c=>set.has(c.bodyA)),upright:false,blood:LIMB_BLOOD*bodies.length,alive:false,consciousness:'dead'};this.entities.push(left);for(const b of bodies)b.plugin.entityId=left.id;}
+      e.bodies=e.bodies.filter(b=>keep.has(b));e.joints=e.joints.filter(c=>keep.has(c.bodyA));e.pin=null;
+      if(e.alive&&!e.bodies.some(b=>b.plugin.slot===0))this.kill(e,'decapitation');
     }
     // direction (optional, world space) is where the blow was travelling; cuts and sprays follow it.
     damage(body,amount,point=body?.position,type='impact',direction=null) {
@@ -887,7 +898,7 @@
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
       const bodies=this.bodies;this.bodiesNow=bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
-        if(e.alive)this.vitals(e,seconds);else if(e.twitchAt?.length)this.twitch(e,seconds);
+        if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*.5*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
         e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){if(e.rung==='stand')this.buckle(e);e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed

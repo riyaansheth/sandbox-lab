@@ -182,14 +182,14 @@ test('regenerate regrows severed limbs on the clicked body and leaves the old pi
   assert.equal(s.regenerate(e.bodies[2]),4,'forearm + hand, shin + foot');s.step();assert.equal(e.bodies.length,14,'growth is staged: one part on the first beat');assert.ok(e.bodies.some(b=>b.plugin.grow!==undefined));
   assert.equal(s.regenerate(e.bodies[2]),3,'a second click does not start a second job');assert.equal(s.regrowing.length,1);advance(s,150);assert.equal(s.regrowing.length,0);assert.ok(s.bodies.every(b=>b.plugin.grow===undefined),'swelling finishes');
   assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id).length,16);assert.equal(e.joints.length,16);assert.equal(e.bodies.length,17);assert.equal(new Set(e.bodies.map(b=>b.plugin.slot)).size,17);
-  const remains=s.entities.find(x=>x!==e&&x.kind==='human');assert.equal(remains.bodies.length,4);assert.equal(remains.alive,false);
+  const remains=s.entities.filter(x=>x!==e&&x.kind==='human');assert.equal(remains.length,2,'each severed piece is remains of its own');assert.equal(remains.reduce((n,x)=>n+x.bodies.length,0),4);assert.ok(remains.every(x=>!x.alive));
   assert.ok(e.bodies.every(b=>b.plugin.severed.length===0));advance(s,600);for(const b of s.bodies)assert.ok(Number.isFinite(b.position.x));assert.ok(s.canStand(e)&&e.bodies[2].position.y<505,'regrown body should stand');
   for(const c of s.joints.filter(c=>c.plugin.joint))assert.ok(Constraint.currentLength(c)<3,`${c.plugin.name} not seated`);
   assert.equal(s.regenerate(e.bodies[2]),0,'nothing missing');assert.equal(s.regenerate(s.spawn('crate',300,300).bodies[0]),0);
 });
 test('reattach puts a severed limb back on its own ragdoll, from either end',()=>{
   for(const from of ['limb','body']){const s=new Simulation();const e=s.spawn('human',1000,555),other=s.spawn('human',1400,555);advance(s,30);
-    s.sever(s.joints.find(c=>c.plugin.name==='elbow'&&c.bodyA.plugin.entityId===e.id));const forearm=e.bodies[6],hand=e.bodies[7];Body.setVelocity(forearm,{x:-8,y:-4});advance(s,180);
+    const forearm=e.bodies[6],hand=e.bodies[7];s.sever(s.joints.find(c=>c.plugin.name==='elbow'&&c.bodyA.plugin.entityId===e.id));assert.ok(!e.bodies.includes(forearm)&&s.getEntity(forearm).alive===false,'a severed limb is no longer part of the body');Body.setVelocity(forearm,{x:-8,y:-4});advance(s,180);
     assert.ok(Math.hypot(forearm.position.x-e.bodies[5].position.x,forearm.position.y-e.bodies[5].position.y)>40,'limb should have fallen away');
     assert.equal(s.reattach(from==='limb'?hand:e.bodies[2]),1);assert.equal(s.joints.filter(c=>c.plugin.joint&&c.bodyA.plugin.entityId===e.id).length,16);
     const elbow=s.joints.find(c=>c.bodyB===forearm&&c.plugin.name==='elbow');assert.ok(elbow&&Constraint.currentLength(elbow)<1,'elbow anchors should meet');assert.equal(forearm.plugin.severed.length,0);
@@ -213,7 +213,7 @@ test('fire chars what it burns and throws embers and smoke',()=>{
 test('graft puts an android arm on a human stump, mirrors a limb from the other side, and refuses what does not fit',()=>{
   const s=new Simulation();const human=s.spawn('human',1000,555),bot=s.spawn('android',1400,555);advance(s,30);
   const elbow=(e,side)=>s.joints.filter(c=>c.plugin.name==='elbow'&&c.bodyA.plugin.entityId===e.id)[side];s.sever(elbow(human,1));s.sever(elbow(bot,0)); // human loses the right forearm, the android its LEFT one
-  const lost=human.bodies.filter(b=>[9,10].includes(b.plugin.slot));lost.forEach(b=>s.removeBody(b));const stump=human.bodies.find(b=>b.plugin.slot===8),metal=bot.bodies.find(b=>b.plugin.slot===6);
+  const group=e=>e.bodies[0].collisionFilter.group,loose=(e,slots)=>s.bodies.filter(b=>b.collisionFilter.group===group(e)&&slots.includes(b.plugin.slot));loose(human,[9,10]).forEach(b=>s.removeBody(b));const stump=human.bodies.find(b=>b.plugin.slot===8),metal=loose(bot,[6])[0];
   assert.equal(s.graft(stump,metal),'');assert.equal(metal.plugin.slot,9,'left forearm mirrored to the right side');assert.equal(metal.plugin.entityId,human.id);assert.equal(metal.collisionFilter.group,stump.collisionFilter.group);
   assert.equal(human.bodies.length,17);assert.equal(bot.bodies.length,15);assert.equal(metal.plugin.kind,'android','it stays a metal arm');assert.ok(metal.plugin.surge>0&&human.surge>0);
   const seam=s.joints.find(c=>c.bodyB===metal&&c.plugin.name==='elbow');assert.ok(seam&&Constraint.currentLength(seam)<1);advance(s,300);assert.ok(Constraint.currentLength(seam)<3);for(const b of s.bodies)assert.ok(Number.isFinite(b.position.x));
@@ -565,4 +565,18 @@ test('legs that break under a conscious body put it down on its front, legs trai
   for(const flip of [false,true]){const s=new Simulation().seed(9);s.configure({organDamage:false});const e=s.spawn('human',1000,555,flip);advance(s,120);const at=k=>e.bodies.find(b=>b.plugin.slot===k),d=flip?-1:1;
     for(const k of [12,15])at(k).plugin.bone=20;e.fleeT=9;advance(s,200);assert.equal(e.rung,'crawl');
     assert.ok(Math.abs(at(2).angle*d-Math.PI/2)<.6,`chest face down (${at(2).angle.toFixed(2)})`);assert.ok((at(2).position.x-at(4).position.x)*d>20&&(at(4).position.x-at(16).position.x)*d>40,'head first, feet behind');}
+});
+
+test('a body with no blood left stops bleeding; a corpse and a loose limb drain until they are empty',()=>{
+  const {s,e}=standing(),arm=e.bodies[9],thigh=e.bodies[14];s.sever(s.joints.find(c=>c.bodyB===arm));const limb=s.getEntity(arm);assert.ok(limb!==e&&limb.blood>0&&limb.blood<20);
+  s.damage(thigh,30,thigh.position,'bullet',{x:1,y:0});s.kill(e,'test');const before=e.blood;advance(s,120);assert.ok(e.blood<before,'a corpse keeps draining');
+  e.blood=0;limb.blood=0;for(const b of s.bodies)for(const w of [...(b.plugin.wounds||[]),...(b.plugin.severed||[])])w.bleed=3;advance(s,5);s.particles.length=0;advance(s,120);
+  assert.equal(s.particles.filter(p=>p.type==='blood').length,0,'nothing left to come out');
+});
+
+test('grafting a new limb on leaves the old one out of it',()=>{
+  const s=new Simulation().seed(4);const a=s.spawn('human',1000,555),b=s.spawn('human',1400,555);advance(s,30);const oldArm=a.bodies[9],newArm=b.bodies[9];
+  for(const e of [a,b])s.sever(s.joints.find(c=>c.plugin.name==='elbow'&&c.bodyB===(e===a?oldArm:newArm)));assert.equal(s.graft(a.bodies.find(x=>x.plugin.slot===8),newArm),'');
+  assert.ok(a.bodies.includes(newArm)&&!a.bodies.includes(oldArm));assert.equal(new Set(a.bodies.map(x=>x.plugin.slot)).size,a.bodies.length,'one part per slot');assert.equal(a.bodies.length,17);
+  const x=oldArm.position.x;Body.setVelocity(a.bodies[2],{x:6,y:0});advance(s,60);assert.ok(Math.abs(oldArm.position.x-x)<25,'the old arm stays where it fell');
 });

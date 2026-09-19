@@ -30,6 +30,7 @@ npm run dev
 - Fractures (bone ≤ 50): the limb hangs, its joints over-bend, and it carries no weight — one broken leg is stood on around, two and the ragdoll stays down; heal mends them
 - Organs by hit location: brain (blackout, or instant death), heart (sits top-centre in the upper torso; death, or massive internal bleeding), lungs (oxygen runs down to unconsciousness and suffocation), gut (slow internal bleeding, seen as a spreading bruise). Blunt force only reaches the brain
 - Pain rises with injury (more for head, groin, hands and feet) and ebbs, slower while wounds are open; it slows getting up. Consciousness runs awake → dazed → unconscious → dead from blood, oxygen, brain and pain; the detail view shows vitals, a Heart row (bpm, damaged, or Stopped) and a Brain row (damaged or Destroyed), other damaged organs and the cause of death
+- Blood runs out: a corpse keeps draining after death, a severed limb has only the little blood that is in it, and once a body is empty nothing more comes out of it. A severed piece stops being part of the ragdoll it came from — it is remains of its own, so a grafted replacement never gets confused with the limb it replaced
 - Blood: every wound bleeds at its own rate and clots (fast on a still limb, slowly on a moving one; a new blow nearby reopens it). Deep wounds to the neck, upper arms and thighs hit an artery and spurt in time with a heart rate that races with pain and early blood loss, then fails. Skin pales below 75% blood
 - Blood lands where it lands: on any body (in that body's own frame, so it turns with it), on the walls (it runs as it dries) and on the floor, where drops merge into pools that grow to a limit. Blood only stains — no smears, no footprints, no wet shine — and dries from red to brown in about 30 s. Androids leak teal coolant and sparks instead
 - Particles are pooled and recycled; stains are capped per body and globally, fade after a settable lifetime, and none are created with decals off
@@ -84,7 +85,7 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | S | Detail view of the object under the cursor |
 | G | Toggle slow motion |
 | Space | Pause/play |
-| Z | Undo the last spawn |
+| Z | Undo the last spawn or the last rope |
 | Backspace / Delete | Delete selected object |
 | Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
 | Tab | Hide / show the interface |
@@ -96,7 +97,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 96 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 98 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 
