@@ -272,7 +272,7 @@
   const cutLength = w => clamp((w.radius || 3) * 3.4, 7, 22), slitAngle = w => (w.dir ?? w.seed) + Math.PI / 2;
   // layer 0 = the hole in the skin, 1 = the hole in the muscle under it. Returns false when this wound does not reach that layer.
   function hole(c, w, layer) {
-    const d = depthOf(w); if (d < layer + 2) return false; const r = w.radius || 3, k = layer ? .55 : 1; c.beginPath();
+    if (w.stitched) return false; const d = depthOf(w); if (d < layer + 2) return false; const r = w.radius || 3, k = layer ? .55 : 1; c.beginPath();
     switch (w.type) {
       case 'bullet': c.arc(w.x, w.y, (layer ? 1.1 : 2.1) + grown(w) * (layer ? .4 : .7), 0, 7); break;                              // small and neat
       case 'exit': along(c, w, 1.35, .85, () => ragged(c, 0, 0, crater(w) * k, w.seed)); break;                                          // bigger, ragged, blown outward
@@ -309,7 +309,8 @@
   }
   // Over the finished layers: what is in the hole (wet blood, a clot, a scab), its rim, and the skin torn outward by exit wounds and blasts.
   function finish(c, w, time) {
-    const d = depthOf(w); if (d < 2) return; const st = stageOf(w, time), rim = st === 0 ? '#a3222c' : st === 1 ? '#5d1820' : '#3a2018';
+    const d = depthOf(w); if (d < 2) return;
+    if (w.stitched) { const len = w.type === 'cut' ? cutLength(w) : Math.max(4, crater(w) * 1.6), a = slitAngle(w); c.save(); c.translate(w.x, w.y); c.rotate(a); c.strokeStyle = '#5d1820'; c.lineWidth = .9; c.beginPath(); c.moveTo(-len / 2, 0); c.lineTo(len / 2, 0); c.stroke(); c.strokeStyle = '#141414'; c.lineWidth = .45; c.beginPath(); for (let t = -len / 2 + 1; t <= len / 2 - .5; t += 1.6) { c.moveTo(t - .5, -1.3); c.lineTo(t + .5, 1.3); } c.stroke(); c.restore(); return; }   // closed: a dark seam with the thread across it const st = stageOf(w, time), rim = st === 0 ? '#a3222c' : st === 1 ? '#5d1820' : '#3a2018';
     if (st > 0 && hole(c, w, 0)) { c.fillStyle = st === 1 ? 'rgba(70,14,20,.62)' : 'rgba(44,25,19,.93)'; c.fill(); }             // the clot darkens it; the scab closes it
     if (w.type === 'bullet') { if (st < 2) { c.fillStyle = '#16060a'; c.beginPath(); c.arc(w.x, w.y, 1 + grown(w) * .3, 0, 7); c.fill(); } c.strokeStyle = rim; c.lineWidth = .7; c.beginPath(); c.arc(w.x, w.y, 2.3 + grown(w) * .7, 0, 7); c.stroke(); }
     else if (w.type === 'exit' || w.type === 'blast') { c.strokeStyle = rim; c.lineWidth = .7; c.beginPath(); along(c, w, w.type === 'exit' ? 1.35 : 1.25, w.type === 'exit' ? .85 : .9, () => ragged(c, 0, 0, crater(w) * (w.type === 'exit' || d < 3 ? 1 : .7), w.seed, w.type === 'exit' ? 11 : 13)); if (w.type === 'exit' || d >= 3) c.stroke();
@@ -361,6 +362,8 @@
       if (state.char > 0) { s.globalCompositeOperation = 'source-atop'; s.fillStyle = `rgba(24,17,14,${Math.min(.75, state.char * 1.6)})`; s.fillRect(-w, -h, w * 2, h * 2); }   // the skin that is still there blackens fast
       s.globalCompositeOperation = 'source-over'; outline(s, part, w, h); s.strokeStyle = clothLine || SKIN.line; s.lineWidth = .7; s.stroke(); if (outfit) accessories(s, part, w, h, outfit, state);
     }, s => { for (const wd of wounds) if (hole(s, wd, 0)) s.fill(); for (const t of torn) { s.beginPath(); ragged(s, t.x, t.y, t.r, t.seed); s.fill(); } if (broken) { s.beginPath(); s.ellipse(0, h * .04, w * .42, h * .1, .25, 0, 7); s.fill(); } for (const [bx, by, r, i] of burnSkin) { s.beginPath(); ragged(s, bx, by, r, slot * 2 + i, 12); s.fill(); } });
+    if (p.necrotic && !view) { c.save(); outline(c, part, w, h); c.clip(); c.fillStyle = 'rgba(92,70,96,.55)'; c.fillRect(-w, -h, w * 2, h * 2); c.restore(); }   // a limb left under a tourniquet: dead, grey-violet
+    if (p.tourniquet && !view) { const by = -h * .32; c.save(); outline(c, part, w, h); c.clip(); c.fillStyle = '#1d1d1f'; c.fillRect(-w, by - 2, w * 2, 4); c.fillStyle = '#b8342c'; c.fillRect(w * .1, by - 2.4, 3, 4.8); c.fillStyle = '#9aa0a6'; c.fillRect(-w * .45, by - 1, 2.2, 2); c.restore(); }   // the band, its red tab and its windlass
     if (state.noGore || view) return;
     // finishing: the dark bore of a bullet hole, torn edges round the big wounds, the shard of a broken bone
     c.save(); outline(c, part, w, h); c.clip();   // a wound's rim never shows outside the body it is on
@@ -383,11 +386,11 @@
   function signature(p, state) {
     const worn = outfitOf(p); let sig = (worn ? worn.id * 49979687 : 0) + (state.view ? state.view * 86028121 + (state.organs ? Math.round(state.organs.brain / 10) + Math.round(state.organs.heart / 10) * 11 + Math.round(state.organs.lungs / 10) * 121 + Math.round(state.organs.gut / 10) * 1331 : 0) * 7919 : 0) + (state.livor > .05 ? (Math.round(state.livor * 4) * 8 + state.down) * 1299709 : 0) + (p.brokeAt !== undefined && (p.bone ?? 100) <= 50 ? Math.round(clamp((state.time - p.brokeAt) / 20, 0, 1) * 4) * 15485863 : 0) + (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i], age = state.time - (w.t ?? 0); sig += ((w.seed * 1e5 | 0) + depthOf(w) * 7 + stageOf(w, state.time) * 3 + (w.hits || 0) * 11 + Math.round((w.radius || 0) * 2) * 13 + Math.round((w.force || 0) / 8) * 17 + (w.type === 'impact' ? (age < 10 ? Math.floor(age) : 10 + Math.floor(age / 15)) * 19 : 0)) * (i + 3); }
-    sig += (p.lodged?.length || 0) * 7477771; if (p.armour) for (const k in p.armour) sig += (p.armour[k].hp <= 0 ? 2 : 1) * (k === 'vest' ? 104729 : 1299827); const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
+    sig += (p.lodged?.length || 0) * 7477771 + (p.tourniquet ? 3 : 0) * 8837 + (p.necrotic ? 5 : 0) * 8839; if (p.wounds) for (let i = 0; i < p.wounds.length; i++) if (p.wounds[i].stitched) sig += 99991 * (i + 1); if (p.armour) for (const k in p.armour) sig += (p.armour[k].hp <= 0 ? 2 : 1) * (k === 'vest' ? 104729 : 1299827); const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {
     const p = body.plugin; state.down = state.livor > .05 ? ((Math.round((Math.PI / 2 - (body.angle || 0)) / (Math.PI / 4)) % 8) + 8) % 8 : undefined; if (state.down !== undefined && p.flip) state.down = (12 - state.down) % 8; /* which way is down, in this part's own frame, to the nearest 45 degrees */ const sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;
-    const clean = !state.view && !p.armour && p.grow === undefined && !(state.livor > .05) && !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
+    const clean = !state.view && !p.armour && !p.tourniquet && !p.necrotic && p.grow === undefined && !(state.livor > .05) && !p.wounds?.length && !p.severed?.length && (p.hp ?? 100) >= 48 && (p.bone ?? 100) > 50 && !(p.bruise > .05) && !(state.char > .03);
     if (clean) { const worn = outfitOf(p), key = `${worn ? worn.key : ''}#${p.slot}|${state.faceId}|${Math.round(state.pale * 8)}|${Math.round(state.char * 20)}|${state.dead ? 1 : 0}`; let shared = pristine.get(key);
       if (!shared) { if (pristine.size > 400) pristine.clear(); shared = document.createElement('canvas'); paintPart(shared, p, state); pristine.set(key, shared); } perBody.set(body, { sig, canvas: shared, own: false }); return shared; }
     const canvas = entry?.own ? entry.canvas : document.createElement('canvas'); paintPart(canvas, p, state); perBody.set(body, { sig, canvas, own: true }); return canvas;

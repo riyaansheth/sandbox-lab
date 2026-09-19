@@ -74,6 +74,7 @@ npm run dev
 - Consciousness and dying: awake → dazed (weaker, swaying on its feet, duller reflexes) → unconscious (limp but still breathing, wakes again if what put it out recovers) → dead. Bleeding out is a descent: below 50% blood the legs go and it sinks to its knees, below 44% it slumps, below 40% it passes out, below 25% it dies. After death a nerve may fire once or twice in the first seconds — never after the brain or heart was destroyed — and then the body comes to rest and sleeps
 - Awareness (ten times a second, no pathfinding): a conscious human turns its head and eyes to the most pressing thing nearby — whatever last hurt it, a fire or blast, something moving fast, a weapon the cursor is holding close. Something on course for its head within half a second gets both arms thrown up and a duck away from it; heat close beside any part of it makes it bend and lean away; a neighbour being hurt makes it start and look. Eyes glance, the mouth opens on a big hit, and an optional soft grunt can be switched on. Androids have none of it
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
+- Tourniquet (T): click an arm or a leg and every wound on that part and below it stops bleeding while it is on — held, not closed. What is below it goes numb over 20 seconds; left on for two minutes it dies, and a dead limb heals by nothing but being taken off and regrown. Click again to take it off, and the wounds bleed again. Drawn as a band with a red tab. Stitch (K): click a wound and it is stitched shut for good — a round lodged in it is taken out first — its bleeding stops and the pain eases; one wound per click, no tissue or blood given back. Both are saved
 - Stop bleeding (closes every wound, stump and internal bleed on a ragdoll; the wounds, the pain and the lost blood stay) and Bandage (dresses the open wounds and stumps of one part: they stop bleeding, the dressing shows, and it holds against knocks — a hard blow tears it off)
 - What a shock does depends on who gets it. Someone out cold is brought round: the stun goes and pain that had put them under is cut through (it cannot wake someone who is out for want of blood, air or brain). Too much kills: every shock adds to a dose that fades over about five seconds each; three in quick succession are safe, and each one after that is likelier to stop the heart (30%, 60%, 90% …) — cause of death, cardiac arrest, as is any electrocution; a lightning strike counts as three. The dead may be brought back, wounds and all: nine times in ten if the heart is what failed, six in ten otherwise — but with no margin left, so more current straight away may stop it again. Blasts take limbs off by chance, likelier the closer the limb is to the centre, never for certain
 - Revive, Partial revive (alive and conscious again, bleeding slowed, but every wound, fracture and missing limb stays), Regrow (grows missing limbs back one part at a time, outward from the part you click; each part grows in layers — the bone first, then the flesh closes over it, then the skin), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
@@ -128,6 +129,8 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
 | 1–9, C, \\, ;, ', -, =, [, ], 0 | Grab, rope, lock in place, shoot, fire, shock, explosion, heal, (C) cold, revive, partial revive, stop bleeding, bandage, regrow, reattach, graft, dismember, delete |
+| T | Tourniquet on an arm or a leg; again to take it off |
+| K | Stitch the wound under the cursor (and take out a round lodged in it) |
 | U | Undress: take the clicked garment off the whole ragdoll |
 | X | X-ray: skin → muscle layer → skeleton, with organs and fractures lit |
 | R | Flip the ragdoll or object under the cursor to face the other way |
@@ -136,7 +139,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 144 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 146 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

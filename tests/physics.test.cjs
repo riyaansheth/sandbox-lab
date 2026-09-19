@@ -1003,3 +1003,21 @@ test('armour: a helmet turns a glancing rifle round and stops a pistol; it is pu
   advance(s,120);Body.setPosition(dropped,{x:at(2).position.x+48,y:at(2).position.y});Body.setVelocity(dropped,{x:-5,y:-1});advance(s,90);assert.ok(!s.bodies.includes(dropped),'the same vest goes back on');assert.equal(at(2).plugin.armour.vest.hp,37,'as worn as it was');
   const worn=armoured('softvest');worn.e.bodies[2].plugin.armour.vest.hp=0;worn.e.bodies[3].plugin.armour.vest.hp=0;const through=fire(worn.s,'gun',worn.e.bodies[3].position.y);assert.ok(!through.some(x=>x.armour),'worn out, it no longer protects');assert.ok(worn.e.bodies[3].plugin.wounds.some(w=>w.type==='bullet'));
 });
+
+// ---- ballistics, phase 5: treatment
+test('a tourniquet on a thigh stops the bleeding of the thigh, shin and foot; the leg goes numb, dies if it is left on, and bleeds again when it comes off',()=>{
+  const {s,e,at}=bare();e.alive=true;const thigh=at(14),shin=at(15),foot=at(16),other=at(11);for(const b of [thigh,shin,foot,other])s.damage(b,24,b.position,'cut',{x:1,y:0});for(const b of [thigh,shin,foot,other])for(const w of b.plugin.wounds)w.bleed=1.5;
+  assert.match(s.tourniquet(shin.position?thigh:thigh),/on/);s.step();assert.ok([thigh,shin,foot].every(b=>!(b.plugin.bleed>0)),'nothing below it bleeds');assert.ok(other.plugin.bleed>0,'the other leg does');
+  const before=s.strengthOf(shin);advance(s,60*21);assert.ok(s.strengthOf(shin)<before*.2&&s.strengthOf(foot)<.2,'the leg below it goes numb');assert.equal(s.strengthOf(at(12)),s.strengthOf(at(12)),'');assert.ok(s.strengthOf(other)>.5,'the other leg does not');
+  assert.match(s.tourniquet(thigh),/off/);s.step();assert.ok(shin.plugin.wounds.some(w=>w.bleed>0)&&shin.plugin.bleed>0,'off again, it bleeds again');assert.ok(!shin.plugin.necrotic,'twenty seconds does no lasting harm');
+  const left=bare();left.e.alive=true;left.s.tourniquet(left.at(14));advance(left.s,60*125);assert.ok([14,15,16].every(k=>left.at(k).plugin.necrotic),'left on two minutes, the leg dies');left.s.tourniquet(left.at(14));left.s.heal(left.at(15));assert.ok(left.at(15).plugin.hp<=20&&left.s.strengthOf(left.at(15))===0,'and nothing heals it back');
+  const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.equal(back.bodies.find(b=>b.plugin.slot===14).plugin.tourniquet,undefined);s.tourniquet(thigh);const again=new Simulation();again.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(again.bodies.find(b=>b.plugin.slot===14).plugin.tourniquet,'a tourniquet is saved');
+  assert.match(s.tourniquet(e.bodies[2]),/arm or a leg/,'not on the chest');
+});
+test('a stitch closes the wound nearest the click for good, takes out the round in it, stops its bleeding and eases the pain; one wound per click',()=>{
+  const s=range();const e=s.spawn('human',1000,400),belly=e.bodies[3];e.alive=true;fire(s,'gun',belly.position.y);assert.equal(belly.plugin.lodged.length,1);const wound=belly.plugin.wounds.find(w=>w.type==='bullet');wound.bleed=2;e.pain=50;
+  const c=Math.cos(belly.angle),sn=Math.sin(belly.angle),wx=belly.plugin.flip?-wound.x:wound.x,point={x:belly.position.x+wx*c-wound.y*sn,y:belly.position.y+wx*sn+wound.y*c};assert.match(s.stitch(belly,point),/Round taken out/);
+  assert.equal(belly.plugin.lodged.length,0,'the round is out');assert.ok(wound.stitched&&wound.bleed===0,'the wound is shut');assert.ok(e.pain<50);advance(s,120);assert.equal(wound.bleed,0,'and stays shut');s.damage(belly,40,point,'impact',{x:1,y:0});assert.equal(wound.bleed,0,'even when struck');
+  const hp=belly.plugin.hp,blood=e.blood;assert.ok(belly.plugin.hp===hp&&e.blood===blood,'it gives back no tissue and no blood');assert.match(s.stitch(belly,point),/No wound/,'one wound per click, and it is done');
+  const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(back.bodies.find(b=>b.plugin.slot===3).plugin.wounds.find(w=>w.type==='bullet').stitched,'saved');
+});
