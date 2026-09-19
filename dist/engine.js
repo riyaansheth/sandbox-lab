@@ -48,6 +48,7 @@
     {id:'grunts',section:'Ragdolls',label:'Grunts',help:'A soft synthesized grunt when a conscious human is hit. Needs sound on.',type:'toggle',def:false},
     {id:'brainDamage',section:'Ragdolls',label:'Brain damage',help:'A damaged head causes blackouts: the ragdoll collapses now and then.',type:'toggle',def:false},
     {id:'slowHealing',section:'Ragdolls',label:'Slow injury healing',help:'Wounds of the living slowly close, bones knit and blood is replaced.',type:'toggle',def:false},
+    {id:'fallDamage',section:'Gore',label:'Fall damage',help:'Multiplies the damage a ragdoll takes from hitting the floor, walls and anything else that does not move. 0 turns it off.',type:'range',min:0,max:3,step:.1,def:1,unit:'×'},
     {id:'fragility',section:'Gore',label:'Fragility multiplier',help:'Multiplies all damage to ragdolls. Higher is more fragile.',type:'range',min:.1,max:10,step:.1,def:1,unit:'×'},
     {id:'jointStrength',section:'Gore',label:'Joint strength',help:'How much force or damage it takes to tear a limb off.',type:'range',min:.25,max:5,step:.05,def:1,unit:'×'},
     {id:'bleedRate',section:'Gore',label:'Bleeding rate',help:'How fast wounds drain blood. Zero means nobody bleeds out.',type:'range',min:0,max:5,step:.1,def:1,unit:'×'},
@@ -149,6 +150,9 @@
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
   const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
+  // Falls and blunt impacts (see land()). Speeds are px per substep: with this gravity and air a 1.5 m drop lands at about 8.3, 3 m at 10.4, 5 m at 12.4, 8 m at 14.2.
+  const FALL_SAFE=8.3,FALL_SAFE_HEAD=7.4,FALL_K=3,FALL_FLOOR=8,FALL_HP=.6,FALL_MASS=3,OBJECT_K=.5,LAND_WINDOW=.25,LAND_ABSORB=.6,FALL_SPINE=30,NECK_FALL=95,TRAUMA_SAFE=45,TRAUMA_SPAN=70,TRAUMA_BLEED=2.5; // blunt damage to the trunk in one fall that is survivable for certain; how much more makes internal injuries certain; how fast those bleed (% of blood a second - about half a minute to live, unless the bleeding is stopped)
+  const FALL_AREA={head:.45,neck:.5,chest:.25,abdomen:.27,pelvis:.3,thigh:.32,'upper arm':.34,shin:.55,forearm:.55,foot:.55,hand:.5},FALL_FLAT={shin:.3,forearm:.3,foot:.35,hand:.3},FALL_AXIAL=new Set(['foot','shin','hand','forearm']),FALL_SHARE=[1,.45,.24,.13,.08,.05]; // how much of the impact a part takes for its area; which parts pass load along the bone; what each part up the chain gets, as a share of what the landing part took
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
@@ -375,15 +379,17 @@
       const set=this.settings,head=e.bodies.find(b=>b.plugin.part==='head'),human=e.kind==='human';
       if(human){
         let open=0,inside=0,artery=0;for(const b of e.bodies){const p=b.plugin;open+=p.bleed||0;if(p.bleed>0&&p.wounds)for(const w of p.wounds)if(w.artery)artery+=w.bleed||0;if(p.internal){inside+=p.internal;p.bruise=Math.min(1,(p.bruise||0)+p.internal*seconds*.12);p.internal=Math.max(0,p.internal-seconds*.012);}} // internal bleeding shows as a spreading bruise, and clots slowly
-        e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+artery*ARTERY_DRAIN+inside)*seconds*set.bleedRate);
+        e.blood=Math.max(0,(e.blood??100)-(open*BLEED_DRAIN+artery*ARTERY_DRAIN+inside)*seconds*set.bleedRate);e.bleedingInside=inside>open*BLEED_DRAIN+artery*ARTERY_DRAIN;
         const organs=e.organs,lungs=organs?organs.lungs:100;e.oxygen=clamp((e.oxygen??100)+seconds*(lungs<60?-(60-lungs)/60*5:8),0,100);
         e.pain=Math.max(0,(e.pain||0)-seconds*(open>.3?1.5:4)); // pain ebbs, slower while wounds are open
+        if(e.trauma&&this.time-(e.landT??0)>LAND_WINDOW*2){const chest=this.chestOf(e); /* the fall is over: did the trunk take more than a body can? If so something inside is torn and bleeding fast; if not, it is bruising */
+          if(chest)chest.plugin.internal=(chest.plugin.internal||0)+(random()<(e.trauma-TRAUMA_SAFE)/TRAUMA_SPAN?TRAUMA_BLEED:Math.min(.3,e.trauma/200));e.trauma=0;}
         if(e.shockDose>0)e.shockDose=Math.max(0,e.shockDose-seconds/SHOCK_FADE);e.hurtScore=Math.max(0,(e.hurtScore||0)-seconds*1.2);let burning=0;for(const b of e.bodies)if(b.plugin.burning)burning++;if(burning)e.pain=Math.min(100,e.pain+seconds*(12+burning*3)*set.painSensitivity); // being on fire keeps hurting
         e.burningParts=burning;e.breath=((e.breath||0)+seconds*(12+e.pain*.28+(e.rise||e.stagN>0?8:0))/60)%1;
         // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
         e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
         const brain=organs?organs.brain:100;
-        if(e.blood<25)this.kill(e,'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
+        if(e.blood<25)this.kill(e,e.bleedingInside?'internal bleeding':'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
         else e.consciousness=e.blood<40||e.oxygen<30||brain<35||e.pain>=97?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70?'dazed':'awake';
         if(!e.alive)return;
       }else e.consciousness='awake';
@@ -695,8 +701,8 @@
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
       const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
       // A bullet wounds. It never takes a limb off, and it only destroys the part it hits when the muzzle is pressed against it (a contact shot, within CONTACT_SHOT px).
-      const gunshot=type==='bullet'||type==='exit',spared=gunshot&&!!p.part&&!this.contactShot;
-      p.hp=spared?Math.max(Math.min(p.hp,BULLET_FLOOR),p.hp-amount):Math.max(0,p.hp-amount);
+      const gunshot=type==='bullet'||type==='exit',spared=!!p.part&&(this.falling||gunshot&&!this.contactShot);
+      p.hp=spared?Math.max(Math.min(p.hp,this.falling?FALL_FLOOR:BULLET_FLOOR),p.hp-amount):Math.max(0,p.hp-amount);
       const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
       if(e){e.hitTime=this.time;e.hitHard=amount;}
@@ -952,6 +958,25 @@
         const e=this.entities.find(e=>e.id===p.stuck);if(!e||!e.bodies.some(b=>M.Bounds.overlaps(b.bounds,sword.bounds))){sword.collisionFilter.group=0;delete p.stuck;p.freedAt=this.time;} /* just drawn out: it does not go straight back in on the rebound */
       }
     }
+    // A blunt impact on a body part: a fall, a wall, a thrown crate, a bat. Damage goes with the energy of the impact, v squared above a speed that does no harm, and with how much of the other thing there is behind it.
+    // What lands decides what breaks. The end of a limb (foot, shin, hand, forearm) takes the load along the bone and passes what it does not absorb up the chain toward the trunk: ankle, shin, knee, pelvis, spine.
+    // The head takes it all, from a lower speed. The broad parts of the body spread it over their area. Parts that land after the first, in the same fall, land softer: the body is already stopping.
+    // A conscious body that comes down on its feet, upright, rides the landing with its legs and takes well under two thirds. Falls break bones and knock out; they do not tear limbs off (the part is spared at FALL_FLOOR hp).
+    land(part,other,closing,point,toward,normal) {
+      const p=part.plugin,head=p.slot===0,endOn=FALL_AXIAL.has(p.part)&&!!normal&&Math.abs(normal.x*-Math.sin(part.angle)+normal.y*Math.cos(part.angle))>.7, /* a limb that comes down on its end, not along its side */safe=head?FALL_SAFE_HEAD:FALL_SAFE;if(closing<=safe)return;const e=this.getEntity(part),fixed=other.isStatic||!!other.plugin.boundary;
+      let amount=(closing*closing-safe*safe)*FALL_K*rnd(.75,1.25)*(endOn?FALL_AREA[p.part]:FALL_FLAT[p.part]??FALL_AREA[p.part]??1)*(fixed?this.settings.fallDamage:OBJECT_K*other.mass/(other.mass+part.mass+FALL_MASS)*(defs[other.plugin.kind]?.blunt||1));if(!(amount>.5))return;
+      if(e){if(!(this.time-(e.landT??-9)<LAND_WINDOW)){e.landT=this.time;e.landN=0;}amount/=1+(e.landN++);} /* what is struck first takes the brunt: the rest of the body meets something that is already slowing */
+      if(e&&fixed){
+        const feet=p.slot===13||p.slot===16||p.slot===12||p.slot===15,chest=this.chestOf(e);if(feet&&chest&&this.active(e)&&Math.abs(wrap(chest.angle))<.6)amount*=LAND_ABSORB;
+        if(e.alive&&!feet&&amount>6)e.stun=Math.max(e.stun||0,Math.min(6,amount/14)*this.settings.stunScale);} /* coming down on anything but your feet knocks the wind out of you */
+      const chain=[part];if(e&&fixed&&endOn)for(let at=part,c;chain.length<6&&(c=this.joints.find(j=>j.plugin.joint&&j.bodyB===at));at=c.bodyA)chain.push(c.bodyA); /* up the limb, toward the chest */
+      this.falling=true;chain.forEach((b,i)=>{const share=chain.length===1?1:FALL_SHARE[i]??0,give=amount*share;if(give<1)return;const q=b.plugin,limb=q.slot>=5;
+        if(limb)q.bone=Math.max(0,(q.bone??100)-give*(1-FALL_HP));this.damage(b,limb?give*FALL_HP:give,b===part?point:b.position,'impact',toward);
+        if(e&&e.alive&&e.kind==='human'&&fixed&&q.slot>=2&&q.slot<=4)e.trauma=(e.trauma||0)+give; /* what the trunk took in this fall, all told: see vitals() */
+        if(e&&e.alive&&(q.slot===3||q.slot===4)&&give>=FALL_SPINE&&random()<.5){e.paralysed=true;e.restTime=0;}}); /* enough of it reaching the small of the back breaks it */
+      this.falling=false;
+      if(head&&e&&e.alive&&fixed&&amount>=NECK_FALL&&random()<(amount-NECK_FALL)/NECK_FALL)this.kill(e,'broken neck');
+    }
     disturb(pairs){for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
       if(other.plugin.active&&defs[other.plugin.kind]?.device==='chainsaw'&&!target.plugin.boundary&&this.time-(this.bites.get(target)||0)>.1){this.bites.set(target,this.time); /* ten bites a second into each thing the bar touches */ const at=Vector.mult(Vector.add(target.position,other.position),.5);this.damage(target,14,at,'cut',Vector.rotate({x:0,y:-1},other.angle));if(matOf(target.plugin).soft>=1)other.plugin.bloody=true;else this.burst(at.x,at.y,4,'#ffe7a0',5);}if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
     // The power hammer's ram: everything in front of the head is struck along the hammer's axis, and the hammer kicks back.
@@ -962,9 +987,16 @@
       Body.setVelocity(body,Vector.add(body.velocity,Vector.mult(axis,-5)));this.flashes.push({x:head.x,y:head.y,radius:60,life:.25,maxLife:.25});this.onEffect('explosion',.5);return struck?`Ram fired: ${struck} hit`:'Ram fired';
     }
     // Units: inside Matter's collision events a body's velocity is per substep (1/120 s), half the per-frame figure the rest of the engine sees. Every speed threshold in here and in pierce() is in those units.
-    collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;const speed=Vector.magnitude(Vector.sub(a.velocity,b.velocity));
-      if(speed>7){for(const [target,other] of [[a,b],[b,a]]){if(target.plugin.boundary)continue;if(target.plugin.material==='flesh'&&target.plugin.part&&!other.plugin.part&&!other.plugin.boundary&&this.settings.decals&&(target.plugin.bleed>.1||speed>11))this.stain(other,Vector.mult(Vector.add(target.position,other.position),.5),rnd(1.2,2.2)); /* what hits a bleeding body, or hits a body hard, comes away marked */const multiplier=matOf(target.plugin).brittle?3:1;const point=Vector.mult(Vector.add(target.position,other.position),.5);const blade=this.cuts(other,'edge'),od=defs[other.plugin.kind];this.damage(target,blade?Math.min(od.sharp.power??60,(speed-7)*4.5):(speed-7)*multiplier*1.5*(od?.blunt||1),point,blade?'cut':'impact',other.plugin.boundary?Vector.neg(target.velocity):Vector.sub(other.velocity,target.velocity));if(blade&&od.sharp.hot)this.sear(target);}}
-      if(speed>3)this.onEffect('impact',Math.min(.5,speed/30));
+    collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;
+      // Inside this event Matter has already resolved the contact, so a body that has just hit the floor reads as nearly still. What counts is how fast the two were closing before it: the velocities saved at the top of the step,
+      // and for a blunt hit only the part of that along the contact normal - sliding along a floor is not hitting it. A blade's edge cuts with all of its speed.
+      const rvx=(a.vx0??a.velocity.x)-(b.vx0??b.velocity.x),rvy=(a.vy0??a.velocity.y)-(b.vy0??b.velocity.y),n=pair.collision.normal,closing=Math.abs(rvx*n.x+rvy*n.y),speed=Math.hypot(rvx,rvy),point=pair.collision.supports[0]?{x:pair.collision.supports[0].x,y:pair.collision.supports[0].y}:Vector.mult(Vector.add(a.position,b.position),.5);
+      for(const [target,other,sign] of [[a,b,-1],[b,a,1]]){if(target.plugin.boundary)continue;const blade=this.cuts(other,'edge'),od=defs[other.plugin.kind],toward={x:sign*rvx,y:sign*rvy}; /* the way the other thing was coming at the target */
+        if(target.plugin.material==='flesh'&&target.plugin.part&&!other.plugin.part&&!other.plugin.boundary&&this.settings.decals&&(target.plugin.bleed>.1&&closing>3||closing>11))this.stain(other,point,rnd(1.2,2.2)); /* what hits a bleeding body, or hits a body hard, comes away marked */
+        if(blade){if(speed>7){this.damage(target,Math.min(od.sharp.power??60,(speed-7)*4.5),point,'cut',toward);if(od.sharp.hot)this.sear(target);}}
+        else if(target.plugin.part)this.land(target,other,closing,point,toward,n);
+        else if(closing>7)this.damage(target,(closing-7)*(matOf(target.plugin).brittle?3:1)*1.5*(od?.blunt||1),point,'impact',toward);}
+      if(closing>3)this.onEffect('impact',Math.min(.5,closing/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
     step(dt=1000/60) {
@@ -1045,7 +1077,7 @@
         if(Math.sign(impulse)===Math.sign(error))continue; // already returning faster than required
         if(ia)Body.setAngularVelocity(a,a.angularVelocity-impulse*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity+impulse*ib/total);
       }
-      this.touching.clear();Engine.update(this.engine,dt);
+      this.touching.clear();for(const b of bodies){b.vx0=b.velocity.x;b.vy0=b.velocity.y;} /* how fast everything was going before this step's contacts were resolved */ Engine.update(this.engine,dt);
       // Constraint solving leaves a limp pile jittering forever, and that residue crawls sideways; Matter's own sleeping never triggers on it.
       // So ragdolls sleep as a unit: fall at full speed, then once nearly still hold the whole pose. Holding every part adds no joint tension.
       for(const e of this.entities){if(e.blood===undefined)continue;

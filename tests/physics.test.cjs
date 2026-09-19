@@ -500,7 +500,8 @@ test('every pointed melee weapon pierces when thrown point-first; blunt ones nev
 });
 test('blunt weapons hit harder than their speed, and break bone rather than skin',()=>{
   const blow=(kind)=>{const {s,e}=arena();const w=hurl(s,kind,e.bodies[5],24,0,-70);advance(s,40);const hit=e.bodies.filter(b=>b.plugin.hp<100);return {hp:hit.reduce((n,b)=>n+100-b.plugin.hp,0),bone:Math.min(...e.bodies.map(b=>b.plugin.bone)),wounds:hit.flatMap(b=>b.plugin.wounds)};};
-  const crate=blow('crate'),bat=blow('bat'),hammer=blow('hammer');assert.ok(crate.hp>0);assert.ok(bat.hp>crate.hp*1.4,`bat ${bat.hp} vs crate ${crate.hp}`);assert.ok(hammer.hp>crate.hp*1.4);assert.ok(bat.bone<crate.bone);assert.ok(bat.wounds.length&&bat.wounds.every(w=>w.type==='impact'));
+  const crate=blow('crate'),ball=blow('ball'),bat=blow('bat'),hammer=blow('hammer');assert.ok(crate.hp>0); /* what a thing weighs counts now, so like is compared with like: the bat with a ball of its own weight, the hammer with a crate lighter than it */
+  assert.ok(bat.hp>ball.hp*1.4,`bat ${bat.hp} vs ball ${ball.hp}`);assert.ok(hammer.hp>crate.hp*1.4);assert.ok(bat.bone<ball.bone);assert.ok(crate.hp>ball.hp,'and the heavier thing hits harder at the same speed');assert.ok(bat.wounds.length&&bat.wounds.every(w=>w.type==='impact'));
 });
 test('an axe takes a limb off in one swing; a knife only cuts',()=>{
   const swing=(kind)=>{const {s,e}=arena();const w=hurl(s,kind,e.bodies[6],60,0,-70);advance(s,40);return {joints:s.joints.filter(c=>c.plugin.joint).length,wounds:e.bodies.flatMap(b=>b.plugin.wounds.map(x=>x.type))};};
@@ -731,4 +732,20 @@ test('a shock brings round someone who is out cold, too many in a row stop the h
   assert.equal(died,20,'a dozen shocks in a row always kill');assert.ok(shocks/died>=4&&shocks/died<=7,`on average ${(shocks/died).toFixed(1)} shocks`);
   const spaced=standing();for(let i=0;i<10;i++){spaced.s.shock(spaced.e.bodies[4]);advance(spaced.s,60*8);}assert.ok(spaced.e.alive,'the same ten shocks, spaced out, do not');
   let back=0;for(let seed=1;seed<=20;seed++){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,30);s.kill(e,'cardiac arrest');advance(s,30);s.shock(e.bodies[2]);if(e.alive)back++;}assert.ok(back>=16,`restarted ${back}/20 stopped hearts`);
+});
+
+test('fall damage follows the agreed table: height, what lands first, and whether the body was ready for it',()=>{
+  const drop=(metres,pose,seed,set={})=>{const s=new Simulation().seed(seed);s.configure(set);const e=s.spawn('human',1000,555);advance(s,60);const turn=pose==='head'?Math.PI:pose==='flat'?Math.PI/2*(seed%2?1:-1):0;if(turn)for(const b of e.bodies)Body.rotate(b,turn,{x:1000,y:555});if(pose!=='feet')e.stun=1.2;
+    const low=Math.max(...e.bodies.map(b=>b.bounds.max.y));for(const b of e.bodies){Body.translate(b,{x:0,y:650-low-metres*110});Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}const heard=[];s.onEffect=k=>heard.push(k);advance(s,300);
+    return {e,s,heard,fx:s.bodies.filter(b=>b.plugin.part&&s.fractured(b)).length,hurt:e.bodies.reduce((n,b)=>n+b.plugin.maxHp-b.plugin.hp,0),whole:e.bodies.length===17,bled:e.bodies.some(b=>b.plugin.wounds.some(w=>w.type!=='impact'))};},
+  many=(metres,pose,set)=>[1,2,3,4,5,6].map(seed=>drop(metres,pose,seed,set)),count=(runs,f)=>runs.filter(f).length;
+  for(const pose of ['feet','flat'])assert.equal(count(many(1.2,pose),r=>r.hurt>0),0,`1.2 m ${pose}: nothing`);
+  const f3=many(3,'feet');assert.equal(count(f3,r=>!r.e.alive),0);assert.ok(count(f3,r=>r.e.pain>5)>=4,'3 m on the feet hurts');assert.ok(count(f3,r=>r.fx>1)===0);
+  const f5=many(5,'feet');assert.ok(count(f5,r=>r.fx>=1&&r.e.bodies.some(b=>b.plugin.slot>=11&&r.s.fractured(b)))>=5,'5 m on the feet breaks legs');assert.ok(count(f5,r=>r.heard.includes('crack'))>=5,'and they are heard to break');assert.ok(f5.every(r=>r.whole&&!r.bled),'falls break and bruise; they do not tear or cut');
+  const flat5=many(5,'flat');assert.ok(flat5.reduce((n,r)=>n+r.fx,0)<f5.reduce((n,r)=>n+r.fx,0),'flat spreads it: fewer breaks than feet first from the same height');assert.equal(count(flat5,r=>!r.e.alive),0);
+  assert.equal(count(many(1.2,'head'),r=>!r.e.alive),0);const h3=many(3,'head');assert.equal(count(h3,r=>!r.e.alive),0,'3 m head first: out cold, not dead');assert.ok(count(h3,r=>r.e.stun>0||r.e.consciousness!=='awake'||r.e.organs?.brain<100)>=5);
+  assert.ok(count(many(5,'head'),r=>!r.e.alive)>=5,'5 m head first kills');assert.ok(count(many(7,'feet'),r=>r.fx>=3)>=4,'7 m on the feet: legs and more');
+  const limp=many(4,'feet').reduce((n,r)=>n+r.hurt,0),limp2=[1,2,3,4,5,6].map(seed=>{const r=drop(4,'feet',seed,{autoBalance:false});return r.hurt;}).reduce((a,b)=>a+b,0);assert.ok(limp2>limp*1.25,`a body that cannot ride the landing takes more (${Math.round(limp2)} vs ${Math.round(limp)})`);
+  assert.equal(count(many(7,'feet',{fallDamage:0}),r=>r.hurt>0),0,'the setting turns it off');
+  const slide=standing();for(const b of slide.e.bodies)Body.setVelocity(b,{x:9,y:0});advance(slide.s,120);assert.equal(slide.e.bodies.reduce((n,b)=>n+b.plugin.maxHp-b.plugin.hp,0),0,'speed along the floor is not an impact');
 });
