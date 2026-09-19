@@ -555,3 +555,14 @@ test('a shoved ragdoll throws an arm out to catch its balance, and brings it bac
   let out=0;for(let i=0;i<50;i++){s.step();out=Math.max(out,Math.abs(rel(e,8,2)-rest),Math.abs(rel(e,5,2)-rest));}
   assert.ok(out>.5,`arm swung ${out.toFixed(2)} rad`);advance(s,240);assert.ok(Math.abs(rel(e,8,2)-rest)<.25&&s.balancing(e),'settles back, still standing');
 });
+
+test('legs that go limp under a standing body give way at the knee',()=>{
+  const {s,e}=standing();s.kill(e,'test');let bend=0;for(let i=0;i<40;i++){s.step();bend=Math.max(bend,rel(e,12,11),rel(e,15,14));}
+  assert.ok(bend>.8,`knee bent ${bend.toFixed(2)} rad`);
+});
+
+test('legs that break under a conscious body put it down on its front, legs trailing, ready to crawl',()=>{
+  for(const flip of [false,true]){const s=new Simulation().seed(9);s.configure({organDamage:false});const e=s.spawn('human',1000,555,flip);advance(s,120);const at=k=>e.bodies.find(b=>b.plugin.slot===k),d=flip?-1:1;
+    for(const k of [12,15])at(k).plugin.bone=20;e.fleeT=9;advance(s,200);assert.equal(e.rung,'crawl');
+    assert.ok(Math.abs(at(2).angle*d-Math.PI/2)<.6,`chest face down (${at(2).angle.toFixed(2)})`);assert.ok((at(2).position.x-at(4).position.x)*d>20&&(at(4).position.x-at(16).position.x)*d>40,'head first, feet behind');}
+});

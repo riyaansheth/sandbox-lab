@@ -142,6 +142,8 @@
   const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
+  const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
+  const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
   const STUN_PART={'upper arm':0,forearm:0,hand:0,foot:.3,shin:.6,thigh:.7}; // how much a hit there knocks the whole body down; unlisted parts count fully
   const MIRROR={5:8,6:9,7:10,8:5,9:6,10:7,11:14,12:15,13:16,14:11,15:12,16:13}; // left limb slots to right and back
@@ -493,7 +495,7 @@
     // which is pressed into the floor for grip, so it is all internal. It crawls away from what last hurt it for a few seconds, then lies still.
     crawl(e,want,chest,rung,seconds) {
       // A body seen from the side cannot turn round, and elbows only bend one way, so it crawls the way it faces, propped on its forearms. With nothing to flee it lies slack and the rest logic lets it sleep.
-      e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=chest.plugin.flip?-1:1;if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);return 0;}e.idle=false;
+      e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=chest.plugin.flip?-1:1;if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);this.topple(e,want,chest,d,seconds);return 0;}e.idle=false;
       const A=want.angle,P=want.power,period=rung==='drag'?CRAWL_PERIOD*1.4:CRAWL_PERIOD,mass=this.carried(e,chest),weight=mass*.001*Math.max(this.gravity,.2)*e.effort;
       for(let k=0;k<2;k++){const sh=k?8:5,upper=e.bodies.find(b=>b.plugin.slot===sh),fore=upper&&e.bodies.find(b=>b.plugin.slot===sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||!this.joints.some(c=>c.plugin.joint&&c.bodyB===fore))continue;
         // Arm targets are world directions, turned into joint angles: the forearm lies along the floor pointing ahead, and the upper arm sweeps from "elbow out in front" to "elbow under the shoulder", which drags the chest forward over the planted forearm.
@@ -502,8 +504,12 @@
         if(reach){if(!fore.isStatic&&!chest.isStatic){fore.force.y-=CRAWL_LIFT*weight;chest.force.y+=CRAWL_LIFT*weight;}continue;} // lifted clear on the way forward, so it does not scrape the body back
         const hand=e.bodies.find(b=>b.plugin.slot===sh+2),grip=this.touching.has(fore)?fore:hand&&this.touching.has(hand)?hand:null;
         if(grip&&!grip.isStatic&&!chest.isStatic&&chest.velocity.x*d<CRAWL_SPEED){ /* no faster than a crawl, however light the body has become */ grip.force.y+=CRAWL_PRESS*weight;chest.force.y-=CRAWL_PRESS*weight;grip.force.x-=d*CRAWL_PULL*weight;chest.force.x+=d*CRAWL_PULL*weight;}}
-      return d;
+      this.topple(e,want,chest,d,seconds);return d;
     }
+    // Legs that stop holding a standing body up while it is still awake: it goes down onto its front in one piece, hips and back held straight so the legs trail behind it, rather than sitting back onto them - from there it could never crawl.
+    topple(e,want,chest,d,seconds){if(!(e.toppleT>0))return;e.toppleT-=seconds;for(const k of [3,4,11,14]){want.angle[k]=0;want.power[k]=2.5;}if(!chest.isStatic&&Math.abs(wrap(chest.angle))<1.1)chest.force.x+=d*TOPPLE_PUSH*chest.mass;} /* ponytail: an external nudge, not an internal force; it is a fraction of the body's weight and lasts under a second */
+    // Legs that were holding a body up give way at the knee when it goes limp: straight legs are a stable column, and without this a limp body folds at the hips over locked knees.
+    buckle(e){const m=this.chestOf(e)?.plugin.flip?-1:1;for(const hip of [11,14]){const thigh=e.bodies.find(b=>b.plugin.slot===hip),shin=e.bodies.find(b=>b.plugin.slot===hip+1);if(!thigh||!shin||thigh.isStatic||shin.isStatic)continue;const k=rnd(.7,1.3);Body.setAngularVelocity(thigh,thigh.angularVelocity-m*BUCKLE*k);Body.setAngularVelocity(shin,shin.angularVelocity+m*BUCKLE*1.4*k);}}
     // Standing is posture torques plus a leg push: the lift on the torso is reacted on the planted feet, so it is an internal force.
     // Feet that are not on something produce no lift, so a ragdoll can never fly or hover its way upright.
     balance(e,rung='stand'){
@@ -883,9 +889,9 @@
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.alive)this.vitals(e,seconds);else if(e.twitchAt?.length)this.twitch(e,seconds);
         e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
-        if(!this.active(e)&&!locked){e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
+        if(!this.active(e)&&!locked){if(e.rung==='stand')this.buckle(e);e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
-        this.balance(e,e.rung=this.capability(e));
+        {const next=this.capability(e);if(e.rung==='stand'&&(next==='crawl'||next==='drag'))e.toppleT=TOPPLE_TIME;this.balance(e,e.rung=next);}
       }
       for(const b of bodies){const p=b.plugin;
         if(!Number.isFinite(b.position.x)||!Number.isFinite(b.position.y)||Math.abs(b.position.x)>10000||Math.abs(b.position.y)>10000){this.removeBody(b);continue;}
