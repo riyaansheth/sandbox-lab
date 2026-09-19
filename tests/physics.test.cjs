@@ -1066,6 +1066,12 @@ test('Storm: electricity regrows what was cut off him',()=>{
   const s=new Simulation().seed(5);const e=s.spawn('storm',900,555);advance(s,30);const arm=e.bodies.find(b=>b.plugin.slot===6);s.sever(e.joints.find(c=>c.bodyB===arm||c.bodyA===arm&&c.bodyB.plugin.slot<arm.plugin.slot)||e.joints.find(c=>c.bodyA===arm||c.bodyB===arm));advance(s,10);assert.ok(e.bodies.length<17,'an arm off');
   s.shock(e.bodies[2]);advance(s,60*6);assert.equal(e.bodies.length,17,'a shock grows it back');assert.ok(e.conduit&&e.alive);
 });
+test('Storm: his laser, held on a head, melts a trench through skin, muscle and skull, and out the far side',()=>{
+  const s=new Simulation().seed(6);const st=s.spawn('storm',900,555),foe=s.spawn('human',1060,555);[...st.bodies,...foe.bodies].forEach(b=>s.freeze(b));advance(s,5);st.power=100;const head=st.bodies[0],fh=foe.bodies[0];
+  const melt=()=>fh.plugin.wounds?.find(w=>w.type==='melt'),depths=[];for(let i=0;i<120&&!melt()?.through;i++){s.activate(head,true);s.step();if(melt())depths.push(melt().depth);}
+  const w=melt();assert.ok(w,'the beam leaves a melt wound on the face');assert.deepEqual([...new Set(depths)],[1,2,3],'skin, then muscle, then bone');assert.ok(w.through&&w.bone&&w.len>fh.plugin.w*.8,`through the skull: ${w.len?.toFixed(1)} of ${fh.plugin.w}`);
+  assert.ok(!foe.alive&&!fh.plugin.burning,'dead, and nothing on fire');
+});
 test('Storm: electricity charges him instead of hurting him; he spends it on lightning from the hands and beams from the eyes; empty, nothing',()=>{
   const s=new Simulation().seed(3);s.configure({organDamage:false});const e=s.spawn('storm',900,555),target=s.spawn('human',1150,555),crate=s.spawn('crate',1150,300).bodies[0];advance(s,60);const hp=()=>e.bodies.reduce((n,b)=>n+b.plugin.hp,0),full=hp();
   assert.equal(e.power,0);assert.equal(s.activate(e.bodies[10]),'Out of charge: hit him with electricity first');s.shock(e.bodies[2]);assert.ok(e.power>20&&e.power<60,`one shock: ${e.power.toFixed(0)}%`);assert.equal(hp(),full,'and not a scratch');assert.ok(e.alive&&!(e.shockDose>0));
