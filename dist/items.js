@@ -26,6 +26,7 @@
     glass:   { density: .001,  flammable: 0,  burnAt: Infinity, thermal: .5,  conductive: 0,  magnetic: false, absorb: .1,  soft: 0,  brittle: 1,  buoyancy: .5,   friction: .4,  restitution: .1 },
     rubber:  { density: .001,  flammable: .6, burnAt: 170,      thermal: .1,  conductive: 0,  magnetic: false, absorb: .7,  soft: .4, brittle: 0,  buoyancy: 1.3,  friction: .9,  restitution: .87 },
     plastic: { density: .0009, flammable: .8, burnAt: 200,      thermal: .15, conductive: 0,  magnetic: false, absorb: .45, soft: .3, brittle: 0,  buoyancy: 1.4,  friction: .5,  restitution: .3 },
+    cloth:   { density: .0004, flammable: 1,  burnAt: 150,      thermal: .25, conductive: 0,  magnetic: false, absorb: .05, soft: 1,  brittle: 0,  buoyancy: 1.5,  friction: .3,  restitution: .02 },
     bone:    { density: .002,  flammable: 0,  burnAt: Infinity, thermal: .3,  conductive: 0,  magnetic: false, absorb: .6,  soft: 0,  brittle: 0,  buoyancy: .9,   friction: .6,  restitution: .1 }
   };
 
@@ -35,6 +36,7 @@
   //   sharp      { tip: pierces point-first (the -y end), edge: slashes on contact, power: most damage one slash can do, length: share of the item that is blade, hot: cauterises }
   //              ease: multiplier on the speed needed to pierce and on the pull needed to draw it out (a needle: .1), prick: the damage it does going in, instead of a blade's
   //   syringe    { dose: % of a body's blood it draws or gives back }. Pierced into a body while empty it draws a dose; Activate pushes out whatever is in it - into the body it is in, or onto the floor
+  //   garment    { kind: top | pants | hat | shoes | gloves | mask, outfit: the outfit in body.js it is cut from, parts: the body parts it paints }. Touching one of a human ragdoll's parts of its region, it is put on
   //   blunt      multiplier on the damage it does by hitting things (a hammer hits harder than its speed alone)
   //   grip       where a hand holds it, in the item's own frame
   //   device     what Activate toggles: 'thruster' | 'wheel' | 'battery'
@@ -64,6 +66,26 @@
     { id: 'spike',    name: 'Spike',          category: 'Melee',      description: 'A steel spike. Freeze it point-up and drop something on it.', w: 12, h: 54, material: 'metal', hp: 300, density: .004, sharp: { tip: true, length: .85 }, color: '#77838a' },
     { id: 'stick',    name: 'Stick',          category: 'Melee',      description: 'It is a stick. It burns, it breaks, it pokes.', w: 7, h: 92, material: 'wood', hp: 45, density: .001, blunt: 1.1, color: '#8a6a44' },
     { id: 'wrench',   name: 'Wrench',         category: 'Melee',      description: 'Drop-forged steel. A short, heavy club.', w: 16, h: 60, material: 'metal', hp: 280, density: .0045, blunt: 1.8, grip: { x: 0, y: 18 }, color: '#9aa5aa' },
+    // Clothes. Each garment is one kind of one of the five outfits drawn in body.js, and is worn by the parts listed (a short-sleeved shirt does not reach the forearm; a coat's tails cover the pelvis and the thighs).
+    // A dressed human (above) is a human that starts out wearing every garment of its outfit.
+    { id: 'hoodie',        name: 'Black hoodie',        category: 'Clothes', description: 'Black hoodie with a hood and drawstring, a strip of white tee under the hem.', w: 30, h: 20, material: 'cloth', hp: 20, garment: { kind: 'top', outfit: 'hoodie', parts: ['chest', 'abdomen', 'upper arm', 'forearm', 'neck', 'pelvis'] }, color: '#2d2d32' },
+    { id: 'policeshirt',   name: 'Police shirt',        category: 'Clothes', description: 'Short-sleeved uniform shirt with a shoulder patch, pocket and radio.', w: 30, h: 20, material: 'cloth', hp: 20, garment: { kind: 'top', outfit: 'cop', parts: ['chest', 'abdomen', 'upper arm', 'neck'] }, color: '#2b3052' },
+    { id: 'jumper',        name: 'Striped jumper',      category: 'Clothes', description: 'Black and white striped jumper with ribbed hem and cuffs.', w: 30, h: 20, material: 'cloth', hp: 20, garment: { kind: 'top', outfit: 'criminal', parts: ['chest', 'abdomen', 'upper arm', 'forearm', 'pelvis'] }, color: '#d4d1ca' },
+    { id: 'blueshirt',     name: 'Blue shirt',          category: 'Clothes', description: 'Short-sleeved blue shirt with a collar.', w: 30, h: 20, material: 'cloth', hp: 20, garment: { kind: 'top', outfit: 'civilian', parts: ['chest', 'abdomen', 'upper arm', 'neck'] }, color: '#3f74bd' },
+    { id: 'trenchcoat',    name: 'Trench coat',         category: 'Clothes', description: 'Belted tan trench coat over a shirt and tie; its tails hang to the thigh.', w: 32, h: 22, material: 'cloth', hp: 20, garment: { kind: 'top', outfit: 'detective', parts: ['chest', 'abdomen', 'upper arm', 'forearm', 'neck', 'pelvis', 'thigh'] }, color: '#b39162' },
+    { id: 'cargos',        name: 'Grey cargo trousers', category: 'Clothes', description: 'Grey cargo trousers with a thigh pocket.', w: 28, h: 18, material: 'cloth', hp: 20, garment: { kind: 'pants', outfit: 'hoodie', parts: ['pelvis', 'thigh', 'shin'] }, color: '#5c5d55' },
+    { id: 'policetrousers',name: 'Police trousers',     category: 'Clothes', description: 'Uniform trousers with a duty belt: holster, pouch and handcuffs.', w: 28, h: 18, material: 'cloth', hp: 20, garment: { kind: 'pants', outfit: 'cop', parts: ['pelvis', 'thigh', 'shin'] }, color: '#272b49' },
+    { id: 'darkcargos',    name: 'Dark cargo trousers', category: 'Clothes', description: 'Dark cargo trousers with a thigh pocket.', w: 28, h: 18, material: 'cloth', hp: 20, garment: { kind: 'pants', outfit: 'criminal', parts: ['pelvis', 'thigh', 'shin'] }, color: '#363538' },
+    { id: 'blacktrousers', name: 'Black trousers',      category: 'Clothes', description: 'Black trousers with a brown belt.', w: 28, h: 18, material: 'cloth', hp: 20, garment: { kind: 'pants', outfit: 'civilian', parts: ['pelvis', 'thigh', 'shin'] }, color: '#26272b' },
+    { id: 'browntrousers', name: 'Brown trousers',      category: 'Clothes', description: 'Dark brown trousers.', w: 28, h: 18, material: 'cloth', hp: 20, garment: { kind: 'pants', outfit: 'detective', parts: ['pelvis', 'thigh', 'shin'] }, color: '#3d3632' },
+    { id: 'cap',           name: 'Peaked cap',          category: 'Clothes', description: 'Police cap with a glossy peak and a gold badge.', w: 28, h: 13, material: 'cloth', hp: 20, garment: { kind: 'hat', outfit: 'cop', parts: ['head'] }, color: '#2b3052' },
+    { id: 'beanie',        name: 'Beanie',              category: 'Clothes', description: 'Ribbed black beanie with a folded cuff.', w: 22, h: 15, material: 'cloth', hp: 20, garment: { kind: 'hat', outfit: 'criminal', parts: ['head'] }, color: '#303033' },
+    { id: 'fedora',        name: 'Fedora',              category: 'Clothes', description: 'Brown felt fedora with a dark band.', w: 36, h: 13, material: 'cloth', hp: 20, garment: { kind: 'hat', outfit: 'detective', parts: ['head'] }, color: '#6f5539' },
+    { id: 'trainers',      name: 'White trainers',      category: 'Clothes', description: 'A pair of white trainers.', w: 36, h: 11, material: 'cloth', hp: 20, garment: { kind: 'shoes', outfit: 'hoodie', parts: ['foot'] }, color: '#eeede8' },
+    { id: 'blackshoes',    name: 'Black shoes',         category: 'Clothes', description: 'A pair of black shoes.', w: 36, h: 11, material: 'cloth', hp: 20, garment: { kind: 'shoes', outfit: 'cop', parts: ['foot'] }, color: '#26262a' },
+    { id: 'brownshoes',    name: 'Brown shoes',         category: 'Clothes', description: 'A pair of brown leather shoes.', w: 36, h: 11, material: 'cloth', hp: 20, garment: { kind: 'shoes', outfit: 'detective', parts: ['foot'] }, color: '#54392a' },
+    { id: 'gloves',        name: 'Black gloves',        category: 'Clothes', description: 'A pair of black gloves.', w: 24, h: 12, material: 'cloth', hp: 20, garment: { kind: 'gloves', outfit: 'criminal', parts: ['hand'] }, color: '#2e2e31' },
+    { id: 'mask',          name: 'Black mask',          category: 'Clothes', description: 'Black cloth mask that covers the lower face and the neck.', w: 24, h: 8, material: 'cloth', hp: 20, garment: { kind: 'mask', outfit: 'criminal', parts: ['head', 'neck'] }, color: '#262629' },
     { id: 'syringe',  name: 'Empty syringe',  category: 'Syringes',   description: 'Goes in at a touch and comes out with a light pull. Empty, it draws 2% of the body\'s blood; F pushes what is in it back out.', w: 7, h: 38, material: 'plastic', hp: 30, density: .0012, sharp: { tip: true, length: .34, ease: .1, prick: 3 }, syringe: { dose: 2 }, color: '#9aa0a6' },
     // Firearms. damage is a multiple of the bullet-damage setting with the 9 mm pistol as 1, set from each round's real muzzle energy and what it does to tissue; speed is its real muzzle velocity in m/s (the engine flies rounds at a fixed fraction of it); rate is rounds a second.
     { id: 'gun',      name: 'Pistol',         category: 'Firearms',   description: '9 mm, 370 m/s. Activate (F) to fire. A / D to aim, or put it in a hand.', w: 24, h: 9, material: 'metal', hp: 170, density: .006, firearm: { damage: 1, speed: 370, rate: 5, recoil: .008, muzzle: 14 }, grip: { x: -7, y: 4.5 }, color: '#8f989b' },
@@ -90,6 +112,10 @@
     { id: 'glass',    name: 'Glass pane',     category: 'Misc',       description: 'Fragile. Shatters into physical fragments.', w: 13, h: 100, material: 'glass', hp: 22, color: '#93c3c8' },
     { id: 'platform', name: 'Fixed platform', category: 'Misc',       description: 'A frozen platform. Unfreeze with the freeze tool.', w: 180, h: 17, material: 'metal', hp: 1000, density: .005, static: true, indestructible: true, color: '#788a94' }
   ];
-  const CATEGORIES = ['Entities', 'Syringes', 'Melee', 'Firearms', 'Explosives', 'Vehicles', 'Machinery', 'Chemistry', 'Misc'];
-  return { MATERIALS, ITEMS, CATEGORIES };
+  const CATEGORIES = ['Entities', 'Syringes', 'Clothes', 'Melee', 'Firearms', 'Explosives', 'Vehicles', 'Machinery', 'Chemistry', 'Misc'];
+  // What a part wears when it has every garment of an outfit: { kind: outfit id } for each garment of that outfit that paints the part, or an empty set. The civilian and the hoodie share white trainers, the cop and the criminal black shoes:
+  // a garment is looked up by the outfit it is cut from, and those two outfits are given their shoes by name.
+  const GARMENTS = ITEMS.filter(item => item.garment), SHARED = { civilian: { shoes: 'hoodie' }, criminal: { shoes: 'cop' } };
+  const dress = (outfit, part) => { if (!GARMENTS.some(item => item.garment.outfit === outfit)) return undefined; const wear = {}; /* a part of a dressed body that nothing covers still gets an (empty) set: it is drawn by the same pass as the rest, as it always was */ for (const kind of ['top', 'pants', 'hat', 'shoes', 'gloves', 'mask']) { const from = SHARED[outfit]?.[kind] || outfit, g = GARMENTS.find(item => item.garment.kind === kind && item.garment.outfit === from); if (g && g.garment.parts.includes(part)) wear[kind] = from; } return wear; };
+  return { MATERIALS, ITEMS, CATEGORIES, GARMENTS, dress };
 });

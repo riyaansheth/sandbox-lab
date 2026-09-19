@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const files = ['index.html', 'style.css', 'app.js', 'engine.js', 'items.js', 'art.js', 'art-melee.js', 'art-firearms.js', 'body.js', 'vendor/matter.min.js', 'vendor/MATTER-LICENSE.txt', 'README.md'];
+const files = ['index.html', 'style.css', 'app.js', 'engine.js', 'items.js', 'art.js', 'art-melee.js', 'art-firearms.js', 'art-clothes.js', 'body.js', 'vendor/matter.min.js', 'vendor/MATTER-LICENSE.txt', 'README.md'];
 for (const file of files) {
   const target = path.join(__dirname, 'dist', file);
   fs.mkdirSync(path.dirname(target), { recursive: true });

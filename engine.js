@@ -162,6 +162,7 @@
   const POWER_R={fire:40,cold:40,heal:40,shock:120},POWER_SCAN=1/30,FIRE_RATE=860,COLD_RATE=170,/* flesh is frozen solid after about a second: long enough to watch it stiffen */COLD_FLOOR=-80,COLD_QUENCH=1500,FROZEN=-30,FROZEN_BLOW=22,COLD_KO=2.5,POWER_MARKS=36,FROST_LIFE=10;
   const BATTERY_EVERY=1.2; // seconds between a battery's discharges: a short burst, then quiet. (The shock power is the continuous one.)
   const SHOCK_CHAIN_HELD=12,SHOCK_TICK=.08,SHOCK_DOSE=.44,SHOCK_ARCS=3,HEAL_HP=35,HEAL_WOUND=7,HEAL_BLOOD=14,HEAL_PAIN=45,HEAL_ORGAN=18,HEAL_TEMP=260; // a held shock is one tick every 80 ms at the dose that matches the old one-a-click rate; heal: hp and bone per second, px of wound closed per second, and the body's blood, pain and organs
+  const GARMENT_TOUCH={top:['chest','abdomen','upper arm','forearm'],pants:['pelvis','thigh','shin'],hat:['head'],mask:['head','neck'],shoes:['foot'],gloves:['hand']},GARMENT_NEEDS={top:'chest',pants:'pelvis',hat:'head',mask:'head',shoes:'foot',gloves:'hand'},GARMENT_ORDER=['hat','top','mask','pants','shoes','gloves'],REDRESS_WAIT=1.2; // the parts a garment must touch to be put on; the part a body must have to wear it; which comes off first where a part wears two; seconds before a garment just taken off can be put on again
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
   const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
@@ -226,7 +227,7 @@
       if(this.bodies.length>=this.settings.maxObjects)return null;
       if(kind==='human'||kind==='android')return this.ragdoll(kind,x,y,flip);
       const d=defs[kind];if(!d)return null;
-      if(d.ragdoll){const e=this.ragdoll(d.ragdoll,x,y,flip);if(e)for(const b of e.bodies)b.plugin.outfit=d.outfit;return e;} /* a dressed human is a human: only the paint differs, so nothing in the simulation can tell them apart */
+      if(d.ragdoll){const e=this.ragdoll(d.ragdoll,x,y,flip);if(e)for(const b of e.bodies)b.plugin.wear=Items.dress(d.outfit,b.plugin.part);return e;} /* a dressed human is a human: only the paint differs, so nothing in the simulation can tell them apart */
       const opts={density:d.density??d.mat.density,friction:d.mat.friction,frictionStatic:.9,restitution:d.restitution??d.mat.restitution,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
       const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:d.sharp?1:3}});
       this.meta(b,kind,flip?{flip:true}:{});return this.entity(kind,[b]);
@@ -811,6 +812,7 @@
           if(type==='blast'&&p.part&&!p.gibbed){p.gibbed=true;const at={...body.position},v={...body.velocity},m=p.material;this.damageQueue.push(()=>this.gibs(at.x,at.y,m,v,.6));}
           if(set.limbCrush&&!gunshot&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
         }
+        else if(defs[p.kind]?.garment){if(!p.destroying){p.destroying=true;this.damageQueue.push(()=>this.removeBody(body));}}
         else if(!p.debris&&!p.destroying&&!defs[p.kind]?.indestructible){p.destroying=true;this.damageQueue.push(()=>this.shatter(body));}
       }
     }
@@ -1049,6 +1051,24 @@
       this.falling=false;
       if(head&&e&&e.alive&&fixed&&amount>=NECK_FALL&&random()<(amount-NECK_FALL)/NECK_FALL)this.kill(e,'broken neck');
     }
+    // Clothes. A loose garment that touches a part of its own region of a human ragdoll is put on: the item goes, and every part of that ragdoll that the garment paints now wears it. Any touch will do - a throw, a drop, being carried there by the cursor.
+    // The wrong region, an android, a loose limb, or a body already wearing that kind of garment: nothing happens and it bounces off like any object. It is cosmetic: no damage, no stun, no push, and nothing in the simulation reads what a part wears.
+    touchGarment(item,part) {
+      const g=defs[item.plugin.kind].garment,p=part.plugin;if(item.plugin.worn||item.plugin.heldBy!==undefined||this.time-(item.plugin.freshAt??-9)<REDRESS_WAIT||p.kind!=='human'||!GARMENT_TOUCH[g.kind].includes(p.part))return;const e=this.getEntity(part);
+      if(!e||e.kind!=='human'||!e.bodies.some(b=>b.plugin.slot===2)||!e.bodies.some(b=>b.plugin.part===GARMENT_NEEDS[g.kind])||e.bodies.some(b=>b.plugin.wear?.[g.kind]))return; /* a whole body, with the part this goes on, not already wearing one */
+      item.plugin.worn=true;this.damageQueue.push(()=>{if(!this.bodies.includes(item))return;const at={...item.position};this.removeEntity(item);for(const b of e.bodies)if(g.parts.includes(b.plugin.part))b.plugin.wear={...b.plugin.wear,[g.kind]:g.outfit};
+        for(let i=0;i<6;i++)this.emit(at.x+rnd(-6,6),at.y+rnd(-5,5),rnd(-.6,.6),rnd(-.7,.1),rnd(.4,.8),.8,'#e6e2d6',rnd(4,7),'mist');this.onEffect('cloth',.5);this.onDress?.(defs[item.plugin.kind].name,e);});
+    }
+    // Undress: the garment on the clicked part comes off the whole ragdoll and drops beside it as a fresh item - the outermost first where a part wears two (hat before mask, top before trousers). Returns what to tell the player.
+    undress(part,point=null) {
+      if(point&&part?.plugin.part&&!GARMENT_ORDER.some(k=>part.plugin.wear?.[k])){const under=Query.point(this.bodies,point).reverse().find(b=>b.plugin.part&&GARMENT_ORDER.some(k=>b.plugin.wear?.[k]));if(under)part=under;} /* in profile a bare hand hangs in front of the trousers: the click goes through to the first clothed part under it */
+      const p=part?.plugin,e=part&&this.getEntity(part);if(!p?.part||!e)return 'Click a clothed ragdoll part.';const kind=GARMENT_ORDER.find(k=>p.wear?.[k]);if(!kind)return 'Nothing to take off there';
+      if(!e.bodies.some(b=>b.plugin.slot===2))return 'Only a whole ragdoll can be undressed';const row=ITEMS.find(item=>item.garment&&item.garment.kind===kind&&item.garment.outfit===p.wear[kind]);if(!row)return 'Nothing to take off there';
+      if(this.bodies.length>=this.settings.maxObjects)return 'The chamber is full - delete something before taking clothes off';
+      for(const b of e.bodies)if(b.plugin.wear?.[kind]){const {[kind]:gone,...rest}=b.plugin.wear;b.plugin.wear=rest;} /* an empty set stays: it marks the part as one of a dressed body's */
+      const chest=this.chestOf(e),side=chest.position.x>this.width/2?-1:1,item=this.spawn(row.id,clamp(chest.position.x+side*(46+row.w/2),30,this.width-30),Math.min(part.position.y,this.groundY-row.h));if(item){const b=item.bodies[0];b.plugin.freshAt=this.time;Body.setVelocity(b,{x:side*1.5,y:-1});} /* always a pristine item: holes, blood and scorching stay with the body. For a moment it cannot be put straight back on by brushing the body it came off */
+      this.onEffect('cloth',.5);return `Took off: ${row.name.toLowerCase()}`;
+    }
     // Immense pressure against something hard bursts a part. The pressure is the cursor's: how far past the surface it is pushing the part it holds (or pushing something hard down onto a part that lies on something hard),
     // measured along the contact normal. How far a part sinks into the floor would do as a reading, but under the same push a hand sinks 20 px and a thigh 6, so the push itself is used: the same for every part, and the player can feel it.
     // It has to be held - a landing, however hard, is over too soon - and then it does damage by how far past the limit it is: the part bruises, its bone goes (the crack), and when there is nothing left of it, it bursts.
@@ -1060,7 +1080,7 @@
     press(bodies,seconds){for(const b of bodies){if(!b.plugin.part)continue;const p=b.plugin,over=b.squeezeHard?(b.squeeze||0)-CRUSH_PULL*this.settings.jointStrength:-1;
       if(!(over>=0)){if(b.squeezeT)b.squeezeT=Math.max(0,b.squeezeT-seconds*2);continue;}b.squeezeT=(b.squeezeT||0)+seconds;if(b.squeezeT<CRUSH_HOLD||p.crushing)continue;
       this.damage(b,(CRUSH_RATE+over*CRUSH_MORE)*seconds*(p.material==='flesh'?1:.5),b.position,'impact');if(p.hp<=0&&!p.crushing&&this.bodies.includes(b)){p.crushing=true;this.onEffect('crack',1);this.onEffect('wet',1.2);this.damageQueue.push(()=>this.crush(b));}}}
-    disturb(pairs){this.squeeze(pairs);for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);
+    disturb(pairs){this.squeeze(pairs);for(const {bodyA:a,bodyB:b} of pairs)for(const [target,other] of [[a,b],[b,a]]){this.touching.add(target);if(other.plugin.part&&defs[target.plugin.kind]?.garment)this.touchGarment(target,other);
       if(other.plugin.active&&defs[other.plugin.kind]?.device==='chainsaw'&&!target.plugin.boundary&&this.time-(this.bites.get(target)||0)>.1){this.bites.set(target,this.time); /* ten bites a second into each thing the bar touches */ const at=Vector.mult(Vector.add(target.position,other.position),.5);this.damage(target,14,at,'cut',Vector.rotate({x:0,y:-1},other.angle));if(matOf(target.plugin).soft>=1)other.plugin.bloody=true;else this.burst(at.x,at.y,4,'#ffe7a0',5);}if(other.isStatic||other.speed<.15)continue;const e=this.getEntity(target);if(e?.restTime&&e!==this.getEntity(other))e.restTime=0;}}
     // The power hammer's ram: everything in front of the head is struck along the hammer's axis, and the hammer kicks back.
     ram(body) {
@@ -1070,7 +1090,7 @@
       Body.setVelocity(body,Vector.add(body.velocity,Vector.mult(axis,-5)));this.flashes.push({x:head.x,y:head.y,radius:60,life:.25,maxLife:.25});this.onEffect('explosion',.5);return struck?`Ram fired: ${struck} hit`:'Ram fired';
     }
     // Units: inside Matter's collision events a body's velocity is per substep (1/120 s), half the per-frame figure the rest of the engine sees. Every speed threshold in here and in pierce() is in those units.
-    collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;
+    collisions(pairs){this.disturb(pairs);for(const pair of pairs){const {bodyA:a,bodyB:b}=pair;if(defs[a.plugin.kind]?.garment||defs[b.plugin.kind]?.garment)continue; /* cloth does no damage and takes none from a knock */ if(this.pierce(pair,a,b)||this.pierce(pair,b,a))continue;
       // Inside this event Matter has already resolved the contact, so a body that has just hit the floor reads as nearly still. What counts is how fast the two were closing before it: the velocities saved at the top of the step,
       // and for a blunt hit only the part of that along the contact normal - sliding along a floor is not hitting it. A blade's edge cuts with all of its speed.
       const rvx=(a.vx0??a.velocity.x)-(b.vx0??b.velocity.x),rvy=(a.vy0??a.velocity.y)-(b.vy0??b.velocity.y),n=pair.collision.normal,closing=Math.abs(rvx*n.x+rvy*n.y),speed=Math.hypot(rvx,rvy),point=pair.collision.supports[0]?{x:pair.collision.supports[0].x,y:pair.collision.supports[0].y}:Vector.mult(Vector.add(a.position,b.position),.5);
@@ -1224,7 +1244,7 @@
       this.clear();this.scene=data.scene||'empty';this.gravity=Number.isFinite(data.gravity)?data.gravity:1;this.settings.gravity=clamp(this.gravity*EARTH,-40,40);
       const bodies=data.bodies.map(d=>{const p=d.plugin,opts={density:d.density||.002,friction:d.friction,restitution:d.restitution,collisionFilter:{group:d.group||0}};
         const b=p.r?Bodies.circle(d.x,d.y,p.r,opts):Bodies.rectangle(d.x,d.y,p.w,p.h,{...opts,chamfer:{radius:Math.min(3,p.w/3,p.h/3)}});
-        b.plugin={...p};Body.setAngle(b,d.angle);Body.setVelocity(b,d.velocity||{x:0,y:0});Body.setAngularVelocity(b,d.angularVelocity||0);if(d.isStatic)Body.setStatic(b,true);return b;
+        b.plugin={...p};if(b.plugin.outfit){if(!b.plugin.wear)b.plugin.wear=Items.dress(b.plugin.outfit,b.plugin.part);delete b.plugin.outfit;} /* a save from before there were garments: the whole outfit */ Body.setAngle(b,d.angle);Body.setVelocity(b,d.velocity||{x:0,y:0});Body.setAngularVelocity(b,d.angularVelocity||0);if(d.isStatic)Body.setStatic(b,true);return b;
       });Composite.add(this.world,bodies);
       // Constraint.create discards a plugin passed in its options, so it is assigned afterwards.
       const joints=data.joints.map(d=>{const a=d.a===null?null:bodies[d.a],b=d.b===null?null:bodies[d.b];const c=Constraint.create({bodyA:a,bodyB:b,angleA:a?.angle||0,angleB:b?.angle||0,pointA:{...d.pointA},pointB:{...d.pointB},length:d.length,stiffness:d.stiffness,damping:d.damping});c.plugin={...d.plugin};return c;});Composite.add(this.world,joints);

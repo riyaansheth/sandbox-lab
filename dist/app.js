@@ -24,6 +24,7 @@
     {id:'regrow',name:'Regrow',symbol:'❋',key:'-',title:'Grow it back',desc:'Click a ragdoll to regrow every missing limb. The torn-off pieces stay where they fell.'},
     {id:'reattach',name:'Reattach',symbol:'⚭',key:'=',title:'Put it back',desc:'Click a severed limb to return it to its own body, or click the body to collect all its pieces.'},
     {id:'graft',name:'Graft',symbol:'⚡',key:'[',title:'Build a better body',desc:'Click the body part to build on, then any loose limb — human or android, either side. It locks on with a surge of power.'},
+    {id:'undress',name:'Undress',symbol:'👕',key:'u',title:'Take it off',desc:'Click a clothed part: that garment comes off the whole ragdoll and drops beside it as a fresh item. Hat before mask, top before trousers.'},
     {id:'dismember',name:'Dismember',symbol:'✂',key:']',title:'Take it off',desc:'Click a limb to cut it off at the joint nearest the body.'},
     {id:'delete',name:'Delete',symbol:'⌫',key:'0',title:'Clean up',desc:'Click an object to remove it and its connections.'}
   ];
@@ -31,7 +32,7 @@
   let audio=null,lastImpact=0;
   function sound(type,volume=.2){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
     if(type==='electric'){if(now-(lastHit.electric||0)<.07)return;lastHit.electric=now;}
-    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
+    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='thunder'){thunder(now,level);return;}
     if(type==='grunt'){const o=audio.createOscillator(),g=audio.createGain(),f=audio.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(125+volume*40,now);o.frequency.exponentialRampToValueAtTime(78,now+.16);f.type='lowpass';f.frequency.value=520;g.gain.setValueAtTime(Math.min(.12,.06*volume*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.2);o.connect(f);f.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.22);return;}
     if(type==='grow'||type==='surge'){const rise=audio.createOscillator(),g=audio.createGain(),long=type==='surge'?.7:.22;rise.type=type==='surge'?'sawtooth':'sine';rise.frequency.setValueAtTime(type==='surge'?90:220+volume*260,now);rise.frequency.exponentialRampToValueAtTime(type==='surge'?1400:520+volume*400,now+long);g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(Math.min(.2,.09*level),now+long*.6);g.gain.exponentialRampToValueAtTime(.001,now+long);rise.connect(g);g.connect(audio.destination);rise.start(now);rise.stop(now+long+.02);if(type==='surge')shake=7*set.shake;return;}
@@ -48,7 +49,8 @@
     else if(type==='slice'){burst(now,.13,'bandpass',3400,900,1.2,.3);burst(now+.02,.1,'lowpass',700,260,.8,.22);}
     else if(type==='wet'){burst(now,.07,'lowpass',900,220,.9,.4);tone(now,.06,140,70,.2);}
     else if(type==='crack'){burst(now,.03,'bandpass',2600,1900,4,.6);burst(now+.035,.04,'bandpass',1700,1200,4,.5);tone(now,.08,190,90,.3);}
-    else if(type==='sizzle'){burst(now,.4,'highpass',4200,3000,.6,.12);}}
+    else if(type==='sizzle'){burst(now,.4,'highpass',4200,3000,.6,.12);}
+    else if(type==='cloth'){burst(now,.16,'lowpass',1100,300,.5,.16);burst(now+.05,.12,'bandpass',1600,700,.7,.07);}} /* a soft rustle */
   // The sound of a held power: one loop per kind, faded in when the power appears and out when it goes. Each is a second or two of shaped noise (or, for heal, two soft tones) built once.
   // fire: a low roar with sharp random pops - crackle; cold: a thin band of wind that swells and sinks; shock: a harsh mains buzz; heal: a gentle hum.
   const loops={};let loopNow=null;
@@ -67,6 +69,7 @@
     for(let i=0;i<data.length;i++){const t=i/audio.sampleRate;data[i]=(Math.random()*2-1)*(Math.exp(-t*30)+.55*Math.exp(-t*1.6)*(.6+.4*Math.sin(t*9)));}
     const source=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();source.buffer=buffer;filter.type='lowpass';filter.frequency.setValueAtTime(2400,now);filter.frequency.exponentialRampToValueAtTime(120,now+.5);
     gain.gain.value=Math.min(.5,.35*level);source.connect(filter);filter.connect(gain);gain.connect(audio.destination);source.start(now);}
+  sim.onDress=name=>toast(`Put on: ${name.toLowerCase()}`);
   sim.onEffect=(type,volume)=>{sound(type,volume);if(type==='explosion'||type==='thunder')shake=Math.min(14,volume*8)*sim.settings.shake;};
   let shake=0;
   function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),2400);}
@@ -110,7 +113,7 @@
   }
   function drawMini(c,kind){c.clearRect(0,0,160,114);c.save();c.translate(80,55);if(kind==='human'||kind==='android'||Sandbox.defs[kind]?.ragdoll){
     c.scale(.45,.45);c.translate(0,12);Sandbox.ANATOMY.map((row,slot)=>[...row,slot]).sort((a,b)=>BodyArt.layer({part:a[0],slot:a[5]})-BodyArt.layer({part:b[0],slot:b[5]})).forEach(([part,x,y,w,h,slot])=>{c.save();c.translate(x,y);drawObject(c,kind,{part,slot,w,h,r:0,hp:100});c.restore();});
-  }else{const d=Sandbox.defs[kind],s=Math.min(1.3,120/(d.w||d.r*2),78/(d.h||d.r*2));c.scale(s,s);drawObject(c,kind,d);}c.restore();}
+  }else{const d=Sandbox.defs[kind],s=Math.min(d.garment?2.6:1.3,120/(d.w||d.r*2),78/(d.h||d.r*2)); /* garments are small things: shown larger on their cards */c.scale(s,s);drawObject(c,kind,d);}c.restore();}
   function renderCatalog(){const query=$('#search').value.trim().toLowerCase();const list=CATALOG.filter(c=>(state.category==='all'||c.category===state.category)&&`${c.name} ${c.description}`.toLowerCase().includes(query));$('#catalog-count').textContent=list.length+' objects';$('#catalog').replaceChildren();for(const item of list){const button=document.createElement('button');button.className='object-card'+(state.spawn===item.id?' active':'');button.dataset.object=item.id;button.title=item.description;button.setAttribute('aria-label','Spawn '+item.name);const preview=document.createElement('canvas');preview.width=160;preview.height=114;preview.setAttribute('aria-hidden','true');button.appendChild(preview);const name=document.createElement('span');name.className='name';name.textContent=item.name;button.appendChild(name);if(item.id==='human'){const tag=document.createElement('span');tag.className='tag';tag.textContent='Start here';button.appendChild(tag);}button.addEventListener('click',()=>chooseSpawn(item.id));$('#catalog').appendChild(button);drawMini(preview.getContext('2d'),item.id);}if(!list.length){const p=document.createElement('p');p.className='no-results';p.textContent='No objects match your search.';$('#catalog').appendChild(p);}}
   for(const tool of TOOLS){const b=document.createElement('button');b.className='tool'+(tool.id==='grab'?' active':'');b.dataset.tool=tool.id;b.title=`${tool.title} (${tool.key})`;b.setAttribute('aria-label',tool.title);b.setAttribute('aria-pressed',String(tool.id==='grab'));b.innerHTML=`<span class="shortcut">${tool.key}</span><span class="symbol">${tool.symbol}</span><span class="tool-name">${tool.name}</span>`;b.addEventListener('click',()=>setTool(tool.id));$('#tools').appendChild(b);}
   const hash=n=>{const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);};
@@ -280,7 +283,7 @@
     if(state.graftStump&&sim.bodies.includes(state.graftStump)){const g=state.graftStump.position,pulse=10+Math.sin(sim.time*9)*3;ctx.strokeStyle='#8fe9ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(g.x,g.y,pulse+8,0,7);ctx.stroke();ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(g.x,g.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.ropeStart){ctx.strokeStyle='#dec58e';ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(state.ropeStart.point.x,state.ropeStart.point.y);ctx.lineTo(state.worldPointer.x,state.worldPointer.y);ctx.stroke();ctx.setLineDash([]);}
     if(state.inside&&state.spawn&&!state.down){ctx.save();ctx.globalAlpha=.3;ctx.translate(state.worldPointer.x,state.worldPointer.y);ctx.rotate(state.rotation);if(state.spawn==='human'||state.spawn==='android'||Sandbox.defs[state.spawn]?.ragdoll){Sandbox.ANATOMY.map((row,slot)=>[...row,slot]).sort((a,b)=>BodyArt.layer({part:a[0],slot:a[5]})-BodyArt.layer({part:b[0],slot:b[5]})).forEach(([part,x,y,w,h,slot])=>{ctx.save();ctx.translate(x,y);drawObject(ctx,state.spawn,{part,slot,w,h,hp:100});ctx.restore();});}else drawObject(ctx,state.spawn);ctx.restore();}
-    if(state.inside&&['blast','fire','cold','shock','heal','revive','partial','regrow','reattach','graft','dismember'].includes(state.tool)){const power=POWERS.includes(state.tool);ctx.strokeStyle=state.tool==='blast'?'#e3b07966':power?POWER_RING[state.tool]:'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:power?sim.powerRadius(state.tool):24,0,7);ctx.stroke();ctx.setLineDash([]);} /* for a power the ring is its real reach */
+    if(state.inside&&['blast','fire','cold','shock','heal','revive','partial','regrow','reattach','graft','undress','dismember'].includes(state.tool)){const power=POWERS.includes(state.tool);ctx.strokeStyle=state.tool==='blast'?'#e3b07966':power?POWER_RING[state.tool]:'#c6d9d977';ctx.lineWidth=1/camera.zoom;ctx.setLineDash([4,5]);ctx.beginPath();ctx.arc(state.worldPointer.x,state.worldPointer.y,state.tool==='blast'?175:power?sim.powerRadius(state.tool):24,0,7);ctx.stroke();ctx.setLineDash([]);} /* for a power the ring is its real reach */
     if(sim.power)drawPower(sim.power,state.paused?0:frameDt*state.speed);
     if(!set.floodlights)darkness();
     ctx.restore();weather();
@@ -312,6 +315,7 @@
       case'reattach':if(body&&!continuous){const n=sim.reattach(body);toast(n?`Reattached ${n} piece${n>1?'s':''}`:body.plugin.part?'Nothing to reattach here — the place may already be taken':'Only ragdoll parts reattach');}break;
       case'graft':if(!continuous){if(!body?.plugin.part){state.graftStump=null;toast('Click a ragdoll part to build on.');}else if(!state.graftStump||!sim.bodies.includes(state.graftStump)){state.graftStump=body;toast('Now click the loose limb to graft on.');}
         else{const problem=sim.graft(state.graftStump,body);toast(problem||'Grafted. Power surge!');state.graftStump=null;}}break;
+      case'undress':if(body&&!continuous)toast(sim.undress(body,point));break;
       case'dismember':if(body&&!continuous){const cut=sim.dismember(body);toast(cut?`Severed at the ${cut}`:body.plugin.part?'Nothing left to cut there':'Only ragdoll limbs come off');}break;
       case'delete':if(body){sim.removeEntity(body);select(null);}break;
     }

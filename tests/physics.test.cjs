@@ -701,10 +701,10 @@ test('the neck holds: swung about by the chest, a head never turns past its limi
 test('dressed ragdolls are the same human: same parts, masses, joints and limits, and the simulation cannot tell them apart',()=>{
   const build=kind=>{const s=new Simulation().seed(6);s.configure({organDamage:false});const e=s.spawn(kind,1000,555);return {s,e};},shape=({s,e})=>JSON.stringify({kind:e.kind,parts:e.bodies.map(b=>[b.plugin.part,b.plugin.slot,b.mass.toFixed(6),b.inertia.toFixed(3),b.plugin.hp,b.plugin.material]),joints:s.joints.map(c=>[c.plugin.name,c.plugin.min,c.plugin.max,c.plugin.breakForce])});
   const bare=build('human'),want=shape(bare);
-  for(const item of require('../items.js').ITEMS.filter(i=>i.ragdoll)){const d=build(item.id);assert.equal(shape(d),want,`${item.id} is built like a human`);assert.ok(d.e.bodies.every(b=>b.plugin.outfit===item.outfit&&b.plugin.kind==='human'));
+  for(const item of require('../items.js').ITEMS.filter(i=>i.ragdoll)){const d=build(item.id);assert.equal(shape(d),want,`${item.id} is built like a human`);assert.ok(d.e.bodies.every(b=>b.plugin.kind==='human'&&b.plugin.outfit===undefined&&JSON.stringify(b.plugin.wear)===JSON.stringify(require('../items.js').dress(item.outfit,b.plugin.part))),'every part wears the garments of its outfit that paint it');
     const run=kind=>{const t=build(kind);t.s.damage(t.e.bodies[2],30,t.e.bodies[2].position,'bullet',{x:1,y:0});for(const b of t.e.bodies)Body.setVelocity(b,{x:5,y:-2});advance(t.s,240);return t;},a=run('human'),d2=run(item.id); /* one simulation at a time: the engine's random source belongs to whichever simulation stepped last */
     a.e.bodies.forEach((b,i)=>{assert.ok(Math.abs(b.position.x-d2.e.bodies[i].position.x)<1e-9&&Math.abs(b.angle-d2.e.bodies[i].angle)<1e-9,`${item.id}: ${b.plugin.part} moved differently`);});assert.equal(a.e.blood,d2.e.blood);assert.equal(a.e.pain,d2.e.pain);
-    const saved=JSON.parse(JSON.stringify(d2.s.serialize())),r=new Simulation();r.restore(saved);assert.ok(r.bodies.filter(b=>b.plugin.part).every(b=>b.plugin.outfit===item.outfit),'the outfit survives save and load');}
+    const saved=JSON.parse(JSON.stringify(d2.s.serialize())),r=new Simulation();r.restore(saved);assert.ok(r.bodies.filter(b=>b.plugin.part).every(b=>JSON.stringify(b.plugin.wear)===JSON.stringify(require('../items.js').dress(item.outfit,b.plugin.part))),'what each part wears survives save and load');}
   assert.ok(require('../items.js').ITEMS.filter(i=>i.ragdoll).map(i=>i.id).join()==='human1,civilian,cop,criminal,detective');
 });
 
@@ -838,4 +838,69 @@ test('the crossbow bolt is very fast but slower than a bullet, and still goes in
   const s=new Simulation().seed(2);const bat=s.spawn('battery',1000,620).bodies[0];advance(s,60);s.activate(bat);let pulses=0;const shock=s.shock.bind(s);s.shock=(...a)=>{pulses++;return shock(...a);};advance(s,60*6);assert.ok(pulses>=4&&pulses<=6,`${pulses} discharges in six seconds`);
   const sky=new Simulation().seed(2);const ball=sky.spawn('ball',1000,0).bodies[0];Body.setVelocity(ball,{x:0,y:-25});let top=0;for(let i=0;i<300;i++){sky.step();top=Math.min(top,ball.position.y);}assert.ok(top<-700,`thrown up, it went to y ${Math.round(top)}: nothing in the way`);assert.ok(sky.bodies.includes(ball)&&ball.position.y>-700,'and came back down');
   const wall=new Simulation().seed(2);const high=wall.spawn('ball',2500,-1500).bodies[0];Body.setVelocity(high,{x:40,y:0});advance(wall,60);assert.ok(high.position.x<2610,'the walls go all the way up');
+});
+
+// ---- clothes
+const Items=require('../items.js'),kindsWorn=e=>{const k={};for(const b of e.bodies)for(const kind in (b.plugin.wear||{}))k[kind]=b.plugin.wear[kind];return k;};
+const bare=()=>{const s=new Simulation().seed(3);s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,60);return {s,e,at:slot=>e.bodies.find(b=>b.plugin.slot===slot)};};
+const pushOn=(s,kind,part)=>{const item=s.spawn(kind,part.position.x+48,part.position.y).bodies[0];Body.setVelocity(item,{x:-5,y:-1});advance(s,90);return item;}; /* a top is wider than a head: it is brought to the chest from the front, not dropped from above */
+const dropOn=(s,kind,part,dy=-30)=>{const item=s.spawn(kind,part.position.x+1,part.position.y+dy).bodies[0];advance(s,90);return item;};
+
+test('clothes: eighteen garments in their own category, made of cloth, each cut from one of the five outfits',()=>{
+  assert.equal(Items.CATEGORIES[Items.CATEGORIES.indexOf('Syringes')+1],'Clothes');const g=Items.GARMENTS;assert.equal(g.length,18);assert.ok(g.every(i=>i.category==='Clothes'&&i.material==='cloth'&&i.w&&i.h&&i.name&&i.description));
+  const count=kind=>g.filter(i=>i.garment.kind===kind).length;assert.deepEqual(['top','pants','hat','shoes','gloves','mask'].map(count),[5,5,3,3,1,1]);assert.equal(new Set(g.map(i=>i.garment.kind+':'+i.garment.outfit)).size,18);
+  const cloth=Items.MATERIALS.cloth;assert.ok(cloth.density<Items.MATERIALS.wood.density/2&&cloth.flammable>0&&cloth.brittle===0&&cloth.friction<.4&&cloth.restitution<.1);
+  for(const id of ['human1','civilian','cop','criminal','detective']){const s=new Simulation().seed(1),e=s.spawn(id,1000,555),outfit=Items.ITEMS.find(i=>i.id===id).outfit;for(const b of e.bodies)assert.deepEqual(b.plugin.wear,Items.dress(outfit,b.plugin.part));assert.ok(e.bodies.every(b=>b.plugin.outfit===undefined));}
+  const cop=new Simulation().seed(1).spawn('cop',1000,555);assert.deepEqual(kindsWorn(cop),{hat:'cop',top:'cop',pants:'cop',shoes:'cop'});assert.deepEqual(cop.bodies.find(b=>b.plugin.part==='forearm').plugin.wear,{},'short sleeves: the forearm carries no garment');
+});
+
+test('clothes: a garment that touches its own region of a human is put on; the wrong region, a second one of its kind, an android and a loose limb are not',()=>{
+  const {s,e,at}=bare(),told=[];s.onDress=name=>told.push(name);let heard=0;s.onEffect=k=>{if(k==='cloth')heard++;};const hp=()=>e.bodies.reduce((n,b)=>n+b.plugin.hp,0),before=hp();
+  const low=dropOn(s,'cap',at(16),-16);assert.deepEqual(kindsWorn(e),{},'a hat at the feet does nothing');assert.ok(s.bodies.includes(low),'it just lies there');s.removeEntity(low);
+  const cap=dropOn(s,'cap',at(0));assert.ok(!s.bodies.includes(cap),'the item is gone');assert.deepEqual(kindsWorn(e),{hat:'cop'});assert.deepEqual(told,['Peaked cap']);assert.equal(heard,1);
+  pushOn(s,'jumper',at(2));dropOn(s,'browntrousers',at(14),-5);dropOn(s,'trainers',at(16),-14);assert.deepEqual(kindsWorn(e),{hat:'cop',top:'criminal',pants:'detective',shoes:'hoodie'},'any mixture');
+  assert.deepEqual(at(9).plugin.wear,{top:'criminal'},'long sleeves reach the forearm');assert.deepEqual(at(4).plugin.wear,{top:'criminal',pants:'detective'},'the jumper hem hangs over the trousers');assert.equal(at(10).plugin.wear,undefined,'hands are bare');
+  const second=dropOn(s,'fedora',at(0));assert.ok(s.bodies.includes(second)&&kindsWorn(e).hat==='cop','already wearing a hat: no swapping');assert.equal(hp(),before,'being dressed hurts nothing');assert.ok(!(e.stun>0)&&s.balancing(e));
+  const bot=new Simulation().seed(3),robot=bot.spawn('android',1000,555);advance(bot,60);const beanie=dropOn(bot,'beanie',robot.bodies[0]);assert.ok(bot.bodies.includes(beanie)&&!robot.bodies.some(b=>b.plugin.wear),'androids are not dressed');
+  const cut=bare(),arm=cut.at(9);cut.s.sever(cut.s.joints.find(c=>c.bodyB===arm));advance(cut.s,120);const glove=dropOn(cut.s,'gloves',cut.at(10)||cut.s.bodies.find(b=>b.plugin.slot===10),-12);assert.ok(cut.s.bodies.includes(glove)||cut.e.bodies.some(b=>b.plugin.wear?.gloves),'a loose limb is not dressed (the body still can be)');assert.ok(!cut.s.bodies.filter(b=>b.plugin.slot===10&&cut.s.getEntity(b)!==cut.e).some(b=>b.plugin.wear?.gloves));
+  const dead=bare();dead.s.kill(dead.e,'test');advance(dead.s,240);dropOn(dead.s,'mask',dead.at(0),-20);assert.equal(kindsWorn(dead.e).mask,'criminal','the dead can be dressed');assert.deepEqual(dead.at(1).plugin.wear,{mask:'criminal'},'a mask covers the neck too');
+  const held=bare(),hat=held.s.spawn('fedora',600,300).bodies[0];held.s.beginDrag(hat,{...hat.position});const head=held.at(0);for(let i=0;i<120&&held.s.bodies.includes(hat);i++){held.s.moveDrag({x:head.position.x,y:head.position.y-14});held.s.step();}assert.equal(kindsWorn(held.e).hat,'detective','carried onto a head by the cursor, it goes on');assert.equal(held.s.drag,null);
+});
+
+test('clothes: what a body lacks goes without, severed parts keep what they wear, regrown parts come back bare',()=>{
+  const {s,e,at}=bare(),arm=at(9),hand=at(10);s.sever(s.joints.find(c=>c.bodyB===arm));advance(s,60);pushOn(s,'hoodie',at(2));assert.equal(kindsWorn(e).top,'hoodie');assert.equal(arm.plugin.wear,undefined,'no sleeve for an arm that is not there');
+  const cop=new Simulation().seed(3),c=cop.spawn('cop',1000,555);advance(cop,30);const leg=c.bodies.find(b=>b.plugin.slot===15),foot=c.bodies.find(b=>b.plugin.slot===16);cop.sever(cop.joints.find(j=>j.bodyB===leg));assert.deepEqual(leg.plugin.wear,{pants:'cop'});assert.deepEqual(foot.plugin.wear,{shoes:'cop'},'the severed leg keeps its trouser leg and shoe');
+  cop.regenerate(c.bodies[2]);advance(cop,400);const grown=c.bodies.filter(b=>b.plugin.slot===15||b.plugin.slot===16);assert.equal(grown.length,2);assert.ok(grown.every(b=>b.plugin.wear===undefined),'regrown parts are bare');
+  const nohead=bare();nohead.s.sever(nohead.s.joints.find(j=>j.plugin.name==='neck'));advance(nohead.s,60);const hat=dropOn(nohead.s,'beanie',nohead.at(2),-60);assert.ok(!nohead.e.bodies.some(b=>b.plugin.wear?.hat),'no head, no hat');
+});
+
+test('undress: the garment on the clicked part comes off the whole ragdoll as a fresh item, outermost first; bare parts, loose limbs and a full chamber are refused',()=>{
+  const s=new Simulation().seed(3);s.configure({organDamage:false});const e=s.spawn('criminal',1000,555);advance(s,60);const at=slot=>e.bodies.find(b=>b.plugin.slot===slot),head=at(0),loose=()=>s.bodies.filter(b=>defs[b.plugin.kind]?.garment).map(b=>b.plugin.kind).sort();
+  s.damage(at(2),30,at(2).position,'bullet',{x:1,y:0});s.stain(at(2),at(2).position,2);
+  assert.match(s.undress(head),/beanie/);assert.deepEqual(head.plugin.wear,{mask:'criminal'},'hat before mask');assert.match(s.undress(head),/mask/);assert.deepEqual(at(1).plugin.wear,{},'and the mask comes off the neck too');assert.equal(s.undress(head),'Nothing to take off there');
+  assert.match(s.undress(at(4)),/jumper/);assert.ok(!e.bodies.some(b=>b.plugin.wear?.top),'top before trousers, and off every part');assert.match(s.undress(at(4)),/trousers/);assert.match(s.undress(at(10)),/gloves/);assert.match(s.undress(at(13)),/shoes/);
+  assert.deepEqual(loose(),['beanie','blackshoes','darkcargos','gloves','jumper','mask']);const jumper=s.bodies.find(b=>b.plugin.kind==='jumper');assert.ok(jumper.plugin.hp===jumper.plugin.maxHp&&!jumper.plugin.stains?.length&&!jumper.plugin.wounds?.length,'the item is pristine whatever the body had been through');
+  advance(s,30);assert.deepEqual(kindsWorn(e),{},'and brushing the body straight away does not put it back on');assert.ok(at(2).plugin.wounds.length>0,'the wound stays on the body');
+  const bareHand=new Simulation().seed(3),cop=bareHand.spawn('cop',1000,555);advance(bareHand,60);const hand=cop.bodies.find(b=>b.plugin.slot===10);assert.equal(bareHand.undress(hand),'Nothing to take off there');assert.match(bareHand.undress(hand,{...cop.bodies.find(b=>b.plugin.slot===4).position}),/trousers|Nothing/,'a click goes through a bare hand to what is under it');
+  const full=new Simulation().seed(3);const c=full.spawn('cop',1000,555);full.settings.maxObjects=full.bodies.length;assert.match(full.undress(c.bodies[0]),/full/);assert.equal(kindsWorn(c).hat,'cop','refused: the cap is still on');
+  const cut=new Simulation().seed(3),d=cut.spawn('cop',1000,555);advance(cut,30);const leg=d.bodies.find(b=>b.plugin.slot===15);cut.sever(cut.joints.find(j=>j.bodyB===leg));assert.match(cut.undress(leg),/whole ragdoll/);
+});
+
+test('clothes are cosmetic, save and load with the body, load from old saves, burn away, and hurt nothing they hit',()=>{
+  const run=dress=>{const s=new Simulation().seed(6);s.configure({organDamage:false});const e=s.spawn('human',1000,555);if(dress)for(const b of e.bodies)b.plugin.wear=Items.dress('detective',b.plugin.part);s.damage(e.bodies[2],30,e.bodies[2].position,'bullet',{x:1,y:0});s.ignite(e.bodies[9]);for(const b of e.bodies)Body.setVelocity(b,{x:5,y:-2});advance(s,240);return e.bodies.map(b=>[b.position.x,b.angle,b.plugin.hp,b.plugin.heat,b.plugin.bleed]).flat().concat(e.blood,e.pain).join();};
+  assert.equal(run(true),run(false),'dressed or not, the simulation is the same to the last decimal: no armour, no warmth');
+  const {s,e,at}=bare();dropOn(s,'cap',at(0));pushOn(s,'trenchcoat',at(2));const shoes=s.spawn('brownshoes',1300,600).bodies[0];advance(s,30);const saved=JSON.parse(JSON.stringify(s.serialize())),r=new Simulation();r.restore(saved);
+  assert.deepEqual(r.bodies.filter(b=>b.plugin.part).map(b=>b.plugin.wear),e.bodies.map(b=>b.plugin.wear));assert.ok(r.bodies.some(b=>b.plugin.kind==='brownshoes'),'loose garments are saved too');
+  const old=new Simulation().seed(1),o=old.spawn('human',1000,555);for(const b of o.bodies)b.plugin.outfit='cop';const legacy=new Simulation();legacy.restore(JSON.parse(JSON.stringify(old.serialize())));assert.deepEqual(legacy.bodies.filter(b=>b.plugin.part).map(b=>b.plugin.wear),o.bodies.map(b=>Items.dress('cop',b.plugin.part)),'a save with plugin.outfit loads as that whole outfit');assert.ok(legacy.bodies.every(b=>b.plugin.outfit===undefined));
+  const fire=new Simulation().seed(2),shirt=fire.spawn('blueshirt',1000,640).bodies[0];advance(fire,30);fire.ignite(shirt);advance(fire,60*8);assert.ok(!fire.bodies.includes(shirt)&&!fire.bodies.some(b=>b.plugin.debris),'a garment burns away, without breaking into pieces');
+  const hit=bare(),crate=hit.s.spawn('crate',1300,620).bodies[0];advance(hit.s,30);const thrown=hit.s.spawn('mask',1200,610).bodies[0];Body.setVelocity(thrown,{x:30,y:0});advance(hit.s,30);assert.equal(crate.plugin.hp,crate.plugin.maxHp,'thrown cloth does no damage');
+});
+
+test('clothes: the picture of a part is keyed by the garments it wears, so no two combinations can share a cached sprite; a hat carries its own colours',()=>{
+  global.document={createElement:()=>({getContext:()=>({})})};global.Items=Items;delete require.cache[require.resolve('../body.js')];require('../body.js');const A=globalThis.BodyArt;
+  const rec=wear=>A.outfitOf({part:'pelvis',slot:4,wear}),keys=[{},{top:'cop'},{pants:'cop'},{top:'cop',pants:'cop'},{top:'criminal',pants:'detective'},{top:'detective',pants:'criminal'},{top:'hoodie',pants:'detective'}].map(w=>rec(w));
+  assert.equal(new Set(keys.map(k=>k.key)).size,keys.length);assert.equal(new Set(keys.map(k=>k.id)).size,keys.length,'a number of its own for the sprite signature');assert.equal(rec({top:'criminal',pants:'detective'}),rec({pants:'detective',top:'criminal'}),'the same clothes are the same record, whatever order they went on in');
+  const mix=A.outfitOf({part:'pelvis',slot:4,wear:{top:'criminal',pants:'detective'}});assert.ok(mix.stripes&&mix.hem&&mix.legs&&!mix.belt&&!mix.cargo,'the top brings its stripes and hem, the trousers only their own fields');
+  const cap=A.outfitOf({part:'head',slot:0,wear:{hat:'cop'}});assert.ok(cap.hat==='cap'&&cap.cap&&!cap.top,'a cap worn alone has its colours without the shirt');assert.equal(A.outfitOf({part:'head',slot:0}),null,'a bare part has no record');
+  assert.deepEqual(A.outfitOf({part:'chest',slot:2,outfit:'cop'}).key,A.outfitOf({part:'chest',slot:2,wear:{top:'cop'}}).key,'an old outfit id draws as the garments of that outfit');delete global.document;
 });
