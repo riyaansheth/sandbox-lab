@@ -598,7 +598,7 @@ test('a blast takes limbs off by chance, likelier close in; a shock has a good c
 });
 
 test('every firearm has its own round: faster rounds arrive sooner, heavier ones hurt more, buckshot scatters, automatics keep firing, a crossbow throws a real bolt',()=>{
-  const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok(g.firearm.rate>0&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||g.firearm.damage>0);}
+  const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok((g.firearm.rate>0||['gun','revolver'].includes(g.id))&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||g.firearm.damage>0);}
   const shot=(kind,steps)=>{const s=new Simulation().seed(2);s.gravity=0;const gun=s.spawn(kind,400,300).bodies[0],wall=s.spawn('metal',1400,300).bodies[0];s.freeze(wall);const hp=wall.plugin.hp;s.activate(gun);let t=0;while(wall.plugin.hp===hp&&t<steps){s.step(1000/120);t++;}return {t,hurt:hp-wall.plugin.hp,s,gun,wall};};
   const pistol=shot('gun',200),sniper=shot('sniper',200),hunting=shot('hunting',200);assert.ok(pistol.t>5,'a pistol round takes time to cross a room');assert.ok(sniper.t<pistol.t*.6,`.50 (${sniper.t}) outruns 9 mm (${pistol.t})`);assert.ok(sniper.hurt>hunting.hurt&&hunting.hurt>pistol.hurt,'heavier rounds hurt more');
   const pellets=new Simulation().seed(2);pellets.gravity=0;pellets.activate(pellets.spawn('shotgun',400,300).bodies[0]);assert.equal(pellets.shots.length,9);assert.ok(new Set(pellets.shots.map(x=>x.dy.toFixed(4))).size>5,'pellets spread');
@@ -903,4 +903,9 @@ test('clothes: the picture of a part is keyed by the garments it wears, so no tw
   const mix=A.outfitOf({part:'pelvis',slot:4,wear:{top:'criminal',pants:'detective'}});assert.ok(mix.stripes&&mix.hem&&mix.legs&&!mix.belt&&!mix.cargo,'the top brings its stripes and hem, the trousers only their own fields');
   const cap=A.outfitOf({part:'head',slot:0,wear:{hat:'cop'}});assert.ok(cap.hat==='cap'&&cap.cap&&!cap.top,'a cap worn alone has its colours without the shirt');assert.equal(A.outfitOf({part:'head',slot:0}),null,'a bare part has no record');
   assert.deepEqual(A.outfitOf({part:'chest',slot:2,outfit:'cop'}).key,A.outfitOf({part:'chest',slot:2,wear:{top:'cop'}}).key,'an old outfit id draws as the garments of that outfit');delete global.document;
+});
+
+test('the pistol and the revolver have no wait between shots: every pull of the trigger fires; the other guns keep their rate',()=>{
+  for(const kind of ['gun','revolver']){const s=new Simulation().seed(2);s.gravity=0;const g=s.spawn(kind,400,300).bodies[0];let fired=0;for(let i=0;i<10;i++)if(/fired/.test(s.activate(g)))fired++;assert.equal(fired,10,`${kind}: ten pulls in the same instant, ten rounds`);assert.equal(s.shots.length,10);assert.equal(s.activate(g,true),'','still not automatic: holding F does nothing more');}
+  const s=new Simulation().seed(2);s.gravity=0;const rifle=s.spawn('hunting',400,300).bodies[0];assert.match(s.activate(rifle),/fired/);assert.equal(s.activate(rifle),'','a bolt action still has to be worked');
 });

@@ -970,7 +970,7 @@
       const def=defs[p.kind]||{},name=def.name||'Object';if(held&&!def.firearm)return '';
       if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
       if(def.syringe)return held?'':this.syringe(body);
-      if(def.firearm){const gun=def.firearm;if(held&&!gun.auto)return '';if(p.cool>0)return '';p.cool=1/(gun.rate||4); // held = the trigger is being kept down: only automatic weapons keep firing; every weapon has its own rate of fire
+      if(def.firearm){const gun=def.firearm;if(held&&!gun.auto)return '';if(p.cool>0)return '';p.cool=gun.rate?1/gun.rate:0; /* no rate: a pistol or a revolver fires every time the trigger is pulled, with no wait between shots */ // held = the trigger is being kept down: only automatic weapons keep firing; every weapon has its own rate of fire
         const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)},muzzle=Vector.add(body.position,Vector.mult(d,gun.muzzle));Body.applyForce(body,body.position,Vector.mult(d,-gun.recoil));
         if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/60; /* px per 1/60 s, which is what setVelocity takes */
           Body.setAngle(bolt,aim+Math.PI/2);Body.setVelocity(bolt,Vector.add(body.velocity,Vector.mult(d,v)));bolt.plugin.shotBy=body.id;this.onEffect('impact',.3);return held?'':`${name} loosed`;}
