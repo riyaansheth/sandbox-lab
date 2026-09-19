@@ -29,12 +29,24 @@
   let width=0,height=0,dpr=1,toastTimer,lastShot=0,lastAction=0,lastTime=0,accumulator=0,frameCount=0,fpsTime=0,uiTime=0;
   let audio=null,lastImpact=0;
   function sound(type,volume=.2){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
+    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='thunder'){thunder(now,level);return;}
     if(type==='grunt'){const o=audio.createOscillator(),g=audio.createGain(),f=audio.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(125+volume*40,now);o.frequency.exponentialRampToValueAtTime(78,now+.16);f.type='lowpass';f.frequency.value=520;g.gain.setValueAtTime(Math.min(.12,.06*volume*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.2);o.connect(f);f.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.22);return;}
     if(type==='grow'||type==='surge'){const rise=audio.createOscillator(),g=audio.createGain(),long=type==='surge'?.7:.22;rise.type=type==='surge'?'sawtooth':'sine';rise.frequency.setValueAtTime(type==='surge'?90:220+volume*260,now);rise.frequency.exponentialRampToValueAtTime(type==='surge'?1400:520+volume*400,now+long);g.gain.setValueAtTime(.001,now);g.gain.exponentialRampToValueAtTime(Math.min(.2,.09*level),now+long*.6);g.gain.exponentialRampToValueAtTime(.001,now+long);rise.connect(g);g.connect(audio.destination);rise.start(now);rise.stop(now+long+.02);if(type==='surge')shake=7*set.shake;return;}
     const gain=audio.createGain();gain.connect(audio.destination);gain.gain.setValueAtTime(Math.min(.2,volume*.15*level),now);gain.gain.exponentialRampToValueAtTime(.001,now+.18);
     const oscillator=audio.createOscillator();oscillator.type=type==='electric'?'sawtooth':'triangle';oscillator.frequency.setValueAtTime(type==='explosion'?70:type==='shot'?210:type==='electric'?650:160,now);oscillator.frequency.exponentialRampToValueAtTime(30,now+.2);oscillator.connect(gain);oscillator.start(now);oscillator.stop(now+.22);
   }catch{applySettings({sound:false});$('#sound-btn').textContent='Sound unavailable';}}
+  // What a blow sounds like on a body. All of it is filtered noise, from one shared second of it: a thud is low and round with a sine under it, a slice is a wet hiss that falls, a round going in is a short dull smack,
+  // a breaking bone is two dry clicks over a knock, a burn is a long thin hiss.
+  const lastHit={};let noiseBuffer;
+  function flesh(type,now,level){noiseBuffer??=(()=>{const b=audio.createBuffer(1,audio.sampleRate,audio.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return b;})();
+    const burst=(at,length,kind,f0,f1,q,peak)=>{const src=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();src.buffer=noiseBuffer;src.loop=true;f.type=kind;f.Q.value=q;f.frequency.setValueAtTime(f0,at);f.frequency.exponentialRampToValueAtTime(f1,at+length);g.gain.setValueAtTime(Math.min(.5,peak*level),at);g.gain.exponentialRampToValueAtTime(.001,at+length);src.connect(f);f.connect(g);g.connect(audio.destination);src.start(at,Math.random()*.8);src.stop(at+length+.02);};
+    const tone=(at,length,f0,f1,peak)=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(f0,at);o.frequency.exponentialRampToValueAtTime(f1,at+length);g.gain.setValueAtTime(Math.min(.5,peak*level),at);g.gain.exponentialRampToValueAtTime(.001,at+length);o.connect(g);g.connect(audio.destination);o.start(at);o.stop(at+length+.02);};
+    if(type==='thud'){tone(now,.14,95,42,.5);burst(now,.09,'lowpass',420,140,.7,.35);}
+    else if(type==='slice'){burst(now,.13,'bandpass',3400,900,1.2,.3);burst(now+.02,.1,'lowpass',700,260,.8,.22);}
+    else if(type==='wet'){burst(now,.07,'lowpass',900,220,.9,.4);tone(now,.06,140,70,.2);}
+    else if(type==='crack'){burst(now,.03,'bandpass',2600,1900,4,.6);burst(now+.035,.04,'bandpass',1700,1200,4,.5);tone(now,.08,190,90,.3);}
+    else if(type==='sizzle'){burst(now,.4,'highpass',4200,3000,.6,.12);}}
   // Thunder: a sharp crack, then low-passed noise that rolls off over a couple of seconds.
   function thunder(now,level){const length=2.6,buffer=audio.createBuffer(1,audio.sampleRate*length,audio.sampleRate),data=buffer.getChannelData(0);
     for(let i=0;i<data.length;i++){const t=i/audio.sampleRate;data[i]=(Math.random()*2-1)*(Math.exp(-t*30)+.55*Math.exp(-t*1.6)*(.6+.4*Math.sin(t*9)));}

@@ -156,6 +156,7 @@
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
   const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},WOUND_MAX=10,BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
   const FLOW={impact:.3,cut:.45,blast:.8,bullet:1,exit:1.3,stab:1.6},RUN_MAX=18,RUN_RATE=1.6,SMEAR_STEP=7; // drops per unit of bleed by kind of wound; longest run down a part, px, and px per second per unit of bleed; px between marks of a smear
+  const HIT_SOUND={impact:'thud',cut:'slice',stab:'slice',bullet:'wet',exit:'wet',burn:'sizzle'},GRAZE_CHORD=5,GRAZE_TURN=.16; // what each kind of blow sounds like on flesh; a round that crosses less than this much of a body only grazes it, and is turned this much
   const CLOT_AT=30,SCAB_AT=150,REOPEN_SPEED=3,REOPEN_RATE=1.5,REOPEN_BLEED=.5,BRUISE_LIFE=300,DEAD_CLOT=12; // wound ages in seconds (body.js draws by the same two); px per substep that tears a clot; chance per second while it does
   const FATAL_SPOTS=new Set(['head','neck','chest']),BLEED_DRAIN=.3,WOUND_BLOOD=14,ARTERY_BLOOD=24,SHOT_BLOOD=40,GUT_BLEED=.7;
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
@@ -671,7 +672,8 @@
       if(!this.joints.includes(c))return;
       for(const [b,point] of [[c.bodyA,c.pointA],[c.bodyB,c.pointB]]){
         if(!b)continue;const p=b.plugin;const local=Vector.rotate(point,-b.angle);
-        p.severed??=[];p.severed.push({x:p.flip?-local.x:local.x,y:local.y,bleed:p.material==='flesh'?1.8:0,fresh:1.6});this.bleedOf(p); // the stump's bone is not marked fractured: losing an arm must not break the chest it hung from
+        const other=b===c.bodyA?c.bodyB:c.bodyA,away=other?Math.atan2(other.position.y-b.position.y,other.position.x-b.position.x)-b.angle:Math.atan2(local.y,local.x);
+        p.severed??=[];p.severed.push({x:p.flip?-local.x:local.x,y:local.y,bleed:p.material==='flesh'?1.8:0,fresh:1.6,pull:p.flip?Math.PI-away:away});this.bleedOf(p); // the stump's bone is not marked fractured: losing an arm must not break the chest it hung from
         if(p.material==='flesh')this.burst(b.position.x+point.x,b.position.y+point.y,16,'#a32e31',4,'blood');
       }
       Composite.remove(this.world,c);const owner=this.getEntity(c.bodyA||c.bodyB);if(owner){owner.restTime=0;this.split(owner);}
@@ -702,7 +704,9 @@
       if(p.material==='flesh'){
         const local=Vector.rotate(Vector.sub(point,body.position),-body.angle),lx=p.flip?-local.x:local.x;
         const fx=lx/(p.w/2),fy=local.y/(p.h/2),zone=(ZONES[p.part]||[]).find(([,x0,y0,x1,y1])=>fx>=x0&&fx<=x1&&fy>=y0&&fy<=y1)?.[0];
-        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone*(zone==='joint'&&p.slot>=5?JOINT_HIT:1));if(p.bone<=50&&p.brokeAt===undefined)p.brokeAt=this.time; /* the swelling starts here */
+        p.bone=Math.max(0,(p.bone??100)-amount*profile.bone*(zone==='joint'&&p.slot>=5?JOINT_HIT:1));
+        if(amount>4){if(HIT_SOUND[type])this.onEffect(HIT_SOUND[type],clamp(amount/40,.25,1.4));if(type!=='burn'&&type!=='shock')this.emit(point.x,point.y,0,0,.09,.09,'#fff1d8',clamp(amount/12,1.5,4.5),'spark');} /* a pop of light where it landed, for a tenth of a second */
+        if(p.bone<=50&&p.brokeAt===undefined){p.brokeAt=this.time;if(p.slot>=5){this.onEffect('crack',1);for(let i=0;i<3;i++)this.emit(point.x,point.y,rnd(-2.5,2.5),rnd(-3.5,-.5),rnd(.5,.9),.9,'#e8dfc8',rnd(1,1.8),'spark');}} /* the break itself: a crack, and a few chips of bone - only ever here, so they mean something */ /* the swelling starts here */
         // Bleeding belongs to the wound, not the limb. A burn seals what is there; a new blow next to an old wound opens it again.
         const artery=set.arterialSpurts&&zone==='artery'&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
@@ -833,16 +837,17 @@
           if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
         if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;if(near*SHOT_REACH<=L)hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
       hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */
-      const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let stop=null,spent=false;
+      const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let stop=null,spent=false,grazed=0;
       this.shotPool=shot.pool??={left:SHOT_BLOOD}; /* every wound one round makes outside the fatal spots - through an arm, the belly and the other arm, entries and exits - draws on one allowance. ponytail: a saved game turns the shared allowance into one per wound */
       for(const {body,near,far} of hits){shot.first??=body;stop=at(near);shot.done.add(body);if(body.plugin.boundary){spent=true;break;}const gone=shot.travelled+near*SHOT_REACH;
         this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;const damage=this.settings.bulletDamage*shot.damage*shot.power*range(gone),through=this.passes(body,damage)&&far>near;
+        if(body.plugin.material==='flesh'&&far>near&&(far-near)*SHOT_REACH<GRAZE_CHORD&&!this.contactShot){this.damage(body,damage*.2,stop,'bullet',direction);const turn=(random()<.5?-1:1)*GRAZE_TURN,c=Math.cos(turn),sn=Math.sin(turn);shot.dx=direction.x*c-direction.y*sn;shot.dy=direction.x*sn+direction.y*c;shot.power*=.85;grazed=near*SHOT_REACH;break;} /* it clipped the edge: a furrow in the skin, and the round glances off on a new line */
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*shot.power*(through?.4:1)));
         const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through){spent=true;break;}
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
         const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
         stop=exit;shot.power*=1-absorb;if(shot.power<.2){spent=true;break;}}
-      this.contactShot=false;this.shotPool=null;const to=spent?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};this.traces.push({from,to,life:glow,maxLife:glow});
+      this.contactShot=false;this.shotPool=null;const to=spent||grazed?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};if(grazed)L=grazed;this.traces.push({from,to,life:glow,maxLife:glow});
       shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}

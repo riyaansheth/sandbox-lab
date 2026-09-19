@@ -666,3 +666,12 @@ test('freezing any one part of a living ragdoll never loses it (a frozen part mu
   for(const slot of [0,2,5,8,14]){const s=new Simulation().seed(4);const e=s.spawn('human',1000,555);advance(s,30);s.freeze(e.bodies.find(b=>b.plugin.slot===slot));advance(s,600);
     assert.equal(s.bodies.filter(b=>b.plugin.part).length,17,`slot ${slot} frozen`);assert.ok(s.bodies.every(b=>Number.isFinite(b.position.x)&&Number.isFinite(b.force.x)));}
 });
+
+test('a round that only clips a limb grazes it and glances off; a breaking bone cracks once; a stump remembers which way the limb went',()=>{
+  const {s,e}=standing(),shin=e.bodies[15],edge=shin.bounds.max.y-1.5,heard=[];s.onEffect=(k)=>heard.push(k);
+  s.shoot({x:shin.position.x-150,y:edge},{x:shin.position.x,y:edge+.4});const graze=shin.plugin.wounds.find(w=>w.type==='bullet');
+  if(graze){assert.equal(graze.depth,1,'a furrow in the skin, not a hole');assert.ok(!shin.plugin.wounds.some(w=>w.type==='exit'),'and no exit wound');}
+  const t=standing(),arm=t.e.bodies[9],sounds=[];t.s.onEffect=k=>sounds.push(k);t.s.damage(arm,60,arm.position,'impact',{x:1,y:0});t.s.damage(arm,20,arm.position,'impact',{x:1,y:0});
+  assert.ok(sounds.includes('thud'));assert.equal(sounds.filter(k=>k==='crack').length,1,'one crack, at the moment it breaks');t.s.damage(arm,20,arm.position,'cut',{x:1,y:0});assert.ok(sounds.includes('slice'));
+  const c=standing(),elbow=c.s.joints.find(j=>j.plugin.name==='elbow'&&j.bodyB===c.e.bodies[9]),upper=elbow.bodyA;c.s.sever(elbow);assert.ok(Number.isFinite(upper.plugin.severed[0].pull),'pull direction kept');
+});
