@@ -137,11 +137,12 @@
   const THROW_MAX=38; // px per 1/60 s: nothing leaves the cursor faster than this
   const GRAB_RATE=100,GRAB_DAMP=1,GRAB_GEAR=30,GRAB_STABLE=90,GRAB_ACCEL=14000,GRAB_FORCE=260000,GRAB_CALM=.06,GRAB_CALM_PART=.2,GRAB_INERTIA=25; // spring rate (rad/s) per unit of the Grab strength setting; damping ratio; most a part may haul, in its own masses; the stiffest a spring the step can carry (rad/s); limits on the pull, px/s2 per unit mass and outright; share of its spin a held thing loses each substep
   const PIN_TEAR=14; // px a lodged blade's pins may stretch before it is torn out
-  const LIMB_SPEED=45,LIMB_SPIN=.5; // px and radians per step
+  const LIMB_SPEED=110,LIMB_SPIN=.5; // px and radians per 1/60 s: faster than anything falls (a body's terminal velocity is 55 m/s, 100 px)
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
   // Bullets: x1.4 at the muzzle, full damage out to RANGE_NEAR px, then falling by one for every RANGE_FALLOFF px down to RANGE_MIN. A round that still carries THROUGH damage goes clean through fresh flesh.
   const CONTACT_SHOT=2,BULLET_FLOOR=8;
+  const G_SCALE=9.81*110/1e6,RAGDOLL_TERMINAL=55,SPIN_AIR={part:.015,other:.006}; // Matter's gravity scale for 9.81 m/s2 at 110 px to the metre (its acceleration is gravity.y x scale, in px per ms2); a body falling belly-down tops out at about 55 m/s; how much of its spin a body loses to the air each 1/60 s
   const PX_PER_M=110,SHOT_SCALE=.1,SHOT_REACH=2500; // a standing body is about 1.8 m; rounds fly at this fraction of their real speed; how far a round goes
   const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
   const FROST_STIFF=.92,NECK_INERTIA=14,NECK_DAMP={atlas:.3,neck:.3},HARD_STOP={atlas:.1,neck:.1,other:.3}; // share of the relative spin a neck joint loses each substep; rad past its limit at which a joint stops dead
@@ -152,8 +153,9 @@
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
   const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
-  // Falls and blunt impacts (see land()). Speeds are px per 1/60 s, as Matter reports them between steps: with this gravity and air a 1.5 m drop lands at about 8.3 (4.5 m/s), 3 m at 10.4, 5 m at 12.4, 7 m at 13.6.
-  const FALL_SAFE=8.3,FALL_SAFE_HEAD=7.4,FALL_K=3,FALL_FLOOR=8,FALL_HP=.6,FALL_MASS=3,OBJECT_K=.5,OBJECT_SAFE=14,LAND_WINDOW=.25,LAND_ABSORB=.6,FALL_SPINE=30,NECK_FALL=95,TRAUMA_SAFE=45,TRAUMA_SPAN=70,TRAUMA_BLEED=2.5; // blunt damage to the trunk in one fall that is survivable for certain; how much more makes internal injuries certain; how fast those bleed (% of blood a second - about half a minute to live, unless the bleeding is stopped)
+  // Falls and blunt impacts (see land()). Speeds are px per 1/60 s, as Matter reports them between steps: under real gravity and air a 1.2 m drop lands at 8.7 (4.8 m/s), 1.5 m at 9.8, 3 m at 13.9, 5 m at 17.8, 7 m at 21.1.
+  // The damage is the energy above a harmless 1.5 m fall, so it grows with the height fallen from: twice as high, about twice the damage.
+  const FALL_SAFE=9.8,FALL_SAFE_HEAD=9.2,FALL_K=1.15,FALL_FLOOR=8,FALL_HP=.6,FALL_MASS=3,FALL_REST=1.5,OBJECT_K=.5,OBJECT_SAFE=14,LAND_WINDOW=.25,LAND_ABSORB=.6,FALL_SPINE=30,NECK_FALL=95,TRAUMA_SAFE=45,TRAUMA_SPAN=70,TRAUMA_BLEED=2.5; // blunt damage to the trunk in one fall that is survivable for certain; how much more makes internal injuries certain; how fast those bleed (% of blood a second - about half a minute to live, unless the bleeding is stopped)
   const FALL_AREA={head:.45,neck:.5,chest:.25,abdomen:.27,pelvis:.3,thigh:.32,'upper arm':.34,shin:.55,forearm:.55,foot:.55,hand:.5},FALL_FLAT={shin:.3,forearm:.3,foot:.35,hand:.3},FALL_AXIAL=new Set(['foot','shin','hand','forearm']),FALL_SHARE=[1,.45,.24,.13,.08,.05]; // how much of the impact a part takes for its area; which parts pass load along the bone; what each part up the chain gets, as a share of what the landing part took
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
@@ -195,7 +197,7 @@
   const LIMIT_GAIN=.6,LIMIT_SPEED=.4,LIMIT_SHARE=.5,REST_SPEED=.8,REST_DELAY=1,AIR_TONE=.8,AIR_UPRIGHT=.15,HAND_REACH=30,AIM_STRENGTH=.0022,REGROW_BEAT=.42,REGROW_SWELL=.5,REGROW_LAYERS=1.8,STAND_HEIGHT=148,GETUP_TORQUE=3,EARTH=9.81; // calibration knobs: limit stiffness, and rest thresholds just above the solver's idle jitter
   class Simulation {
     constructor() {
-      this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
+      this.engine=Engine.create({gravity:{x:0,y:1,scale:G_SCALE},positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
       this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];this.smears=new WeakMap();
       this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.power=null;this.powerNear=[];this.powerK=[];this.powerAt=-9;this.powerPick=[-1,-1,-1];this.powerStamp=0;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.busy=new Array(17).fill(0);this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
@@ -532,7 +534,7 @@
     crawl(e,want,chest,rung,seconds) {
       // A body seen from the side cannot turn round, and elbows only bend one way, so it crawls the way it faces, propped on its forearms. With nothing to flee it lies slack and the rest logic lets it sleep.
       e.fleeT=Math.max(0,(e.fleeT||0)-seconds);const d=chest.plugin.flip?-1:1;if(!(e.fleeT>0)){e.idle=true;want.power.fill(.12);this.topple(e,want,chest,d,seconds);return 0;}e.idle=false;
-      const A=want.angle,P=want.power,period=rung==='drag'?CRAWL_PERIOD*1.4:CRAWL_PERIOD,mass=this.carried(e,chest),weight=mass*.001*Math.max(this.gravity,.2)*e.effort;
+      const A=want.angle,P=want.power,period=rung==='drag'?CRAWL_PERIOD*1.4:CRAWL_PERIOD,mass=this.carried(e,chest),weight=mass*G_SCALE*Math.max(this.gravity,.2)*e.effort;
       for(let k=0;k<2;k++){const sh=k?8:5,upper=e.bodies.find(b=>b.plugin.slot===sh),fore=upper&&e.bodies.find(b=>b.plugin.slot===sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||!this.joints.some(c=>c.plugin.joint&&c.bodyB===fore))continue;
         // Arm targets are world directions, turned into joint angles: the forearm lies along the floor pointing ahead, and the upper arm sweeps from "elbow out in front" to "elbow under the shoulder", which drags the chest forward over the planted forearm.
         const phase=((this.time/period)+(k?.5:0))%1,reach=phase<.4,sweep=reach?1-phase/.4:(phase-.4)/.6,upperWorld=-d*(1.15-.95*sweep),foreWorld=-d*(reach?1.85:1.55);
@@ -601,7 +603,7 @@
       // A real step: the stepping foot is unloaded, picked up, and carried to where the body is going, by a force between foot and pelvis (internal, so it cannot push the body along by itself).
       // With the foot back under the chest the body recovers by moving over its feet instead of tipping back like a plank.
       if(e.stagN>0&&rung==='stand'&&!down&&pelvis&&e.stagT<STEP_TIME*.65){const foot=e.bodies.find(b=>b.plugin.slot===(e.stagLeg?16:13)),i=support.indexOf(foot);
-        if(foot&&free(foot)&&free(pelvis)&&this.bears(foot)&&(i<0||support.length>1)){if(i>=0)support.splice(i,1);const w=this.carried(e,chest)*.001*Math.max(this.gravity,.2),goal=chest.position.x+chest.velocity.x*STEP_LOOKAHEAD*.6+e.stagDir*STEP_REACH+(foot.plugin.flip?-1:1)*FOOT_AHEAD;
+        if(foot&&free(foot)&&free(pelvis)&&this.bears(foot)&&(i<0||support.length>1)){if(i>=0)support.splice(i,1);const w=this.carried(e,chest)*G_SCALE*Math.max(this.gravity,.2),goal=chest.position.x+chest.velocity.x*STEP_LOOKAHEAD*.6+e.stagDir*STEP_REACH+(foot.plugin.flip?-1:1)*FOOT_AHEAD;
           const fx=clamp((goal-foot.position.x)*.03-foot.velocity.x*.12,-.6,.6)*w,fy=-STEP_LIFT*w;foot.force.x+=fx;foot.force.y+=fy;pelvis.force.x-=fx;pelvis.force.y-=fy;}}
       // Only what is really braced against something may take the body's weight. A light shin that is merely brushing the floor would be shot downward by it; a part already moving down is not holding anything up.
       for(let i=support.length-1;i>=0;i--)if(support[i].velocity.y>BRACED||support[i].speed>BRACED*3)support.splice(i,1);
@@ -611,7 +613,7 @@
       let mass=this.carried(e,chest),footX=0,footY=-1e9,total=0;const shares=this.shares;shares.length=support.length;
       for(let i=0;i<support.length;i++){const f=support[i],slot=f.plugin.slot,from=slot>=14?14:11;let health=1;for(const b of e.bodies)if(b.plugin.slot>=from&&b.plugin.slot<=from+2)health=Math.min(health,b.plugin.hp/b.plugin.maxHp);shares[i]=clamp(health*health,.12,1);total+=shares[i];}
       for(let i=0;i<support.length;i++){shares[i]/=total;footX+=this.bearing(support[i])*shares[i];footY=Math.max(footY,support[i].bounds.max.y-6);if(support[i].plugin.slot===13||support[i].plugin.slot===11||support[i].plugin.slot===12)e.loadLeft=shares[i];}if(support.length===1)e.loadLeft=support[0].plugin.slot<14?1:0;
-      const weight=mass*.001*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
+      const weight=mass*G_SCALE*Math.max(this.gravity,.2),lift=clamp((height-(footY-chest.position.y))*.035+chest.velocity.y*.25,0,this.settings.legStrength*(e.surge>0?1.5:1))*weight*e.effort*liftScale;
       const daze=e.consciousness==='dazed'?Math.sin(this.time*1.3)*9+Math.sin(this.time*.7+1)*6:0; // dazed: the point it balances over wanders
       const sway=clamp((footX+daze+(e.leanAway||0)+(e.stagN>0?e.stagDir*e.stagPush:0)-chest.position.x)*.012-chest.velocity.x*.12,-.8,.8)*weight*e.effort; // a stagger moves the point the body balances over
       chest.force.x+=sway*.6;chest.force.y-=lift*.6;if(free(pelvis)){pelvis.force.x+=sway*.4;pelvis.force.y-=lift*.4;}
@@ -658,6 +660,12 @@
       while(queue.length){const current=queue.shift();for(const c of joints){const other=c.bodyA===current?c.bodyB:c.bodyB===current?c.bodyA:null;if(other&&!connected.has(other)){connected.add(other);queue.push(other);}}}
       for(const b of connected)Body.translate(b,delta);
     }
+    // Air. A falling body keeps speeding up, 9.81 m/s every second, until drag - which grows with the square of its speed - matches its weight: then it falls at its terminal velocity. Below that drag is small, so a fall from
+    // two metres lands at the speed a fall in a vacuum would, and from forty metres near the top speed of whatever it is (a person about 55 m/s, a steel beam 90, a ball 25, a shirt 5). Matter's own air friction slows everything
+    // in proportion to its speed, which caps a person at 10 m/s and makes a long fall no worse than a short one; it is switched off, and this does both the drag and the spin damping it used to do. The Air resistance setting scales it.
+    air(bodies,seconds){const set=this.settings.airDrag,g=9.81*PX_PER_M;for(const b of bodies){if(b.isStatic)continue;if(b.frictionAir)b.frictionAir=0;if(!set)continue;const p=b.plugin,sp=b.speed;
+      if(sp>.05){const vt=(p.part?RAGDOLL_TERMINAL:defs[p.kind]?.terminal??matOf(p).terminal??50)*PX_PER_M,v=sp*60,loss=g*set*(v/vt)*(v/vt)*seconds;Body.setVelocity(b,{x:b.velocity.x*Math.max(0,1-loss/v),y:b.velocity.y*Math.max(0,1-loss/v)});}
+      if(b.angularVelocity)Body.setAngularVelocity(b,b.angularVelocity*(1-(p.part?SPIN_AIR.part:SPIN_AIR.other)*set*seconds*60));}}
     powerRadius(kind){return (POWER_R[kind]||40)*this.settings.powerRadius;}
     // A power is a field at the cursor: this.power = {kind,x,y,px,py} while the button is held, null otherwise. The interface only puts it there and moves it; everything it does happens here, in the step, so nothing happens while paused.
     // What is in range is found thirty times a second, along the whole segment the cursor has crossed since the last look (a fast sweep cannot jump a body), and kept with its falloff - 1 at the centre, 0 at the edge -
@@ -1037,7 +1045,7 @@
     // The head takes it all, from a lower speed. The broad parts of the body spread it over their area. Parts that land after the first, in the same fall, land softer: the body is already stopping.
     // A conscious body that comes down on its feet, upright, rides the landing with its legs and takes well under two thirds. Falls break bones and knock out; they do not tear limbs off (the part is spared at FALL_FLOOR hp).
     land(part,other,closing,point,toward,normal) {
-      const p=part.plugin,head=p.slot===0,endOn=FALL_AXIAL.has(p.part)&&!!normal&&Math.abs(normal.x*-Math.sin(part.angle)+normal.y*Math.cos(part.angle))>.7, /* a limb that comes down on its end, not along its side */safe=head?FALL_SAFE_HEAD:FALL_SAFE;if(closing<=safe)return;const e=this.getEntity(part),fixed=other.isStatic||!!other.plugin.boundary;
+      const p=part.plugin,head=p.slot===0,endOn=FALL_AXIAL.has(p.part)&&!!normal&&Math.abs(normal.x*-Math.sin(part.angle)+normal.y*Math.cos(part.angle))>.7, /* a limb that comes down on its end, not along its side */safe=head?FALL_SAFE_HEAD:FALL_SAFE;if(closing<=safe)return;const e=this.getEntity(part),fixed=other.isStatic||!!other.plugin.boundary||(!other.plugin.part&&(other.vx0??0)**2+(other.vy0??0)**2<FALL_REST*FALL_REST&&other.mass>part.mass); /* a crate or a beam lying still is backed by whatever it rests on: landing on it is landing on the floor */
       let amount=(closing*closing-safe*safe)*FALL_K*rnd(.75,1.25)*(endOn?FALL_AREA[p.part]:FALL_FLAT[p.part]??FALL_AREA[p.part]??1)*(fixed?this.settings.fallDamage:OBJECT_K*other.mass/(other.mass+part.mass+FALL_MASS)*(defs[other.plugin.kind]?.blunt||1));if(!(amount>.5))return;
       if(e){if(!(this.time-(e.landT??-9)<LAND_WINDOW)){e.landT=this.time;e.landN=0;}amount/=1+(e.landN++);} /* what is struck first takes the brunt: the rest of the body meets something that is already slowing */
       if(e&&fixed){
@@ -1183,7 +1191,7 @@
         if(Math.sign(impulse)===Math.sign(error))continue; // already returning faster than required
         if(ia)Body.setAngularVelocity(a,a.angularVelocity-impulse*ia/total);if(ib)Body.setAngularVelocity(b,b.angularVelocity+impulse*ib/total);
       }
-      this.touching.clear();for(const b of bodies){b.vx0=b.velocity.x;b.vy0=b.velocity.y;b.squeeze=0;b.squeezeHard=false;} /* how fast everything was going before this step's contacts were resolved */ Engine.update(this.engine,dt);this.press(bodies,seconds);
+      this.touching.clear();this.air(bodies,seconds);for(const b of bodies){b.vx0=b.velocity.x;b.vy0=b.velocity.y;b.squeeze=0;b.squeezeHard=false;} /* how fast everything was going before this step's contacts were resolved */ Engine.update(this.engine,dt);this.press(bodies,seconds);
       // Constraint solving leaves a limp pile jittering forever, and that residue crawls sideways; Matter's own sleeping never triggers on it.
       // So ragdolls sleep as a unit: fall at full speed, then once nearly still hold the whole pose. Holding every part adds no joint tension.
       for(const e of this.entities){if(e.blood===undefined)continue;

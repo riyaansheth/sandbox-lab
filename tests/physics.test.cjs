@@ -720,7 +720,7 @@ test('a syringe goes in at a touch, draws 2% of the blood, pushes it back on Act
   const {s,e,chest}=arena();e.alive=true;e.blood=100;const hp=chest.plugin.hp,slow=hurl(s,'sword',chest,2);advance(s,200);assert.equal(slow.plugin.stuck,undefined,'a sword this slow bounces off');s.removeBody(slow);
   const needle=hurl(s,'syringe',chest,2);advance(s,200);const near=(got,want)=>assert.ok(Math.abs(got-want)<.2,`blood ${got}, expected about ${want}`); /* the prick itself bleeds a drop */ assert.equal(needle.plugin.stuck,e.id,'the needle goes in');near(e.blood,98);assert.equal(needle.plugin.fill,'blood');assert.ok(hp-chest.plugin.hp<=4,'a prick, not a stab wound');
   assert.match(s.activate(needle),/Injected/);near(e.blood,100);assert.equal(needle.plugin.fill,undefined);assert.match(s.activate(needle),/Drew/);near(e.blood,98);
-  advance(s,600);assert.equal(needle.plugin.stuck,e.id,'left alone it stays in');s.beginDrag(needle,{...needle.position});advance(s,30);assert.ok(s.joints.some(c=>c.plugin.pierce),'picking it up does not draw it out');s.moveDrag({x:needle.position.x-90,y:needle.position.y});advance(s,90);s.endDrag();advance(s,30); /* it comes out the way a blade does: when it is pulled */assert.equal(needle.plugin.stuck,undefined,'a pull draws it out');assert.ok(!s.joints.some(c=>c.plugin.pierce));
+  advance(s,600);assert.equal(needle.plugin.stuck,e.id,'left alone it stays in');s.beginDrag(needle,{...needle.position});advance(s,30);assert.ok(s.joints.some(c=>c.plugin.pierce),'picking it up does not draw it out');s.freeze(chest); /* in zero gravity nothing slows a body: pulled, it would drift after the needle. Held still, as a hand would */s.moveDrag({x:needle.position.x-90,y:needle.position.y});advance(s,90);s.endDrag();advance(s,30); /* it comes out the way a blade does: when it is pulled */assert.equal(needle.plugin.stuck,undefined,'a pull draws it out');assert.ok(!s.joints.some(c=>c.plugin.pierce));
   assert.equal(needle.plugin.fill,'blood','and it keeps what it drew');s.particles.length=0;assert.match(s.activate(needle),/emptied/);assert.ok(s.particles.some(p=>p.type==='blood'),'out of a body it squirts onto the floor');assert.match(s.activate(needle),/empty/);
   assert.ok(require('../items.js').CATEGORIES.includes('Syringes'));
 });
@@ -735,7 +735,7 @@ test('a shock brings round someone who is out cold, too many in a row stop the h
 });
 
 test('fall damage follows the agreed table: height, what lands first, and whether the body was ready for it',()=>{
-  const drop=(metres,pose,seed,set={})=>{const s=new Simulation().seed(seed);s.configure(set);const e=s.spawn('human',1000,555);advance(s,60);const turn=pose==='head'?Math.PI:pose==='flat'?Math.PI/2*(seed%2?1:-1):0;if(turn)for(const b of e.bodies)Body.rotate(b,turn,{x:1000,y:555});if(pose!=='feet')e.stun=1.2;
+  const drop=(metres,pose,seed,set={})=>{const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,60);s.configure(set); /* settings take effect at the moment of the drop: a body that goes limp only then is still upright, like the one it is compared with */const turn=pose==='head'?Math.PI:pose==='flat'?Math.PI/2*(seed%2?1:-1):0;if(turn)for(const b of e.bodies)Body.rotate(b,turn,{x:1000,y:555});if(pose!=='feet')e.stun=1.2;
     const low=Math.max(...e.bodies.map(b=>b.bounds.max.y));for(const b of e.bodies){Body.translate(b,{x:0,y:650-low-metres*110});Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}const heard=[];s.onEffect=k=>heard.push(k);advance(s,300);
     return {e,s,heard,fx:s.bodies.filter(b=>b.plugin.part&&s.fractured(b)).length,hurt:e.bodies.reduce((n,b)=>n+b.plugin.maxHp-b.plugin.hp,0),whole:e.bodies.length===17,bled:e.bodies.some(b=>b.plugin.wounds.some(w=>w.type!=='impact'))};},
   many=(metres,pose,set)=>[1,2,3,4,5,6].map(seed=>drop(metres,pose,seed,set)),count=(runs,f)=>runs.filter(f).length;
@@ -908,4 +908,14 @@ test('clothes: the picture of a part is keyed by the garments it wears, so no tw
 test('the pistol and the revolver have no wait between shots: every pull of the trigger fires; the other guns keep their rate',()=>{
   for(const kind of ['gun','revolver']){const s=new Simulation().seed(2);s.gravity=0;const g=s.spawn(kind,400,300).bodies[0];let fired=0;for(let i=0;i<10;i++)if(/fired/.test(s.activate(g)))fired++;assert.equal(fired,10,`${kind}: ten pulls in the same instant, ten rounds`);assert.equal(s.shots.length,10);assert.equal(s.activate(g,true),'','still not automatic: holding F does nothing more');}
   const s=new Simulation().seed(2);s.gravity=0;const rifle=s.spawn('hunting',400,300).bodies[0];assert.match(s.activate(rifle),/fired/);assert.equal(s.activate(rifle),'','a bolt action still has to be worked');
+});
+
+test('falling follows real physics: 9.81 m/s2, the speed of impact grows with the height fallen, and drag grows with the square of speed up to a terminal velocity',()=>{
+  const PX=110,impact=(kind,metres,set={})=>{const s=new Simulation().seed(1);s.configure({fallDamage:0,...set});const e=s.spawn(kind,1000,kind==='human'?555:600);advance(s,30);const low=Math.max(...e.bodies.map(b=>b.bounds.max.y));for(const b of e.bodies){Body.translate(b,{x:0,y:650-low-metres*PX});Body.setVelocity(b,{x:0,y:0});Body.setAngularVelocity(b,0);}
+    const probe=kind==='human'?e.bodies[2]:e.bodies[0];let v=0;for(let i=0;i<60*20;i++){s.step(1000/120);if(e.bodies.some(b=>b.bounds.max.y>=649.5))break;v=probe.velocity.y*60/PX;}return v;};
+  const s=new Simulation();assert.ok(Math.abs(s.engine.gravity.scale*1e6/PX-9.81)<.001,'gravity is 9.81 m/s2 at 110 px to the metre');
+  const vac=h=>Math.sqrt(2*9.81*h);for(const h of [1,2,5])assert.ok(impact('crate',h,{airDrag:0})>vac(h)*.93&&impact('crate',h,{airDrag:0})<vac(h)*1.02,`in a vacuum a ${h} m drop lands at ${impact('crate',h,{airDrag:0}).toFixed(2)} m/s, free fall says ${vac(h).toFixed(2)}`);
+  const speeds=[1,2,5,10,20,40].map(h=>impact('human',h));for(let i=1;i<speeds.length;i++)assert.ok(speeds[i]>speeds[i-1],`higher is faster: ${speeds.map(v=>v.toFixed(1)).join(' < ')}`);
+  assert.ok(speeds[0]>vac(1)*.9,'from low down, air hardly matters');assert.ok(speeds[5]>20&&speeds[5]<vac(40),`from 40 m a person lands at ${speeds[5].toFixed(1)} m/s: fast, but below free fall`);
+  assert.ok(impact('crate',40)>impact('ball',40),'a light ball meets more air for its weight than a crate, and tops out sooner');const shirt=impact('blueshirt',10);assert.ok(shirt<6,`a shirt flutters down at ${shirt.toFixed(1)} m/s`);
 });

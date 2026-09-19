@@ -17,17 +17,18 @@
   //   conductive   0..1, how well it carries current         magnetic    attracted by magnets
   //   absorb       share of a bullet's power it soaks up; 1 stops every bullet, and only materials below 1 can be shot through
   //   soft         0..1, 1 can be pierced by a blade         brittle     shatters instead of denting: impulse threshold in damage points, 0 = never
+  //   terminal     m/s it falls at when air drag balances its weight: what stops it speeding up for ever. Drag grows with the square of speed, so below this it hardly slows anything
   //   buoyancy     >1 floats, <1 sinks                       friction, restitution   surface feel
   const MATERIALS = {
-    flesh:   { density: .0018, flammable: 1,  burnAt: 170,      thermal: .35, conductive: .6, magnetic: false, absorb: .35, soft: 1,  brittle: 0,  buoyancy: 1.05, friction: .8,  restitution: 0 },
-    wood:    { density: .0012, flammable: 1,  burnAt: 170,      thermal: .2,  conductive: 0,  magnetic: false, absorb: .5,  soft: .3, brittle: 0,  buoyancy: 1.6,  friction: .65, restitution: .1 },
-    metal:   { density: .006,  flammable: 0,  burnAt: Infinity, thermal: .9,  conductive: 1,  magnetic: true,  absorb: 1,   soft: 0,  brittle: 0,  buoyancy: .2,   friction: .65, restitution: .1 },
-    stone:   { density: .005,  flammable: 0,  burnAt: Infinity, thermal: .4,  conductive: 0,  magnetic: false, absorb: 1,   soft: 0,  brittle: 0,  buoyancy: .3,   friction: .7,  restitution: .05 },
-    glass:   { density: .001,  flammable: 0,  burnAt: Infinity, thermal: .5,  conductive: 0,  magnetic: false, absorb: .1,  soft: 0,  brittle: 1,  buoyancy: .5,   friction: .4,  restitution: .1 },
-    rubber:  { density: .001,  flammable: .6, burnAt: 170,      thermal: .1,  conductive: 0,  magnetic: false, absorb: .7,  soft: .4, brittle: 0,  buoyancy: 1.3,  friction: .9,  restitution: .87 },
-    plastic: { density: .0009, flammable: .8, burnAt: 200,      thermal: .15, conductive: 0,  magnetic: false, absorb: .45, soft: .3, brittle: 0,  buoyancy: 1.4,  friction: .5,  restitution: .3 },
-    cloth:   { density: .0004, flammable: 1,  burnAt: 150,      thermal: .25, conductive: 0,  magnetic: false, absorb: .05, soft: 1,  brittle: 0,  buoyancy: 1.5,  friction: .3,  restitution: .02 },
-    bone:    { density: .002,  flammable: 0,  burnAt: Infinity, thermal: .3,  conductive: 0,  magnetic: false, absorb: .6,  soft: 0,  brittle: 0,  buoyancy: .9,   friction: .6,  restitution: .1 }
+    flesh:   { density: .0018, flammable: 1,  burnAt: 170,      thermal: .35, conductive: .6, magnetic: false, absorb: .35, soft: 1,  brittle: 0,  buoyancy: 1.05, friction: .8,  restitution: 0,   terminal: 55 },
+    wood:    { density: .0012, flammable: 1,  burnAt: 170,      thermal: .2,  conductive: 0,  magnetic: false, absorb: .5,  soft: .3, brittle: 0,  buoyancy: 1.6,  friction: .65, restitution: .1,  terminal: 40 },
+    metal:   { density: .006,  flammable: 0,  burnAt: Infinity, thermal: .9,  conductive: 1,  magnetic: true,  absorb: 1,   soft: 0,  brittle: 0,  buoyancy: .2,   friction: .65, restitution: .1,  terminal: 90 },
+    stone:   { density: .005,  flammable: 0,  burnAt: Infinity, thermal: .4,  conductive: 0,  magnetic: false, absorb: 1,   soft: 0,  brittle: 0,  buoyancy: .3,   friction: .7,  restitution: .05, terminal: 90 },
+    glass:   { density: .001,  flammable: 0,  burnAt: Infinity, thermal: .5,  conductive: 0,  magnetic: false, absorb: .1,  soft: 0,  brittle: 1,  buoyancy: .5,   friction: .4,  restitution: .1,  terminal: 45 },
+    rubber:  { density: .001,  flammable: .6, burnAt: 170,      thermal: .1,  conductive: 0,  magnetic: false, absorb: .7,  soft: .4, brittle: 0,  buoyancy: 1.3,  friction: .9,  restitution: .87, terminal: 25 },
+    plastic: { density: .0009, flammable: .8, burnAt: 200,      thermal: .15, conductive: 0,  magnetic: false, absorb: .45, soft: .3, brittle: 0,  buoyancy: 1.4,  friction: .5,  restitution: .3,  terminal: 30 },
+    cloth:   { density: .0004, flammable: 1,  burnAt: 150,      thermal: .25, conductive: 0,  magnetic: false, absorb: .05, soft: 1,  brittle: 0,  buoyancy: 1.5,  friction: .3,  restitution: .02, terminal: 5 },
+    bone:    { density: .002,  flammable: 0,  burnAt: Infinity, thermal: .3,  conductive: 0,  magnetic: false, absorb: .6,  soft: 0,  brittle: 0,  buoyancy: .9,   friction: .6,  restitution: .1,  terminal: 50 }
   };
 
   // An item row. Shape is w x h (a rectangle) or r (a circle); art may draw outside it, physics does not.
@@ -55,7 +56,7 @@
     { id: 'axe',      name: 'Axe',            category: 'Melee',      description: 'A heavy head on a long handle. One good swing takes a limb off.', w: 30, h: 80, material: 'wood', hp: 160, density: .002, sharp: { edge: true, power: 110 }, blunt: 1.6, grip: { x: 0, y: 26 }, color: '#a9814f' },
     { id: 'bat',      name: 'Baseball bat',   category: 'Melee',      description: 'Turned ash. Breaks bones rather than skin.', w: 10, h: 88, material: 'wood', hp: 140, density: .0016, blunt: 1.9, grip: { x: 0, y: 32 }, color: '#c9a36b' },
     { id: 'chainsaw', name: 'Chainsaw',       category: 'Melee',      description: 'Activate to run the chain. While it runs, whatever the bar touches is cut, continuously.', w: 24, h: 96, material: 'metal', hp: 200, density: .0028, sharp: { edge: true, power: 30 }, device: 'chainsaw', grip: { x: 0, y: 30 }, color: '#d9832e' },
-    { id: 'bolt',     name: 'Crossbow bolt',  category: 'Melee',      description: 'Light and pointed. Thrown hard enough, it goes in and stays.', w: 4, h: 46, material: 'wood', hp: 40, density: .0012, sharp: { tip: true, length: .9 }, color: '#8b6b45' },
+    { id: 'bolt',     name: 'Crossbow bolt',  category: 'Melee',      description: 'Light and pointed. Thrown hard enough, it goes in and stays.', w: 4, h: 46, material: 'wood', hp: 40, density: .0012, sharp: { tip: true, length: .9 }, terminal: 120, color: '#8b6b45' },   // fletched and pointed: it cuts through the air
     { id: 'crystal',  name: 'Crystal',        category: 'Melee',      description: 'A long natural shard. Wickedly sharp, and it shatters.', w: 16, h: 50, material: 'glass', hp: 30, density: .002, sharp: { tip: true, edge: true, power: 45, length: .8 }, color: '#9fd8e6' },
     { id: 'esword',   name: 'Energy sword',   category: 'Melee',      description: 'Activate to ignite the blade. It cuts through anything soft and sears the wound shut behind it.', w: 9, h: 100, material: 'metal', hp: 180, density: .0012, sharp: { tip: true, edge: true, power: 96, hot: true }, device: 'blade', grip: { x: 0, y: 40 }, color: '#7fe3ff' },
     { id: 'hammer',   name: 'Hammer',         category: 'Melee',      description: 'A sledgehammer. Everything it hits at speed takes double.', w: 30, h: 76, material: 'metal', hp: 300, density: .003, blunt: 2.4, grip: { x: 0, y: 26 }, color: '#7f8a90' },
