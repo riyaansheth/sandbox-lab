@@ -63,6 +63,7 @@
     {id:'organDamage',section:'Gore',label:'Organ damage',help:'Deep wounds can find the brain, heart, lungs or gut: instant death, blackouts, internal bleeding, suffocation.',type:'toggle',def:true},
     {id:'noGore',section:'Gore',label:'No gore',help:'Hides blood, stains and wounds. Injuries still happen, they are just not drawn.',type:'toggle',def:false},
     {id:'bulletDamage',section:'Weapons',label:'Bullet damage',help:'Damage of one bullet, from the shoot tool or a pistol.',type:'range',min:5,max:300,step:5,def:55,unit:''},
+    {id:'bulletSpeed',section:'Weapons',label:'Bullet speed',help:'Rounds fly at a tenth of their real muzzle velocity so the difference between a pistol, a rifle and a crossbow can be seen. This scales all of them.',type:'range',min:.25,max:4,step:.25,def:1,unit:'×'},
     {id:'bulletForce',section:'Weapons',label:'Bullet knockback',help:'How hard a bullet shoves what it hits.',type:'range',min:0,max:6,step:.1,def:1,unit:'×'},
     {id:'explosionPower',section:'Weapons',label:'Explosion power',help:'Multiplies the blast force and damage of every explosion.',type:'range',min:.25,max:4,step:.05,def:1,unit:'×'},
     {id:'pierceSpeed',section:'Weapons',label:'Piercing speed',help:'How fast a blade must travel point-first to run a body through. Lower pierces more easily.',type:'range',min:.5,max:20,step:.5,def:2.5,unit:''},
@@ -133,6 +134,7 @@
   const AWARE_EVERY=.1,SEE_FAST=5,SEE_RANGE=300,INCOMING=.45,HEAT_NEAR=70,WITNESS_RANGE=340; // awareness runs ten times a second; px/step that counts as fast; how far it notices; seconds ahead it anticipates a hit; how close heat has to be; how far away a neighbour's injury startles
   // Bullets: x1.4 at the muzzle, full damage out to RANGE_NEAR px, then falling by one for every RANGE_FALLOFF px down to RANGE_MIN. A round that still carries THROUGH damage goes clean through fresh flesh.
   const CONTACT_SHOT=2,BULLET_FLOOR=8;
+  const PX_PER_M=110,SHOT_SCALE=.1,SHOT_REACH=2500; // a standing body is about 1.8 m; rounds fly at this fraction of their real speed; how far a round goes
   const RANGE_POINT_BLANK=1.4,RANGE_NEAR=60,RANGE_FALLOFF=900,RANGE_MIN=.3,THROUGH=68;
   const WRENCH_PULL=70,WRENCH_BLOW=45,VITAL_JOINT={atlas:4,neck:4,spine:3,waist:3}; // px the cursor must be hauling from the body; damage a blow must do; how much longer the neck and spine hold out than a limb
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
@@ -168,7 +170,7 @@
   class Simulation {
     constructor() {
       this.engine=Engine.create({positionIterations:10,velocityIterations:10,constraintIterations:10,enableSleeping:false});
-      this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];
+      this.world=this.engine.world;this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];
       this.nextId=1;this.time=0;this.gravity=1;this.onEffect=()=>{};this.drag=null;this.damageQueue=[];this.touching=new Set();this.piercing=new Map();this.regrowing=[];this.spare=[];this.tick=0;this.poseWant={angle:new Array(17).fill(0),power:new Array(17).fill(1)};this.support=[];this.shares=[];this.busy=new Array(17).fill(0);this.bites=new WeakMap();this.aimSet=new Set();this.random=Math.random;this.settings=defaults();
       this.groundY=650;this.width=2600;this.height=1000;this.scene='workshop';
       this.boundaries=[Bodies.rectangle(1300,720,3000,140,{isStatic:true,label:'Ground'}),Bodies.rectangle(-50,100,100,1300,{isStatic:true}),Bodies.rectangle(2650,100,100,1300,{isStatic:true}),Bodies.rectangle(1300,-420,3000,100,{isStatic:true})];
@@ -593,7 +595,7 @@
       this.entities=this.entities.filter(e=>e.bodies.length);
     }
     removeEntity(body){const e=this.getEntity(body);if(e)for(const b of [...e.bodies])this.removeBody(b);}
-    clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
+    clear(){this.endDrag();for(const b of [...this.bodies])this.removeBody(b);for(const c of this.joints)Composite.remove(this.world,c);this.entities=[];this.particles=[];this.flashes=[];this.traces=[];this.stains=[];this.shots=[];this.damageQueue=[];this.regrowing=[];Engine.clear(this.engine);}
     // Turn to face the other way: the whole connected set is mirrored about a vertical line through the clicked body's owner (its chest, if it has one).
     // Positions, angles and velocities mirror; every constraint anchor on a mirrored body mirrors with it; ragdoll joints swap and negate their limits; stains move to the other side.
     flip(body) {
@@ -789,24 +791,34 @@
     // (entry and exit wound) and carries on, weaker, into whatever is behind it.
     passes(body,damage){const p=body.plugin,mat=matOf(p);if(p.boundary||body.isStatic||mat.absorb>=1)return false;if(mat.brittle)return true;if(p.material!=='flesh')return p.hp-damage<=p.maxHp*.3; // brittle things never stop a bullet; wood, plastic and rubber do until they are nearly destroyed
       return p.hp<=0||damage>=THROUGH||(p.wounds||[]).some(w=>w.type==='bullet'||w.type==='exit');} // flesh: already holed, already destroyed, or a round too powerful to stop
-    shoot(from,to,ignore=null) {
-      const direction=Vector.normalise(Vector.sub(to,from));if(!direction.x&&!direction.y)return;
-      const end=Vector.add(from,Vector.mult(direction,2500)),rx=end.x-from.x,ry=end.y-from.y,hits=[];
-      // Exact segment/polygon intersection avoids tunnelling and query-order artifacts. Entry and exit are the nearest and farthest crossing of each body.
-      for(const body of [...this.bodies,...this.boundaries]){if(body===ignore||(ignore?.plugin.heldBy!==undefined&&body.collisionFilter.group===ignore.collisionFilter.group))continue; // a held pistol never shoots its own holder
+    // A shot is one or more rounds (spec.pellets) leaving a muzzle. spec comes from the weapon's row: damage (multiple of the bullet-damage setting), speed (muzzle velocity, m/s), spread (radians), force.
+    // Without a speed (the shoot tool) the round arrives at once and the first thing it hit is returned. With one it flies: step() moves it along at SHOT_SCALE of its real speed, so a rifle round visibly outruns a pistol's.
+    shoot(from,to,ignore=null,spec={}) {
+      const aim=Vector.normalise(Vector.sub(to,from));if(!aim.x&&!aim.y)return;let first=null;
+      for(let i=0;i<(spec.pellets||1);i++){const direction=spec.spread?Vector.rotate(aim,rnd(-spec.spread,spec.spread)):aim,speed=spec.speed?spec.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed:0;
+        const shot={x:from.x,y:from.y,dx:direction.x,dy:direction.y,speed,damage:spec.damage??1,force:spec.force??spec.damage??1,ignore,done:new Set(),travelled:0,power:1,first:null};
+        if(speed)this.shots.push(shot);else{this.fly(shot,SHOT_REACH,.14);first=shot.first;}}
+      this.burst(from.x,from.y,5,'#ffe1a2',3);this.onEffect('shot',.3);return first;
+    }
+    // Move a round L px along its line. Each body the line crosses within that stretch is hit in order. Returns true when the round is spent.
+    fly(shot,L,glow=.1) {
+      const from={x:shot.x,y:shot.y},direction={x:shot.dx,y:shot.dy},ignore=shot.ignore,rx=direction.x*SHOT_REACH,ry=direction.y*SHOT_REACH,hits=[];
+      // Exact segment/polygon intersection avoids tunnelling and query-order artifacts. Entry and exit are the nearest and farthest crossing of each body. The exit is looked for along the whole line, so a round that ends a step inside a limb still comes out the far side.
+      for(const body of [...this.bodies,...this.boundaries]){if(shot.done.has(body)||body===ignore||(ignore?.plugin.heldBy!==undefined&&body.collisionFilter.group===ignore.collisionFilter.group))continue; // a held gun never shoots its own holder
         let near=Infinity,far=-Infinity;const v=body.vertices;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length],sx=b.x-a.x,sy=b.y-a.y,den=rx*sy-ry*sx;
           if(Math.abs(den)<1e-8)continue;const qx=a.x-from.x,qy=a.y-from.y,t=(qx*sy-qy*sx)/den,u=(qx*ry-qy*rx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){near=Math.min(near,t);far=Math.max(far,t);}}
-        if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
-      hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */ const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=t=>clamp(RANGE_POINT_BLANK-(t*2500-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let first=null,stop=end,power=1;
-      for(const {body,near,far} of hits){first??=body;stop=at(near);if(body.plugin.boundary)break;
-        this.contactShot=first===body&&near*2500<=CONTACT_SHOT;const damage=this.settings.bulletDamage*power*range(near),through=this.passes(body,damage)&&far>near;
-        Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*power*(through?.4:1)));
-        const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through)break;
+        if(near<Infinity){if(M.Vertices.contains(body.vertices,from))near=0;if(near*SHOT_REACH<=L)hits.push({body,near,far});}} // a muzzle pushed into a body: the entry is where the muzzle is
+      hits.sort((a,b)=>Math.abs(a.near-b.near)>1e-6?a.near-b.near:(b.body.plugin.slot??0)-(a.body.plugin.slot??0)); /* in a profile the two arms and the two legs overlap exactly: the near one, the one you can see, is hit first */
+      const at=t=>({x:from.x+rx*t,y:from.y+ry*t}),range=d=>clamp(RANGE_POINT_BLANK-(d-RANGE_NEAR)/RANGE_FALLOFF,RANGE_MIN,RANGE_POINT_BLANK);let stop=null,spent=false;
+      for(const {body,near,far} of hits){shot.first??=body;stop=at(near);shot.done.add(body);if(body.plugin.boundary){spent=true;break;}const gone=shot.travelled+near*SHOT_REACH;
+        this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;const damage=this.settings.bulletDamage*shot.damage*shot.power*range(gone),through=this.passes(body,damage)&&far>near;
+        Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*shot.power*(through?.4:1)));
+        const absorb=matOf(body.plugin).absorb;this.damage(body,damage*(through?.6:1),stop,'bullet',direction);if(!through){spent=true;break;}
         // Out the far side: a bigger, ragged wound and a spray that follows the bullet.
         const exit=at(far);if(body.plugin.material==='flesh'&&this.bodies.includes(body)){this.damage(body,damage*.25,exit,'exit',direction);for(let i=0;i<8;i++)this.emit(exit.x,exit.y,direction.x*rnd(2,7)+rnd(-1,1),direction.y*rnd(2,7)+rnd(-1.5,.5),rnd(.4,1),1,'#a4373c',rnd(1,3),'blood');}
-        stop=exit;power*=1-absorb;if(power<.2)break;}
-      this.contactShot=false;this.traces.push({from:{...from},to:stop,life:.14,maxLife:.14});this.burst(from.x,from.y,5,'#ffe1a2',3);
-      this.onEffect('shot',.3);return first;
+        stop=exit;shot.power*=1-absorb;if(shot.power<.2){spent=true;break;}}
+      this.contactShot=false;const to=spent?stop:{x:from.x+direction.x*L,y:from.y+direction.y*L};this.traces.push({from,to,life:glow,maxLife:glow});
+      shot.x=to.x;shot.y=to.y;shot.travelled+=L;return spent||shot.travelled>=SHOT_REACH;
     }
     ignite(body){if(!body)return;body.plugin.heat=Math.max(body.plugin.heat,330);if(matOf(body.plugin).flammable>0)body.plugin.burning=true;if(defs[body.plugin.kind]?.explosive?.onHeat)body.plugin.fuse=.35;this.onEffect('fire',.1);}
     // A strike takes the highest thing under it. It is a massive shock: current jumps through conductors, flesh burns, flammables catch.
@@ -830,14 +842,18 @@
     // Bandage: one part. Its open wounds and stumps are dressed - sealed, so a knock does not reopen them - and the dressing shows. A hard enough hit on the dressing tears it off (see damage).
     bandage(body){const p=body?.plugin;if(!p||p.material!=='flesh'||!p.part)return 0;let n=0;for(const w of [...(p.wounds||[]),...(p.severed||[])]){if(w.sealed||w.type==='impact'||w.type==='burn')continue;w.sealed=true;w.bleed=0;w.fresh=0;n++;}this.bleedOf(p);return n;}
     heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
-    activate(body) {
+    activate(body,held=false) {
       if(!body)return '';
       // Activating any part of a ragdoll works whatever it is holding: that hand first, then the near hand, then the far one.
-      if(body.plugin.part){const e=this.getEntity(body),hands=[body,...(e?e.bodies.filter(b=>b.plugin.part==='hand').sort((a,b)=>b.plugin.slot-a.plugin.slot):[])];for(const hand of hands){const item=hand.plugin.part==='hand'&&this.held(hand);if(item)return this.activate(item);}return 'Empty-handed: select a hand next to something to pick it up';}
+      if(body.plugin.part){const e=this.getEntity(body),hands=[body,...(e?e.bodies.filter(b=>b.plugin.part==='hand').sort((a,b)=>b.plugin.slot-a.plugin.slot):[])];for(const hand of hands){const item=hand.plugin.part==='hand'&&this.held(hand);if(item)return this.activate(item,held);}return held?'':'Empty-handed: select a hand next to something to pick it up';}
       const p=body.plugin;
-      const def=defs[p.kind]||{},name=def.name||'Object';
+      const def=defs[p.kind]||{},name=def.name||'Object';if(held&&!def.firearm)return '';
       if(def.explosive?.arm==='activate'){if(!def.explosive.fuse){this.detonate(body);return `${name} detonated`;}p.fuse=def.explosive.fuse;return `Fuse lit — ${def.explosive.fuse} seconds`;}
-      if(def.firearm){const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)};this.shoot(Vector.add(body.position,Vector.mult(d,def.firearm.muzzle)),Vector.add(body.position,Vector.mult(d,800)),body);Body.applyForce(body,body.position,Vector.mult(d,-def.firearm.recoil));return `${name} fired`;}
+      if(def.firearm){const gun=def.firearm;if(held&&!gun.auto)return '';if(p.cool>0)return '';p.cool=1/(gun.rate||4); // held = the trigger is being kept down: only automatic weapons keep firing; every weapon has its own rate of fire
+        const aim=body.angle+(p.flip?Math.PI:0),d={x:Math.cos(aim),y:Math.sin(aim)},muzzle=Vector.add(body.position,Vector.mult(d,gun.muzzle));Body.applyForce(body,body.position,Vector.mult(d,-gun.recoil));
+        if(gun.launch){ /* a crossbow throws a real bolt: it flies, drops, goes in point-first and stays, like one thrown by hand - only faster */ const item=defs[gun.launch],e=this.spawn(gun.launch,muzzle.x+d.x*item.h*.55,muzzle.y+d.y*item.h*.55);if(!e)return 'No room for another bolt';const bolt=e.bodies[0],v=gun.speed*PX_PER_M*SHOT_SCALE*this.settings.bulletSpeed/120;
+          Body.setAngle(bolt,aim+Math.PI/2);Body.setVelocity(bolt,Vector.add(body.velocity,Vector.mult(d,v)));bolt.plugin.shotBy=body.id;this.onEffect('impact',.3);return held?'':`${name} loosed`;}
+        this.shoot(muzzle,Vector.add(muzzle,d),body,gun);return held?'':`${name} fired`;}
       if(def.device==='ram')return this.ram(body);
       if(def.device){p.active=!p.active;return `${name} ${p.active?'on':'off'}`;}
       return 'This object has no activation';
@@ -904,7 +920,7 @@
     step(dt=1000/60) {
       if(dt>1000/120+.001){this.step(dt/2);this.step(dt/2);return;}
       const seconds=dt/1000;this.time+=seconds;random=this.random;this.engine.gravity.y=this.gravity;
-      const bodies=this.bodies;this.bodiesNow=bodies;if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
+      const bodies=this.bodies;this.bodiesNow=bodies;if(this.shots.length)this.shots=this.shots.filter(shot=>!this.fly(shot,shot.speed*seconds));if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*.5*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
         e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
@@ -918,7 +934,7 @@
         // A sanity limit, not a behaviour: if solver and muscles ever gang up on a limb, it is slowed rather than fired across the room. Far above anything a throw, a blast or a fall produces.
         if(p.part&&!b.isStatic){if(b.speed>LIMB_SPEED)Body.setVelocity(b,Vector.mult(b.velocity,LIMB_SPEED/b.speed));if(b.angularSpeed>LIMB_SPIN)Body.setAngularVelocity(b,Math.sign(b.angularVelocity)*LIMB_SPIN);}
         if(p.gib){p.life-=seconds;if(p.life<=0){this.damageQueue.push(()=>this.removeBody(b));continue;}if(p.trail>0){p.trail-=seconds;if(b.speed>1&&random()<seconds*40)this.emit(b.position.x,b.position.y,b.velocity.x*.3+rnd(-.4,.4),b.velocity.y*.3+rnd(-.4,.4),2,2,BLOOD,rnd(.7,1.7),'blood');}}
-        p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
+        if(p.cool>0)p.cool-=seconds;p.charge=Math.max(0,p.charge-seconds*1.5);if(p.surge){p.surge-=seconds*.7;if(p.surge<=0)delete p.surge;}if(p.grow!==undefined){p.grow+=seconds/(p.kind==='human'?REGROW_LAYERS:REGROW_SWELL);if(p.grow>=1){delete p.grow;delete p.growFrom;}}
         if(p.material==='flesh'&&(p.bleed>.02||p.wounds?.length||p.severed?.length)){
           // Wounds clot: quickly on a still limb, slowly on one that keeps moving. No allocation in here: it runs for every bleeding part, every substep.
           const e=this.getEntity(b),clot=seconds*CLOT*(b.speed<.6?1:.3),blood=e?.blood??100,pulse=e?.pulse||0,amount=Math.min(2,this.settings.bleedRate);let sum=0,drop=null;

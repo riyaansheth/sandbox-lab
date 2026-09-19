@@ -23,6 +23,7 @@ npm run dev
 - Balance: a staggering body throws its arms out for balance — both forward when going over backwards, one ahead and one behind when stumbling forward. When the chest gets ahead of the feet (or is about to) the body takes a real recovery step — the foot is unloaded, lifted and placed under where the body is going — instead of tipping like a plank. Falls are landed in a crouch that the legs push out of; nothing dies perfectly balanced, a body going limp buckles to one side
 - Carrying: held off the ground and awake, a ragdoll kicks and its arms go for whatever has hold of it. Off the ground a ragdoll keeps its muscle tone, so it holds itself together and swings from wherever it is held rather than folding like a rag; only the pull toward upright needs the ground. Letting go is a throw: the body, and everything jointed to it, leaves with the cursor's velocity
 - Anatomy: the body is seen from the side, facing the way it was spawned. Elbows only flex forward, knees only fold back, the trunk bends forward further than it arches. A joint forced well past its limit breaks, but only under real violence — the cursor hauling from more than 70 px away, a blow of 45 or more, or a dead body landing on it; the neck and spine hold out several times longer than a limb, and carrying someone about never does it. When it does break: the limb fractures, a broken neck kills, a broken spine takes the legs away
+- Eleven firearms, each with its own round. Damage is set from the round's real muzzle energy (9 mm pistol = 1): revolver .357 ×1.35, submachine gun 9 mm ×0.9, assault rifle 5.56 ×1.6, AK 7.62×39 ×1.8, machine gun and minigun 7.62×51 ×2.2, hunting rifle .308 ×2.3, anti-materiel rifle .50 BMG ×5, shotgun nine pellets of ×0.5. Rounds are not instant: they fly at a tenth of their real muzzle velocity (370 m/s for the pistol up to 940 for the 5.56), so a rifle round visibly outruns a pistol's; the Bullet speed setting scales them all. Each weapon has its real rate of fire — hold F and the submachine gun (13/s), the rifles (10–11/s), the machine gun and the minigun (40/s) keep firing; the rest need a fresh pull. The shotgun scatters; heavier rounds kick harder. The crossbow looses a real bolt at 120 m/s: it arcs, goes in point-first and stays
 - Guns wound; they never dismember, and a bullet only destroys the part it hits when the muzzle is pressed against it (within 2 px, or pushed into it). From any distance a limb is left with a sliver of health however many rounds it takes. Bullets still kill through the head, the chest and the organs. Where an arm or leg overlaps its twin, the near one — the one you can see — is hit first
 - Bullets lose power with distance: ×1.4 at the muzzle, full damage out to 60 px, then falling to ×0.3 far away. A round that still carries 68 damage goes clean through fresh flesh, leaving an entry wound on one side and a larger exit wound on the other, and carries on into whatever is behind
 - Local damage: a first distant bullet stops in the limb it hits and hurts nothing else; a limb that is already perforated lets the next one through (entry and exit wound) into whatever is behind, at 65% power. Glass never stops a bullet, weakened wood stops fewer. Arm and hand hits do not knock the body down, leg hits partly do. Shocks hurt without wounds and weaken with each hop; blast damage falls off with the square of distance
@@ -83,6 +84,7 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | --- | --- |
 | Q / E | Spawn the chosen object at the cursor, facing left / right. While you are holding something, they rotate it instead |
 | A / D | Rotate the held or selected body (or the spawn preview). Speeds up while held, faster with Shift. A held body keeps the angle after you let go of the key |
+| F (hold) | Keep an automatic weapon firing |
 | F | Activate the object under the cursor (or the held / selected one) |
 | S | Detail view of the object under the cursor |
 | G | Toggle slow motion |
@@ -99,7 +101,7 @@ Double-click a device with the grab tool to activate it. Rope: click two objects
 
 ## Validation
 
-`npm test` runs 100 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 101 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 

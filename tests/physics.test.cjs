@@ -108,7 +108,7 @@ test('a held body keeps the angle it was rotated to',()=>{
 test('spawning facing left mirrors joint limits and the pistol',()=>{
   const s=new Simulation();const r=s.spawn('human',600,555),l=s.spawn('human',1400,555,true);const knee=e=>s.joints.find(c=>c.plugin.name==='knee'&&c.bodyA.plugin.entityId===e.id).plugin;
   assert.equal(knee(l).min,-knee(r).max);assert.equal(knee(l).max,-knee(r).min);advance(s,600);assert.ok(l.bodies[2].position.y<505&&Math.abs(l.bodies[2].position.x-1400)<5,'mirrored human should stand too');
-  const t=new Simulation();t.gravity=0;const target=t.spawn('crate',500,300).bodies[0],gun=t.spawn('gun',1000,300,true).bodies[0];t.activate(gun);assert.ok(target.plugin.hp<80,'left-facing pistol should fire left');
+  const t=new Simulation();t.gravity=0;const target=t.spawn('crate',500,300).bodies[0],gun=t.spawn('gun',1000,300,true).bodies[0];t.activate(gun);advance(t,12);assert.ok(target.plugin.hp<80,'left-facing pistol should fire left');
 });
 test('a rotated body leaves the grab without spin',()=>{
   const s=new Simulation();s.gravity=0;const b=s.spawn('plank',1000,300).bodies[0];s.beginDrag(b,{...b.position});s.rotate(b,1.2);advance(s,10);assert.ok(Math.abs(b.angularVelocity)>.01);
@@ -223,7 +223,7 @@ test('a selected hand equips the nearest object in reach, levels and fires it, a
   const s=new Simulation();const e=s.spawn('human',1000,555);advance(s,30);const hand=e.bodies[10],far=s.spawn('gun',hand.position.x+120,hand.position.y).bodies[0];assert.equal(s.equip(hand),'','out of reach');
   const gun=s.spawn('gun',hand.position.x+40,hand.position.y).bodies[0];assert.match(s.equip(hand),/pistol/);assert.equal(s.held(hand),gun);assert.equal(gun.collisionFilter.group,hand.collisionFilter.group);assert.equal(s.equip(hand),'','one thing per hand');
   advance(s,240);assert.ok(Math.hypot(gun.position.x-hand.position.x,gun.position.y-hand.position.y)<30,'gun should stay in the hand');assert.ok(e.bodies[2].position.y<505,'holding a pistol should not topple anyone');assert.ok(Math.abs(gun.angle)<.25,`pistol should be held level, angle ${gun.angle}`);
-  const target=s.spawn('crate',hand.position.x+300,gun.position.y).bodies[0];s.freeze(target);Body.setPosition(target,{x:hand.position.x+300,y:gun.position.y});assert.equal(s.activate(hand),'Pistol fired');assert.ok(target.plugin.hp<80||far.plugin.hp<170,'the shot should hit something ahead');
+  const target=s.spawn('crate',hand.position.x+300,gun.position.y).bodies[0];s.freeze(target);Body.setPosition(target,{x:hand.position.x+300,y:gun.position.y});assert.equal(s.activate(hand),'Pistol fired');advance(s,12);/* the round takes a moment to get there */assert.ok(target.plugin.hp<80||far.plugin.hp<170,'the shot should hit something ahead');
   const saved=new Simulation();saved.restore(JSON.parse(JSON.stringify(s.serialize())));assert.equal(saved.joints.filter(c=>c.plugin.hold).length,2);advance(saved,30);assert.equal(saved.joints.filter(c=>c.plugin.hold).length,2);
   s.beginDrag(gun,{...gun.position});assert.equal(s.held(hand),null,'grabbing it takes it out of the hand');assert.equal(gun.collisionFilter.group,0);assert.equal(gun.plugin.heldBy,undefined);s.endDrag();
   Body.setPosition(gun,{x:hand.position.x+10,y:hand.position.y});s.equip(hand);assert.equal(s.held(hand),gun);e.alive=false;s.step();assert.equal(s.held(hand),null,'dropped on death');
@@ -594,4 +594,16 @@ test('a blast takes limbs off by chance, likelier close in; a shock has a good c
   const near=lost(25),far=lost(150);assert.ok(near>far,`near ${near} far ${far}`);assert.ok(near>0&&near<12*16,'some, never all');
   let back=0;for(let seed=1;seed<=20;seed++){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,30);const thigh=e.bodies[14];s.damage(thigh,30,thigh.position,'cut',{x:1,y:0});s.kill(e,'test');advance(s,30);s.shock(e.bodies[2]);if(e.alive){back++;assert.ok(thigh.plugin.wounds.length>0,'wounds stay');}}
   assert.ok(back>=6&&back<=18,`revived ${back}/20`);
+});
+
+test('every firearm has its own round: faster rounds arrive sooner, heavier ones hurt more, buckshot scatters, automatics keep firing, a crossbow throws a real bolt',()=>{
+  const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok(g.firearm.rate>0&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||g.firearm.damage>0);}
+  const shot=(kind,steps)=>{const s=new Simulation().seed(2);s.gravity=0;const gun=s.spawn(kind,400,300).bodies[0],wall=s.spawn('metal',1400,300).bodies[0];s.freeze(wall);const hp=wall.plugin.hp;s.activate(gun);let t=0;while(wall.plugin.hp===hp&&t<steps){s.step(1000/120);t++;}return {t,hurt:hp-wall.plugin.hp,s,gun,wall};};
+  const pistol=shot('gun',200),sniper=shot('sniper',200),hunting=shot('hunting',200);assert.ok(pistol.t>5,'a pistol round takes time to cross a room');assert.ok(sniper.t<pistol.t*.6,`.50 (${sniper.t}) outruns 9 mm (${pistol.t})`);assert.ok(sniper.hurt>hunting.hurt&&hunting.hurt>pistol.hurt,'heavier rounds hurt more');
+  const pellets=new Simulation().seed(2);pellets.gravity=0;pellets.activate(pellets.spawn('shotgun',400,300).bodies[0]);assert.equal(pellets.shots.length,9);assert.ok(new Set(pellets.shots.map(x=>x.dy.toFixed(4))).size>5,'pellets spread');
+  const auto=new Simulation().seed(2);auto.gravity=0;const smg=auto.spawn('smg',400,300).bodies[0],semi=auto.spawn('gun',400,600).bodies[0],rounds=new Map(),shoot=auto.shoot.bind(auto);auto.shoot=(from,to,gun,spec)=>{rounds.set(gun,(rounds.get(gun)||0)+1);return shoot(from,to,gun,spec);};
+  for(let i=0;i<60;i++){auto.activate(smg,i>0);auto.activate(semi,i>0);auto.step();} /* one pull, then the trigger held for a second */
+  assert.ok(rounds.get(smg)>=10&&rounds.get(smg)<=14,`smg fired ${rounds.get(smg)} in a second`);assert.equal(rounds.get(semi),1,'a pistol needs a fresh pull for each round');
+  const bow=new Simulation().seed(2);const xb=bow.spawn('crossbow',400,300).bodies[0];bow.freeze(xb);const n=bow.bodies.length;assert.equal(bow.activate(xb),'Crossbow loosed');assert.equal(bow.bodies.length,n+1);const bolt=bow.bodies.find(x=>x.plugin.kind==='bolt');assert.ok(bolt.velocity.x>8,'the bolt leaves fast');
+  assert.equal(bow.activate(xb),'','it has to be drawn again');const y=bolt.position.y;advance(bow,20);assert.ok(bolt.position.x>600&&bolt.position.y>y,'it flies, and drops');
 });

@@ -329,7 +329,7 @@
     else if(key==='Tab')document.body.classList.toggle('ui-hidden');
     else if(key==='Escape'){if(state.spawn)chooseSpawn(state.spawn);setTool('grab');select(null);}
     else if(key==='g'){setSpeed(state.speed===1?sim.settings.slowMotion/100:1);toast(state.speed===1?'Normal speed':'Slow motion');}
-    else if(key==='f'){const b=target();if(b)toast(sim.activate(b));}
+    else if(key==='f'){const b=target();if(b){const said=sim.activate(b);if(said)toast(said);held.add('f');}} /* kept down, an automatic weapon keeps firing: see heldKeys */
     else if(key==='s'){const b=state.inside&&sim.bodyAt(state.worldPointer);select(b&&b!==state.selected?b:null);}
     else if(key==='q'||key==='e'){if(state.spawn&&state.inside)place(state.worldPointer,key==='q');else if(!state.spawn)toast('Pick an object from the library first.');}
     else if(key==='r'){const b=target();if(b&&sim.flip(b))toast(b.plugin.part?'Turned round':'Flipped');}
@@ -337,7 +337,7 @@
     else if(key==='Delete'||key==='Backspace'){if(state.selected){sim.removeEntity(state.selected);select(null);}}
   });window.addEventListener('keyup',e=>{if(e.key==='Shift')state.shift=false;held.delete(e.key.length===1?e.key.toLowerCase():e.key);});
   // Held keys act every frame: rotation accelerates the longer A/D is down (faster with Shift), and the grab keeps the angle on release.
-  function heldKeys(seconds){
+  function heldKeys(seconds){if(held.has('f')&&!state.paused){const b=target();if(b)sim.activate(b,true);}
     if(!sim.drag){held.delete('q');held.delete('e');}
     const turn=(held.has('d')||held.has('e')?1:0)-(held.has('a')||held.has('q')?1:0);rotateTime=turn?rotateTime+seconds:0;
     // What turns: the held body first, then the spawn preview, then the selection.
