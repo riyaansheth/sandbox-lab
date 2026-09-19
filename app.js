@@ -18,6 +18,8 @@
     {id:'heal',name:'Heal',symbol:'✚',key:'8',title:'Patch it up',desc:'Restore tissue and extinguish. It does not bring anyone back; broken joints stay broken.'},
     {id:'revive',name:'Revive',symbol:'♥',key:'9',title:'Back on your feet',desc:'Click a dead or collapsed ragdoll to bring it back to life and standing.'},
     {id:'partial',name:'Partial revive',symbol:'♡',key:'\\',title:'Alive, not mended',desc:'Click a dead ragdoll to bring it back as it is: every wound, fracture and missing limb stays.'},
+    {id:'clot',name:'Stop bleeding',symbol:'◍',key:';',title:'Stem the flow',desc:'Click a ragdoll to stop all its bleeding, inside and out. The wounds stay.'},
+    {id:'bandage',name:'Bandage',symbol:'▤',key:"'",title:'Dress the wound',desc:'Click a wounded part to bandage its cuts, bullet holes and stumps. Dressed wounds stop bleeding and stay shut.'},
     {id:'regrow',name:'Regrow',symbol:'❋',key:'-',title:'Grow it back',desc:'Click a ragdoll to regrow every missing limb. The torn-off pieces stay where they fell.'},
     {id:'reattach',name:'Reattach',symbol:'⚭',key:'=',title:'Put it back',desc:'Click a severed limb to return it to its own body, or click the body to collect all its pieces.'},
     {id:'graft',name:'Graft',symbol:'⚡',key:'[',title:'Build a better body',desc:'Click the body part to build on, then any loose limb — human or android, either side. It locks on with a surge of power.'},
@@ -229,6 +231,8 @@
       case'blast':if(!continuous)sim.explode(point.x,point.y);break;
       case'heal':if(body){sim.heal(body);select(body);}break;
       case'revive':if(body&&!continuous){toast(sim.revive(body)?'Revived':'Only humans and androids can be revived');select(body);}break;
+      case'clot':if(body&&!continuous){const n=sim.stopBleeding(body);toast(n?'Bleeding stopped':'Nothing is bleeding');select(body);}break;
+      case'bandage':if(body&&!continuous){const n=sim.bandage(body);toast(n?`Bandaged ${n} wound${n>1?'s':''}`:'No open wound on that part');select(body);}break;
       case'partial':if(body&&!continuous){toast(sim.partialRevive(body)?'Revived, wounds and all':'Only humans and androids can be revived');select(body);}break;
       case'regrow':if(body&&!continuous){const n=sim.regenerate(body);toast(n?`Regrowing ${n} part${n>1?'s':''}…`:body.plugin.part?'Nothing is missing':'Only ragdolls regrow');}break;
       case'reattach':if(body&&!continuous){const n=sim.reattach(body);toast(n?`Reattached ${n} piece${n>1?'s':''}`:body.plugin.part?'Nothing to reattach here — the place may already be taken':'Only ragdoll parts reattach');}break;

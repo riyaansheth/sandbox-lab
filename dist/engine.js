@@ -143,6 +143,7 @@
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
   const KNOCKDOWN=32; // damage in one blow that puts a body on the floor; anything less is a flinch or a stagger
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
+  const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human
   const LIMB_BLOOD=4; // blood left in each severed part, on the 0-100 scale of a whole body
   const BUCKLE=.05; // knee kick, rad per substep, when standing legs go limp
   const FLINCH_TIME=.22,STEP_TIME=.3,STAGGER_PUSH=.9,STAGGER_MAX=26,BRACE_TILT=.6,BRACE_FALL=5;
@@ -690,7 +691,7 @@
         // Bleeding belongs to the wound, not the limb. A burn seals what is there; a new blow next to an old wound opens it again.
         const artery=set.arterialSpurts&&ARTERIAL.has(p.part)&&(profile.deep||(type==='cut'&&amount>25)),rate=amount*profile.bleed*(artery?ARTERY_RATE:1);
         if(type==='burn')for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-amount/40);
-        else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9)w.bleed=Math.min(4,(w.bleed||0)+rate*.3);
+        else for(const w of p.wounds||[])if(Math.hypot(w.x-lx,w.y-local.y)<9){if(w.sealed){if(amount<BANDAGE_HOLDS)continue;w.sealed=false;}w.bleed=Math.min(4,(w.bleed||0)+rate*.3);} /* a dressing keeps a wound shut unless the blow is hard enough to tear it off */
         if(profile.wound){const dir=direction?Math.atan2(direction.y,direction.x)-body.angle:random()*6.28;
           p.wounds??=[];p.wounds.push({x:clamp(lx,-p.w/2+1,p.w/2-1),y:clamp(local.y,-p.h/2+1,p.h/2-1),radius:clamp(amount/(profile.deep?13:type==='exit'?4:10),1.5,11),type,dir:p.flip?Math.PI-dir:dir,seed:random()*6.28,t:this.time,bleed:Math.min(4,rate),artery:artery||undefined});if(p.wounds.length>14)p.wounds.shift();
           if(type!=='burn')this.spray(point,direction,Math.min(24,Math.ceil(amount/3))*(type==='bullet'&&set.extraGunshot?3:1),type==='bullet'?6:3,type==='exit'?1:type==='bullet'?-.35:.6);}
@@ -703,7 +704,7 @@
         if(defs[p.kind]?.explosive?.onBreak){if(!p.detonating){p.detonating=true;this.damageQueue.push(()=>this.detonate(body));}}
         else if(p.material==='flesh'||p.kind==='android'){
           // A bullet can incapacitate without automatically detaching the whole limb.
-          if(!gunshot&&(type==='blast'||amount>85*set.jointStrength||p.bone<=0))for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
+          if(!gunshot&&type!=='blast'&&(amount>85*set.jointStrength||p.bone<=0))for(const c of [...this.joints])if(c.plugin.joint&&(c.bodyA===body||c.bodyB===body))this.sever(c);
           // Limb crushing: a limb that was already destroyed and takes another heavy blow is pulped.
           if(type==='blast'&&p.part&&!p.gibbed){p.gibbed=true;const at={...body.position},v={...body.velocity},m=p.material;this.damageQueue.push(()=>this.gibs(at.x,at.y,m,v,.6));}
           if(set.limbCrush&&!gunshot&&gone&&p.part&&!p.crushing&&amount*set.crushSensitivity/100>40){p.crushing=true;this.damageQueue.push(()=>this.crush(body));}
@@ -779,6 +780,7 @@
       for(const b of this.bodies){const dx=b.position.x-x,dy=b.position.y-y,d=Math.hypot(dx,dy);if(d>radius)continue;const f=1-d/radius;
         if(!b.isStatic){Body.setVelocity(b,{x:b.velocity.x+(dx/(d||1))*f*20*power,y:b.velocity.y+(dy/(d||1))*f*20*power-3*f});Body.setAngularVelocity(b,rnd(-.2,.2)*f);}
         this.damage(b,f*f*170*power,b.position,'blast',{x:dx,y:dy});b.plugin.heat+=f*180;
+        if(b.plugin.part&&b.plugin.slot!==2&&random()<f*f*BLAST_SEVER*power/this.settings.jointStrength)this.dismember(b); /* a blast may take a limb off, likelier the closer it is, never for certain */
       }this.onEffect('explosion',power);
     }
     detonate(body){if(!this.bodies.includes(body))return;const {x,y}=body.position,ex=defs[body.plugin.kind]?.explosive||{radius:170,power:1};this.removeBody(body);this.explode(x,y,ex.radius,ex.power);}
@@ -820,7 +822,13 @@
       while(queue.length&&touched.size<30){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2),y:b.velocity.y-2});
         for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);this.traces.push({from:{...b.position},to:{...other.position},life:.3,maxLife:.3,electric:true});}
       }this.onEffect('electric',.3);
+      // Defibrillation: a good chance that current through a dead human starts the heart again. It mends nothing.
+      for(const e of new Set([...touched].map(b=>this.getEntity(b)))){if(!e||e.kind!=='human'||e.alive||!e.causeOfDeath||!e.bodies.some(b=>b.plugin.slot===0)||!e.bodies.some(b=>b.plugin.slot===2)||this.chestOf(e).plugin.char>.9)continue;if(random()<SHOCK_REVIVE){this.partialRevive(e.bodies[0]);this.onRevive?.(e);}}
     }
+    // Stop bleeding: every wound, stump and internal bleed on the whole ragdoll closes. Nothing is mended: the wounds, the pain and the lost blood stay.
+    stopBleeding(body){const e=this.getEntity(body),parts=e?e.bodies:body?[body]:[];let n=0;for(const b of parts){const p=b.plugin;if(p.material!=='flesh')continue;for(const w of [...(p.wounds||[]),...(p.severed||[])])if(w.bleed>0){w.bleed=0;w.fresh=0;n++;}if(p.internal>0){p.internal=0;n++;}this.bleedOf(p);}return n;}
+    // Bandage: one part. Its open wounds and stumps are dressed - sealed, so a knock does not reopen them - and the dressing shows. A hard enough hit on the dressing tears it off (see damage).
+    bandage(body){const p=body?.plugin;if(!p||p.material!=='flesh'||!p.part)return 0;let n=0;for(const w of [...(p.wounds||[]),...(p.severed||[])]){if(w.sealed||w.type==='impact'||w.type==='burn')continue;w.sealed=true;w.bleed=0;w.fresh=0;n++;}this.bleedOf(p);return n;}
     heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body) {
       if(!body)return '';

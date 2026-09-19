@@ -211,8 +211,14 @@
       else if (wd.type === 'exit' || wd.type === 'blast') { c.strokeStyle = '#6b1b24'; c.lineWidth = .7; c.beginPath(); ragged(c, wd.x, wd.y, crater(wd), wd.seed, wd.type === 'exit' ? 11 : 13); c.stroke(); } }
     c.restore();
     if (broken) { c.fillStyle = BONE.base; c.strokeStyle = '#6b1b24'; c.lineWidth = .5; c.beginPath(); c.moveTo(-w * .08, h * .08); c.lineTo(w * .5, -h * .06); c.lineTo(w * .36, h * .05); c.lineTo(w * .05, h * .14); c.closePath(); c.fill(); c.stroke(); }
+    // dressings: a cloth band round the part over each sealed wound (bands that overlap merge), with a little blood showing through where the wound is
+    const bands = []; for (const wd of [...wounds, ...(p.severed || [])]) if (wd.sealed) { const y = clamp(wd.y, -h / 2 + 3, h / 2 - 3), near = bands.find(b => Math.abs(b.y - y) < 6); const half = wd.type === 'cut' ? 6.5 : 3.6; if (near) { near.y = (near.y + y) / 2; near.half = Math.max(near.half, half); near.spots.push(wd); } else bands.push({ y, half, spots: [wd] }); }   // a long cut takes a wider dressing
+    if (bands.length) { c.save(); outline(c, part, w, h); c.clip();
+      for (const band of bands) { c.fillStyle = '#e9e2d0'; c.fillRect(-w, band.y - band.half, w * 2, band.half * 2); c.strokeStyle = 'rgba(120,105,80,.55)'; c.lineWidth = .5; for (const dy of [-1, -.33, .33, 1].map(k => k * band.half)) { c.beginPath(); c.moveTo(-w, band.y + dy + .25 * dy); c.lineTo(w, band.y + dy - .25 * dy); c.stroke(); }
+        for (const wd of band.spots) { c.fillStyle = 'rgba(150,40,46,.55)'; c.beginPath(); c.arc(clamp(wd.x, -w / 2 + 2, w / 2 - 2), band.y, 1.6, 0, 7); c.fill(); } }
+      c.restore(); }
     // stumps: a ragged cap of muscle round a nub of bone, wherever a joint was torn away
-    if (burn < .9) for (const end of p.severed || []) { const r = Math.min(w * .52, 8); c.fillStyle = MUSCLE.dark; c.beginPath(); ragged(c, end.x, end.y, r, end.x + end.y, 12); c.fill(); c.fillStyle = MUSCLE.base; c.beginPath(); ragged(c, end.x, end.y, r * .72, end.x * 2 + end.y, 10); c.fill();
+    if (burn < .9) for (const end of p.severed || []) { if (end.sealed) continue; /* a dressed stump is wrapped, see above */ const r = Math.min(w * .52, 8); c.fillStyle = MUSCLE.dark; c.beginPath(); ragged(c, end.x, end.y, r, end.x + end.y, 12); c.fill(); c.fillStyle = MUSCLE.base; c.beginPath(); ragged(c, end.x, end.y, r * .72, end.x * 2 + end.y, 10); c.fill();
       c.fillStyle = BONE.base; c.strokeStyle = BONE.shade; c.lineWidth = .5; c.beginPath(); c.arc(end.x, end.y, r * .34, 0, 7); c.fill(); c.stroke(); c.fillStyle = BONE.marrow; c.beginPath(); c.arc(end.x, end.y, r * .13, 0, 7); c.fill(); }
   }
 
@@ -221,7 +227,7 @@
   function signature(p, state) {
     let sig = Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i]; sig += (w.seed * 1e5 | 0) * (i + 3) + (w.type === 'impact' ? Math.floor((state.time - (w.t ?? 0)) / 12) * 17 : 0); }
-    const ends = p.severed; if (ends) sig += ends.length * 524287; return sig;
+    const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {
     const p = body.plugin, sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;

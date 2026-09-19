@@ -580,3 +580,18 @@ test('grafting a new limb on leaves the old one out of it',()=>{
   assert.ok(a.bodies.includes(newArm)&&!a.bodies.includes(oldArm));assert.equal(new Set(a.bodies.map(x=>x.plugin.slot)).size,a.bodies.length,'one part per slot');assert.equal(a.bodies.length,17);
   const x=oldArm.position.x;Body.setVelocity(a.bodies[2],{x:6,y:0});advance(s,60);assert.ok(Math.abs(oldArm.position.x-x)<25,'the old arm stays where it fell');
 });
+
+test('stop bleeding closes every wound on the ragdoll; a bandage seals one part and holds against a knock, not a hard blow',()=>{
+  const {s,e}=standing(),arm=e.bodies[8],thigh=e.bodies[14];s.damage(arm,30,arm.position,'bullet',{x:1,y:0});s.damage(thigh,30,thigh.position,'cut',{x:1,y:0});assert.ok(arm.plugin.bleed>0&&thigh.plugin.bleed>0);
+  assert.ok(s.bandage(arm)>=1);assert.equal(arm.plugin.bleed,0);assert.ok(thigh.plugin.bleed>0,'only the part that was dressed');assert.ok(arm.plugin.wounds.some(w=>w.sealed));assert.equal(s.bandage(arm),0,'nothing left to dress');
+  const at=arm.plugin.wounds.find(w=>w.sealed),hit=(n)=>s.damage(arm,n,{x:arm.position.x+at.x*Math.cos(arm.angle)-at.y*Math.sin(arm.angle),y:arm.position.y+at.x*Math.sin(arm.angle)+at.y*Math.cos(arm.angle)},'impact',{x:1,y:0});
+  hit(8);assert.ok(at.sealed&&!(at.bleed>0),'a knock does not reopen it');hit(40);assert.ok(!at.sealed,'a hard blow tears the dressing off');
+  const wounds=thigh.plugin.wounds.length,blood=e.blood;assert.ok(s.stopBleeding(e.bodies[2])>=1);assert.ok(e.bodies.every(b=>!(b.plugin.bleed>0)));assert.equal(thigh.plugin.wounds.length,wounds,'the wounds stay');assert.equal(e.blood,blood,'lost blood stays lost');
+});
+
+test('a blast takes limbs off by chance, likelier close in; a shock has a good chance of restarting a dead human, wounds and all',()=>{
+  const lost=d=>{let n=0;for(let seed=1;seed<=12;seed++){const s=new Simulation().seed(seed);s.configure({organDamage:false});const e=s.spawn('human',1000,555);advance(s,30);s.explode(1000+d,560,175,1);advance(s,5);n+=17-e.bodies.length;}return n;};
+  const near=lost(25),far=lost(150);assert.ok(near>far,`near ${near} far ${far}`);assert.ok(near>0&&near<12*16,'some, never all');
+  let back=0;for(let seed=1;seed<=20;seed++){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,30);const thigh=e.bodies[14];s.damage(thigh,30,thigh.position,'cut',{x:1,y:0});s.kill(e,'test');advance(s,30);s.shock(e.bodies[2]);if(e.alive){back++;assert.ok(thigh.plugin.wounds.length>0,'wounds stay');}}
+  assert.ok(back>=6&&back<=18,`revived ${back}/20`);
+});

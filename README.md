@@ -51,6 +51,8 @@ npm run dev
 - Consciousness and dying: awake → dazed (weaker, swaying on its feet, duller reflexes) → unconscious (limp but still breathing, wakes again if what put it out recovers) → dead. Bleeding out is a descent: below 50% blood the legs go and it sinks to its knees, below 44% it slumps, below 40% it passes out, below 25% it dies. After death a nerve may fire once or twice in the first seconds — never after the brain or heart was destroyed — and then the body comes to rest and sleeps
 - Awareness (ten times a second, no pathfinding): a conscious human turns its head and eyes to the most pressing thing nearby — whatever last hurt it, a fire or blast, something moving fast, a weapon the cursor is holding close. Something on course for its head within half a second gets both arms thrown up and a duck away from it; heat close beside any part of it makes it bend and lean away; a neighbour being hurt makes it start and look. Eyes glance, the mouth opens on a big hit, and an optional soft grunt can be switched on. Androids have none of it
 - Auto-balance: living ragdolls are stunned by hard hits, fall, and push themselves back up with their legs; dead ones settle and stay put
+- Stop bleeding (closes every wound, stump and internal bleed on a ragdoll; the wounds, the pain and the lost blood stay) and Bandage (dresses the open wounds and stumps of one part: they stop bleeding, the dressing shows, and it holds against knocks — a hard blow tears it off)
+- A shock through a dead human has a good chance (60%) of restarting the heart — a partial revive, wounds and all. Blasts take limbs off by chance, likelier the closer the limb is to the centre, never for certain
 - Revive, Partial revive (alive and conscious again, bleeding slowed, but every wound, fracture and missing limb stays), Regrow (grows missing limbs back one part at a time, outward from the part you click, each swelling out of its stump), Reattach (returns a severed limb to its own body), Graft (any loose limb onto any body — android arm on a human, left limb mirrored onto a right stump — with a power surge) and Dismember tools
 - Damage-driven collapse and breakable joints
 - Items are data: every spawnable thing is one row in `items.js`, made of a material from the same file (density, flammability and ignition point, thermal and electrical conductivity, magnetism, bullet absorption, softness, brittleness, buoyancy, friction, bounce). The engine reads all behaviour from those rows — what burns, conducts, stops a bullet, explodes, fires or cuts — and contains no item names. The library is grouped like People Playground's: Entities, Melee, Firearms, Explosives, Vehicles, Machinery, Chemistry, Misc
@@ -90,14 +92,14 @@ Keys follow People Playground's defaults. Click an object in the library, point 
 | Esc | Back to the grab cursor: drops the active tool, the chosen spawn object and the selection |
 | Tab | Hide / show the interface |
 | Arrow keys | Pan the camera (Shift = faster) |
-| 1–9, \\, -, =, [, ], 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, partial revive, regrow, reattach, graft, dismember, delete |
+| 1–9, \\, ;, ', -, =, [, ], 0 | Grab, rope, freeze, shoot, fire, shock, explosion, heal, revive, partial revive, stop bleeding, bandage, regrow, reattach, graft, dismember, delete |
 | R | Flip the ragdoll or object under the cursor to face the other way |
 
 Double-click a device with the grab tool to activate it. Rope: click two objects or an object and an empty point. Heal restores tissue and extinguishes fire, but does not bring anyone back or recreate severed joints. Revive brings a dead or collapsed ragdoll back to life; it stands up again if it still has a spine and at least one whole leg. Saves use one device-local browser slot; loading pauses simulation.
 
 ## Validation
 
-`npm test` runs 98 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
+`npm test` runs 100 behaviour tests: physics, damage, blood, organs, muscles, reactions, mobility, awareness, settings, save/restore. `npm run build` packages the standalone application in `dist`.
 
 ## Scope and references
 
