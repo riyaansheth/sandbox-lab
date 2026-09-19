@@ -613,3 +613,8 @@ test('a ragdoll can take up the longest, heaviest guns without the hold wrenchin
     const w=require('../items.js').ITEMS.find(i=>i.id===kind).w,gun=s.spawn(kind,hand.position.x+w/2+22,hand.position.y-200).bodies[0];Body.setPosition(gun,{x:hand.position.x+w/2+22,y:hand.position.y});
     assert.match(s.equip(hand),/Picked up/);advance(s,240);assert.equal(gun.plugin.heldBy,e.id,`${kind} still in hand`);assert.equal(e.bodies.length,17,'and the hand still on the arm');assert.ok(s.balancing(e),'still on its feet');}
 });
+
+test('a burnt ragdoll writhing in pain stays in the world after the fire is put out (no part ever goes non-finite)',()=>{
+  for(const seed of [1,2,3,9,11]){const s=new Simulation().seed(seed);const e=s.spawn('human',1000,555);advance(s,60);for(const b of e.bodies)if((seed+b.plugin.slot)%3)s.ignite(b);advance(s,30+seed*137%1100);s.clearFire();advance(s,600);
+    assert.equal(s.bodies.filter(b=>b.plugin.part).length,17,`seed ${seed}: every part still there`);assert.ok(s.bodies.every(b=>Number.isFinite(b.position.x)&&Number.isFinite(b.angle)));}
+});

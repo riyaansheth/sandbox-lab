@@ -404,7 +404,7 @@
     // Pose overlays for the moment: flinch, recovery steps, bracing. They write into the wanted pose; nothing is allocated.
     reactions(e,want,chest,down,seconds) {
       const A=want.angle,P=want.power,awake=e.consciousness!=='unconscious',m=chest.plugin.flip?-1:1;
-      if(e.flinch>0){e.flinch-=seconds;const mag=e.flinchMag*clamp(e.flinch/FLINCH_TIME,0,1),d=e.flinchDir,s=e.flinchSlot;
+      if(e.flinch>0){e.flinch-=seconds;const mag=e.flinchMag*clamp(e.flinch/FLINCH_TIME,0,1),d=e.flinchDir||1,s=e.flinchSlot; /* never undefined: one NaN angle here becomes NaN torque on every part, and the body is deleted as non-finite */
         A[0]+=d*m*.5*mag;A[1]+=d*m*.2*mag;A[3]+=-d*m*.22*mag;A[4]+=-d*m*.15*mag;P[0]=P[1]=2;                       // head snaps back, torso twists away from the blow
         if(s>=5&&s<=10){const sh=s<8?5:8;A[sh]+=-.4*mag;A[sh+1]+=-1.4*mag;P[sh]=4;P[sh+1]=9;}                                       // the struck arm pulls in
         else if(s>=11){const hip=s<14?11:14;A[hip]+=-.45*mag;A[hip+1]+=.9*mag;P[hip+1]=2;}
@@ -462,7 +462,7 @@
       A[3]+=-.32*pain*k;A[4]+=-.22*pain*k;A[1]+=.18*pain*k;A[0]+=Math.max(0,70-e.blood)/70*.45;
       // Writhing: down and in a lot of pain, it draws its legs up and lets them go, rocks, and now and then spasms. Calms as the pain ebbs.
       if((down||rung==='curl')&&pain>.55){const w=(pain-.4)*k,t=this.time,draw=.5+.5*Math.sin(t*1.7),curl=POSES.curl;for(const slot of [11,12,14,15]){const leg=slot<14?0:1.3;A[slot]=curl[slot][0]*(.35+.65*(.5+.5*Math.sin(t*1.7+leg)));P[slot]=1.2;}
-        A[3]+=Math.sin(t*1.1)*.3*w;A[4]+=Math.sin(t*.9+1)*.25*w;A[5]+=Math.sin(t*2.3)*.6*w;A[8]-=Math.sin(t*2.1+.7)*.6*w;if(random()<seconds*.7*w){e.flinch=FLINCH_TIME;e.flinchMag=.7;e.flinchSlot=2;}void draw;}
+        A[3]+=Math.sin(t*1.1)*.3*w;A[4]+=Math.sin(t*.9+1)*.25*w;A[5]+=Math.sin(t*2.3)*.6*w;A[8]-=Math.sin(t*2.1+.7)*.6*w;if(random()<seconds*.7*w){e.flinch=FLINCH_TIME;e.flinchMag=.7;e.flinchSlot=2;e.flinchDir=random()<.5?-1:1;} /* a spasm, to one side or the other */void draw;}
       // On fire: arms beat at the flames, and if it is on its feet it staggers about, away from the heat.
       if(e.burningParts>0){const t=this.time;A[5]=-1.4+Math.sin(t*17)*.9;A[6]=-1.0-Math.sin(t*19)*.8;A[8]=-1.4+Math.sin(t*16+1)*.9;A[9]=-1.0-Math.sin(t*18+2)*.8;P[5]=P[6]=P[8]=P[9]=5;want.armsFree=true;
         if(rung==='stand'&&!down&&!(e.stagN>0)){e.stagN=2;e.stagDir=e.panicDir=(random()<.2?-(e.panicDir||1):(e.panicDir||(random()<.5?-1:1)));e.stagT=0;e.stagLeg=e.stagDir>0?0:1;e.stagPush=STAGGER_MAX*1.4;}return;}
