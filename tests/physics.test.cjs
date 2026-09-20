@@ -1061,10 +1061,15 @@ test('ATS armour: one suit covers every part, and nothing short of a .50 gets th
   for(let i=0;i<3;i++){fire(ats.s,'gun',ats.e.bodies[3].position.y);fire(vest.s,'gun',vest.e.bodies[3].position.y);}
   assert.ok(ats.e.pain<10&&ats.e.pain<vest.e.pain/3,`three rounds barely tell through the plate: ${ats.e.pain.toFixed(1)} against a carrier's ${vest.e.pain.toFixed(1)}`);
   for(let i=0;i<40;i++)fire(ats.s,'gun',ats.e.bodies[3].position.y);assert.ok(ats.e.pain>30,`a long burst does: ${ats.e.pain.toFixed(0)}`);
-  const near=armoured('ats'),far=armoured('ats'),bareBlast=armoured('platecarrier');const chest=e=>e.bodies[2];
-  near.s.explode(chest(near.e).position.x+2,chest(near.e).position.y,175,1);far.s.explode(chest(far.e).position.x+40,chest(far.e).position.y,175,1);bareBlast.s.explode(chest(bareBlast.e).position.x+40,chest(bareBlast.e).position.y,175,1);
-  assert.ok(chest(near.e).plugin.hp<40,`a charge against the plate still wrecks him: ${chest(near.e).plugin.hp.toFixed(0)} hp`);
-  assert.ok(chest(far.e).plugin.hp>chest(bareBlast.e).plugin.hp+20,`a step away the suit takes it: ${chest(far.e).plugin.hp.toFixed(0)} against ${chest(bareBlast.e).plugin.hp.toFixed(0)}`);
+  const spent=armoured('ats');spent.e.bodies.forEach(b=>spent.s.freeze(b));const plate=()=>spent.s.bodies.filter(b=>b.plugin.armour?.suit).reduce((n,b)=>n+b.plugin.armour.suit.hp,0),full=plate();
+  const line=spent.e.bodies[2].position.y;for(let i=0;i<200;i++)fire(spent.s,'gun',line); /* one line of fire, held on the same place */
+  assert.ok(full-plate()>450&&full-plate()<800,`two hundred rounds take a plate's worth of wear out of the suit: ${(full-plate()).toFixed(0)} of ${full}`);
+  const bombs=armoured('ats'),bare5=armoured('platecarrier');const chest=e=>e.bodies[2];
+  for(let i=0;i<5;i++){bombs.s.explode(chest(bombs.e).position.x+2,chest(bombs.e).position.y,175,1);advance(bombs.s,3);} /* one blast at a time, with a moment between: five in a single frame would tear him apart by the jolt alone */
+  bare5.s.explode(chest(bare5.e).position.x+40,chest(bare5.e).position.y,175,1);
+  assert.ok(bombs.e.alive&&chest(bombs.e).plugin.hp>15,`five blasts and he is still up: ${chest(bombs.e).plugin.hp.toFixed(0)} hp against ${chest(bare5.e).plugin.hp.toFixed(0)} for one blast in a carrier`);
+  assert.ok(chest(bombs.e).plugin.armour.suit.hp<=0,'but the suit is spent');
+  bombs.s.explode(chest(bombs.e).position.x+2,chest(bombs.e).position.y,175,1);assert.ok(chest(bombs.e).plugin.hp<40,`and the sixth is his: ${chest(bombs.e).plugin.hp.toFixed(0)} hp`);
   const zapped=armoured('ats'),bareZap=armoured('platecarrier');zapped.s.shock(zapped.e.bodies[2],1);bareZap.s.shock(bareZap.e.bodies[2],1);
   assert.ok(zapped.e.shockDose<bareZap.e.shockDose&&zapped.e.bodies[2].plugin.hp>bareZap.e.bodies[2].plugin.hp,`and it takes some of a shock: dose ${zapped.e.shockDose.toFixed(2)} against ${bareZap.e.shockDose.toFixed(2)}`);
   const mend=armoured('ats'),slow=armoured('platecarrier');for(const k of [mend,slow]){k.s.configure({slowHealing:true});k.e.bodies[6].plugin.hp=40;k.e.blood=70;advance(k.s,60*20);}

@@ -174,7 +174,8 @@
   // what is painted on a part is one record merged from the garments it wears - the top's fields from one outfit, the trousers' from another - and handed to wear() and accessories() as before.
   // Every combination gets a number of its own for the sprite signature and the cache key, so no two ragdolls dressed differently can ever share a cached picture.
   const KINDS = ['top', 'pants', 'hat', 'shoes', 'gloves', 'mask', 'vest', 'suit'], OWNS = { top: ['top', 'sleeves', 'stripes', 'hem', 'tee', 'hood', 'collar', 'placket', 'badge', 'coat', 'shirt', 'tie'], pants: ['legs', 'cargo', 'belt', 'gear'], hat: ['hat', 'cap', 'helmet'], shoes: ['shoes'], gloves: ['gloves'], mask: ['mask'], suit: ['suit'], vest: ['vest'] };
-  const merged = new Map();
+  const merged = new Map(), suitMax = new Map();
+  const suitFull = id => { let v = suitMax.get(id); if (v === undefined) { const row = root.Items?.ITEMS.find(i => i.garment?.outfit === id && i.armour); v = row?.armour.durability || 1; suitMax.set(id, v); } return v; };
   const wearOf = p => p.wear || (p.outfit && root.Items ? root.Items.dress(p.outfit, p.part) : undefined);   // p.outfit: a save from before there were garments, or a preview of a whole outfit
   function outfitOf(p) { const wear = wearOf(p); if (!wear) return null; let key = '|'; for (const kind of KINDS) if (wear[kind] && OUTFITS[wear[kind]]) key += kind + ':' + wear[kind] + '|';   // an empty set is still a set: the bare hand of a dressed body
     let o = merged.get(key); if (!o) { o = { key, id: merged.size + 1 }; for (const kind of KINDS) { const from = OUTFITS[wear[kind]]; if (from) for (const field of OWNS[kind]) if (from[field] !== undefined) o[field] = from[field]; } merged.set(key, o); } return o; }
@@ -192,6 +193,7 @@
     // ATS armour: one sealed suit, so it is painted instead of any cloth - dark under-layer everywhere, a plate over it shaped to the part, and a closed helmet with a visor slit.
     if (o.suit) { const s = o.suit, plate = (y0 = -h, y1 = h) => band(s.plate, y0, y1), ridge = (list, a = .8) => seam(list, s.plate.line, .6, a), lip = (y0, y1) => band(s.dark, y0, y1);
       band(s.dark); plate(); line = s.plate.line;
+      const left = state.armour?.suit ? clamp(state.armour.suit.hp / suitFull(state.armour.suit.id), 0, 1) : 1;   // what is left of this part's plate: below two thirds it starts shedding chunks
       switch (part) {
         case 'head': c.fillStyle = s.visor; c.beginPath(); c.moveTo(x * .1, -y * .42); c.lineTo(x * 1.3, -y * .34); c.lineTo(x * 1.3, y * .18); c.lineTo(x * .16, y * .1); c.closePath(); c.fill();   // the visor, toward the face
           ridge([[-x * .75, -y * .8, 0, -y * 1.06, x * .75, -y * .78], [-x * .85, y * .3, 0, y * .42, x * .8, y * .22]]); c.fillStyle = s.trim; c.fillRect(-x * .18, -y * .98, 1.7, y * .75); break;
@@ -208,6 +210,10 @@
           ridge([[x * .3, -y * .5, x * .45, 0, x * .25, y * .8]]); break;
         case 'foot': lip(y - 2.8, h); ridge([[-x * .2, -y * .9, x * .5, -y * .3, x * 1.2, y * .1]], .9); break;                                                                                   // boot sole and toe cap
       }
+      if (left < .66) { const gone = Math.round((.66 - left) * 12); c.lineJoin = 'round';   // chunks knocked off: the plate goes first, and where it is worst the under-layer with it
+        for (let i = 0; i < gone; i++) { const px = (hash(slot * 5.1 + i * 2.3) - .5) * w * .85, py = (hash(slot * 8.7 + i * 3.9) - .5) * h * .85, r = 1.4 + hash(i * 4.4 + slot) * (1.6 + (1 - left) * 2.2);
+          c.fillStyle = s.dark.base; c.beginPath(); ragged(c, px, py, r, slot + i); c.fill(); c.strokeStyle = s.trim; c.globalAlpha = .55; c.lineWidth = .6; c.stroke(); c.globalAlpha = 1;   // the torn edge catches the light
+          if (left < .22 && i % 3 === 0) { c.fillStyle = SKIN.base; c.beginPath(); ragged(c, px, py, r * .55, slot + i * 3); c.fill(); } } }
       if (state.far) { atop(); c.fillStyle = 'rgba(14,10,8,.28)'; c.fillRect(-w * 2, -h * 2, w * 4, h * 4); }
       over(); return line; }
     switch (part) {
@@ -414,7 +420,7 @@
   function signature(p, state) {
     const worn = outfitOf(p); let sig = (worn ? worn.id * 49979687 : 0) + (state.view ? state.view * 86028121 + (state.organs ? Math.round(state.organs.brain / 10) + Math.round(state.organs.heart / 10) * 11 + Math.round(state.organs.lungs / 10) * 121 + Math.round(state.organs.gut / 10) * 1331 : 0) * 7919 : 0) + (state.livor > .05 ? (Math.round(state.livor * 4) * 8 + state.down) * 1299709 : 0) + (p.brokeAt !== undefined && (p.bone ?? 100) <= 50 ? Math.round(clamp((state.time - p.brokeAt) / 20, 0, 1) * 4) * 15485863 : 0) + (p.grow !== undefined ? Math.round(p.grow * 24) * 2097143 : 0) + Math.round((p.hp ?? 100) / 4) + Math.round((p.bone ?? 100) / 10) * 31 + Math.round(state.pale * 8) * 977 + Math.round(state.char * 20) * 6151 + Math.round((p.bruise || 0) * 10) * 39119 + state.faceId * 100003 + (state.noGore ? 7 : 0) + (state.dead ? 13 : 0);
     const wounds = p.wounds; if (wounds) for (let i = 0; i < wounds.length; i++) { const w = wounds[i], age = state.time - (w.t ?? 0); sig += ((w.seed * 1e5 | 0) + depthOf(w) * 7 + stageOf(w, state.time) * 3 + (w.hits || 0) * 11 + Math.round((w.radius || 0) * 2) * 13 + Math.round((w.force || 0) / 8) * 17 + (w.type === 'impact' ? (age < 10 ? Math.floor(age) : 10 + Math.floor(age / 15)) * 19 : 0)) * (i + 3); }
-    sig += (p.lodged?.length || 0) * 7477771 + (p.tourniquet ? 3 : 0) * 8837 + (p.necrotic ? 5 : 0) * 8839; if (p.wounds) for (let i = 0; i < p.wounds.length; i++) if (p.wounds[i].stitched) sig += 99991 * (i + 1); if (p.armour) for (const k in p.armour) sig += (p.armour[k].hp <= 0 ? 2 : 1) * (k === 'vest' ? 104729 : 1299827); const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
+    sig += (p.lodged?.length || 0) * 7477771 + (p.tourniquet ? 3 : 0) * 8837 + (p.necrotic ? 5 : 0) * 8839; if (p.wounds) for (let i = 0; i < p.wounds.length; i++) if (p.wounds[i].stitched) sig += 99991 * (i + 1); if (p.armour) for (const k in p.armour) sig += (k === 'suit' ? Math.round(p.armour[k].hp / 25) + 3 : p.armour[k].hp <= 0 ? 2 : 1) * (k === 'vest' ? 104729 : 1299827); const ends = p.severed; if (ends) { sig += ends.length * 524287; for (let i = 0; i < ends.length; i++) if (ends[i].sealed) sig += 8191 * (i + 1); } if (wounds) for (let i = 0; i < wounds.length; i++) if (wounds[i].sealed) sig += 131071 * (i + 1); return sig;
   }
   function sprite(body, state) {
     const p = body.plugin; state.down = state.livor > .05 ? ((Math.round((Math.PI / 2 - (body.angle || 0)) / (Math.PI / 4)) % 8) + 8) % 8 : undefined; if (state.down !== undefined && p.flip) state.down = (12 - state.down) % 8; /* which way is down, in this part's own frame, to the nearest 45 degrees */ const sig = signature(p, state); let entry = perBody.get(body); if (entry && entry.sig === sig) return entry.canvas;
