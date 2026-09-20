@@ -87,6 +87,27 @@
         ctx.beginPath(); for (let i = 0; i <= n; i++) { const k = i / n, px = -x * .5 + x * k, py = -y - 2 - Math.sin(k * Math.PI) * (5 + 3 * pulse) + (i && i < n ? (hash(tick + i * 3.7) - .5) * 4.5 : 0); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
         ctx.strokeStyle = `rgba(110,190,255,${.35 * power})`; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = `rgba(240,250,255,${power})`; ctx.lineWidth = 1.1; ctx.stroke();
         for (const tx of [-x * .5, x * .5]) { ctx.fillStyle = `rgba(190,230,255,${.7 * power})`; ctx.beginPath(); ctx.arc(tx, -y - 2, 1.6 + pulse, 0, 7); ctx.fill(); } ctx.restore(); } },
+    // Generator: a heavy cabinet with cooling fins, a dial and two coil towers. Running, the towers arc across the top and the vents glow.
+    generator: { pad: 8, state: p => p.active ? 'on' : '', paint(c, p) { const x = p.w / 2, y = p.h / 2;
+      c.strokeStyle = OUTLINE; c.lineWidth = 1;
+      c.fillStyle = grad(c, 0, -y, 0, y, [[0, '#7d8890'], [.35, '#525d66'], [1, '#2a3238']]); c.beginPath(); c.roundRect(-x, -y + 9, p.w, p.h - 9, 3); c.fill(); c.stroke();
+      c.fillStyle = grad(c, 0, -y + 9, 0, -y + 16, [[0, '#9aa5ab'], [1, '#5d686f']]); c.fillRect(-x, -y + 9, p.w, 7); c.strokeRect(-x, -y + 9, p.w, 7);   // the top plate
+      for (const tx of [-x * .55, x * .55]) { c.fillStyle = steel(c, -y - 2, -y + 9); c.fillRect(tx - 3, -y + 2, 6, 9); c.strokeRect(tx - 3, -y + 2, 6, 9);   // coil towers
+        c.fillStyle = p.active ? '#cfeeff' : '#8e999f'; c.beginPath(); c.arc(tx, -y + 1, 4.2, 0, 7); c.fill(); c.stroke(); }
+      c.fillStyle = '#121719'; c.beginPath(); c.roundRect(-x + 5, -y + 21, p.w * .42, p.h - 32, 2); c.fill();                                              // vent slots
+      for (let i = 0; i < 5; i++) { c.fillStyle = p.active ? `rgba(255,${170 - i * 14},70,.9)` : '#2c343a'; c.fillRect(-x + 7, -y + 24 + i * 5.2, p.w * .42 - 4, 2.6); }
+      c.fillStyle = '#1b2226'; c.beginPath(); c.arc(x * .42, -y + 28, 8, 0, 7); c.fill(); c.stroke();                                                      // the dial
+      c.strokeStyle = p.active ? '#ff6a4a' : '#8e999f'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(x * .42, -y + 28); const a = p.active ? .9 : -2.2; c.lineTo(x * .42 + Math.cos(a) * 6, -y + 28 + Math.sin(a) * 6); c.stroke();
+      c.strokeStyle = OUTLINE; c.lineWidth = 1; c.fillStyle = '#39434a'; for (let i = 0; i < 4; i++) { c.fillRect(x * .18 + i * 6, y - 15, 4, 11); c.strokeRect(x * .18 + i * 6, y - 15, 4, 11); }   // fins
+      c.fillStyle = '#c9a227'; c.fillRect(-x + 4, y - 6, p.w - 8, 3); c.strokeRect(-x + 4, y - 6, p.w - 8, 3); },
+      // Running: the towers arc across the top, three strands rebuilt every frame, and each discharge flares.
+      live(ctx, p, time) { if (!p.active) return; const x = p.w / 2, y = p.h / 2, tick = Math.floor(time * 60), since = time - (p.pulseAt ?? -9), flare = since < .1 ? 1 - since / .1 : 0;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+        for (let s = 0; s < 3; s++) { const n = 9; ctx.beginPath();
+          for (let i = 0; i <= n; i++) { const k = i / n, px = -x * .55 + x * 1.1 * k, py = -y + 1 - Math.sin(k * Math.PI) * (7 + 5 * flare) + (i && i < n ? (hash(tick + i * 5.3 + s * 21) - .5) * (7 + 5 * flare) : 0); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+          ctx.strokeStyle = `rgba(120,200,255,${.16 + .22 * flare})`; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = `rgba(245,252,255,${.55 + .45 * flare})`; ctx.lineWidth = 1.2; ctx.stroke(); }
+        for (const tx of [-x * .55, x * .55]) { ctx.fillStyle = `rgba(200,235,255,${.55 + .45 * flare})`; ctx.beginPath(); ctx.arc(tx, -y + 1, 3 + 2 * flare, 0, 7); ctx.fill(); }
+        ctx.restore(); } },
     platform: { pad: 1, paint(c, p) { const x = p.w / 2, y = p.h / 2; c.strokeStyle = OUTLINE; c.lineWidth = 1; c.fillStyle = steel(c, -y, y); c.fillRect(-x, -y, p.w, p.h); c.strokeRect(-x, -y, p.w, p.h);
       c.save(); c.beginPath(); c.rect(-x, y - 6, p.w, 6); c.clip(); c.fillStyle = '#d9b23a'; c.fillRect(-x, y - 6, p.w, 6); c.fillStyle = '#1b2023'; for (let sx = -x - 8; sx < x; sx += 14) { poly(c, [[sx, y], [sx + 7, y], [sx + 13, y - 6], [sx + 6, y - 6]]); c.fill(); } c.restore();
       c.strokeStyle = '#1d2529'; c.lineWidth = .6; c.beginPath(); c.moveTo(-x, y - 6); c.lineTo(x, y - 6); c.stroke(); for (let rx = -x + 8; rx < x; rx += 20) rivet(c, rx, -y + 4.5, 1.1); c.fillStyle = '#ffffff30'; c.fillRect(-x, -y, p.w, 1.4); } },
