@@ -847,7 +847,7 @@ const pushOn=(s,kind,part)=>{const item=s.spawn(kind,part.position.x+48,part.pos
 const dropOn=(s,kind,part,dy=-30)=>{const item=s.spawn(kind,part.position.x+1,part.position.y+dy).bodies[0];advance(s,90);return item;};
 
 test('clothes: eighteen garments in their own category, made of cloth, each cut from one of the five outfits',()=>{
-  assert.equal(Items.CATEGORIES[Items.CATEGORIES.indexOf('Syringes')+1],'Clothes');const g=Items.GARMENTS.filter(i=>!i.armour);assert.equal(g.length,18);assert.deepEqual(Items.GARMENTS.filter(i=>i.armour).map(i=>i.id),['helmet','softvest','platecarrier'],'and three pieces of armour');assert.ok(g.every(i=>i.category==='Clothes'&&i.material==='cloth'&&i.w&&i.h&&i.name&&i.description));
+  assert.equal(Items.CATEGORIES[Items.CATEGORIES.indexOf('Syringes')+1],'Clothes');const g=Items.GARMENTS.filter(i=>!i.armour);assert.equal(g.length,18);assert.deepEqual(Items.GARMENTS.filter(i=>i.armour).map(i=>i.id),['helmet','softvest','platecarrier','ats'],'and three pieces of armour');assert.ok(g.every(i=>i.category==='Clothes'&&i.material==='cloth'&&i.w&&i.h&&i.name&&i.description));
   const count=kind=>g.filter(i=>i.garment.kind===kind).length;assert.deepEqual(['top','pants','hat','shoes','gloves','mask'].map(count),[5,5,3,3,1,1]);assert.equal(new Set(g.map(i=>i.garment.kind+':'+i.garment.outfit)).size,18);
   const cloth=Items.MATERIALS.cloth;assert.ok(cloth.density<Items.MATERIALS.wood.density/2&&cloth.flammable>0&&cloth.brittle===0&&cloth.friction<.4&&cloth.restitution<.1);
   for(const id of ['human1','civilian','cop','criminal','detective']){const s=new Simulation().seed(1),e=s.spawn(id,1000,555),outfit=Items.ITEMS.find(i=>i.id===id).outfit;for(const b of e.bodies)assert.deepEqual(b.plugin.wear,Items.dress(outfit,b.plugin.part));assert.ok(e.bodies.every(b=>b.plugin.outfit===undefined));}
@@ -1049,6 +1049,14 @@ test('the immortal is hurt like anyone - wounds, breaks, lost limbs, knocked out
   const cut=new Simulation().seed(3),c=cut.spawn('immortal',1000,555);advance(cut,30);cut.dismember(c.bodies[0]);advance(cut,5);assert.ok(c.alive&&!c.bodies.includes(c.bodies.find(b=>b.plugin.slot===0)),'even without a head');
   const ko=new Simulation().seed(3),k=ko.spawn('immortal',1000,555);advance(ko,30);k.blood=30;k.organs={brain:5,heart:100,lungs:100,gut:100};advance(ko,5);assert.equal(k.consciousness,'unconscious');advance(ko,60*60);assert.notEqual(k.consciousness,'unconscious','in time it comes round');
   const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(back.entities.find(x=>x.kind==='human').immortal,'saved');
+});
+test('ATS armour: one suit covers every part, and nothing short of a .50 gets through it',()=>{
+  const a=armoured('ats');assert.ok(a.e.bodies.every(b=>b.plugin.armour?.suit),'every part of him is plated');
+  for(const gun of ['gun','rifle','lmg']){const l=fire(a.s,gun,a.e.bodies[3].position.y);assert.ok(l.some(h=>h.armour&&h.stopped),`the suit stops a ${gun}`);}
+  const arm=a.e.bodies.find(b=>b.plugin.slot===9),leg=a.e.bodies.find(b=>b.plugin.slot===12);
+  for(const part of [arm,leg]){const l=fire(a.s,'rifle',part.position.y,part.position.x-260);assert.ok(l.some(h=>h.armour&&h.stopped),`and stops one at the ${part.plugin.part}, which a vest never covered`);}
+  assert.ok(a.e.bodies.every(b=>!b.plugin.wounds?.some(w=>w.type==='bullet')),'nothing went in');
+  const fifty=armoured('ats'),l50=fire(fifty.s,'sniper',fifty.e.bodies[3].position.y);assert.ok(l50.some(h=>h.armour&&h.through),'a .50 goes through');
 });
 test('Electrical wire: current runs the length of it, a rope carries none',()=>{
   const s=new Simulation().seed(8);const bat=s.spawn('battery',500,600).bodies[0],far=s.spawn('human',1400,555),tied=s.spawn('human',1700,555);advance(s,60);[...far.bodies,...tied.bodies].forEach(b=>s.freeze(b));

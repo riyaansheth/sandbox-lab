@@ -123,7 +123,7 @@
     }
     c.globalAlpha = 1;
     if (state.far && !state.clothed) { c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(40,22,14,.22)'; c.fillRect(-w * 2, -h, w * 4, h * 2); c.globalCompositeOperation = 'source-over'; }   // the far arm and leg sit in the body's shadow
-    if (part === 'head') face(c, x, y, state.face, state.gaze || 0, state.iris);
+    if (part === 'head' && !state.sealed) face(c, x, y, state.face, state.gaze || 0, state.iris);   // a sealed helmet has the face behind it: nothing of it shows, hair included
   }
   // The face in profile, after reference/ragdoll.png: dark tousled hair over the crown and the back of the head, one brow and one eye, the ear, and a mouth at the front edge.
   // Six moods: neutral, tense (eye screwed shut, teeth gritted), dazed (half-lidded), closed (unconscious), dead (a cross), shout (mouth open on a big hit). gaze slides the iris.
@@ -167,19 +167,20 @@
     softvest: { vest: { kind: 'soft', col: cloth('#3c4436', '#262c22', '#12160f') } },
     plate: { vest: { kind: 'plate', col: cloth('#4b4f3a', '#303426', '#15170f') } },
     kevlar: { hat: 'helmet', helmet: cloth('#4a5240', '#2f3528', '#161a12') },
+    ats: { suit: { plate: cloth('#4f555c', '#2c3137', '#0d1012'), dark: cloth('#26292d', '#141618', '#07080a'), visor: '#15181b', trim: '#6e7780' } },   // ATS armour: one sealed suit of plate over the whole body
     detective: { top: cloth('#b39162', '#86693f', '#4c3a20'), sleeves: 'long', legs: cloth('#3d3632', '#25201d', '#110e0c'), shoes: cloth('#54392a', '#332116', '#180e08'), hat: 'fedora', coat: true, shirt: '#ece9e2', tie: '#7a2a2e' }
   };
   // A part does not wear an outfit, it wears garments: plugin.wear = { top, pants, hat, shoes, gloves, mask }, each the id of the outfit that garment is cut from. Each kind of garment owns some of an outfit's fields;
   // what is painted on a part is one record merged from the garments it wears - the top's fields from one outfit, the trousers' from another - and handed to wear() and accessories() as before.
   // Every combination gets a number of its own for the sprite signature and the cache key, so no two ragdolls dressed differently can ever share a cached picture.
-  const KINDS = ['top', 'pants', 'hat', 'shoes', 'gloves', 'mask', 'vest'], OWNS = { top: ['top', 'sleeves', 'stripes', 'hem', 'tee', 'hood', 'collar', 'placket', 'badge', 'coat', 'shirt', 'tie'], pants: ['legs', 'cargo', 'belt', 'gear'], hat: ['hat', 'cap', 'helmet'], shoes: ['shoes'], gloves: ['gloves'], mask: ['mask'], vest: ['vest'] };
+  const KINDS = ['top', 'pants', 'hat', 'shoes', 'gloves', 'mask', 'vest', 'suit'], OWNS = { top: ['top', 'sleeves', 'stripes', 'hem', 'tee', 'hood', 'collar', 'placket', 'badge', 'coat', 'shirt', 'tie'], pants: ['legs', 'cargo', 'belt', 'gear'], hat: ['hat', 'cap', 'helmet'], shoes: ['shoes'], gloves: ['gloves'], mask: ['mask'], suit: ['suit'], vest: ['vest'] };
   const merged = new Map();
   const wearOf = p => p.wear || (p.outfit && root.Items ? root.Items.dress(p.outfit, p.part) : undefined);   // p.outfit: a save from before there were garments, or a preview of a whole outfit
   function outfitOf(p) { const wear = wearOf(p); if (!wear) return null; let key = '|'; for (const kind of KINDS) if (wear[kind] && OUTFITS[wear[kind]]) key += kind + ':' + wear[kind] + '|';   // an empty set is still a set: the bare hand of a dressed body
     let o = merged.get(key); if (!o) { o = { key, id: merged.size + 1 }; for (const kind of KINDS) { const from = OUTFITS[wear[kind]]; if (from) for (const field of OWNS[kind]) if (from[field] !== undefined) o[field] = from[field]; } merged.set(key, o); } return o; }
   const OUTFIT_IDS = Object.keys(OUTFITS), GLOBAL_Y = { chest: -60, abdomen: -32, 'upper arm': -54, forearm: -21 };   // where each striped part sits on the body, so the stripes line up across the joins
   // The colour of the strip that closes a joint, by the slot of the joint's outer part: sleeve, trouser leg, glove - or null for bare skin.
-  function jointCloth(p) { const o = outfitOf(p), slot = p.slot; if (!o) return null; if (slot === 3 || slot === 4 || slot === 5 || slot === 8) return o.top ? o.top.base : null; if (slot === 6 || slot === 9) return o.top && o.sleeves === 'long' ? o.top.base : null;
+  function jointCloth(p) { const o = outfitOf(p), slot = p.slot; if (!o) return null; if (o.suit) return o.suit.dark.base;   // the joints of a sealed suit are its under-layer, never bare skin if (slot === 3 || slot === 4 || slot === 5 || slot === 8) return o.top ? o.top.base : null; if (slot === 6 || slot === 9) return o.top && o.sleeves === 'long' ? o.top.base : null;
     if (slot === 7 || slot === 10) return o.gloves ? o.gloves.base : null; if (slot >= 11) return o.legs ? o.legs.base : null; if (slot <= 1) return o.mask || null; return null; }
   function wear(c, part, w, h, slot, o, state) {
     const x = w / 2, y = h / 2, near = slot === 8 || slot === 9 || slot === 14 || slot === 15; let line = null; c.globalCompositeOperation = 'source-atop'; c.lineCap = 'round'; c.lineJoin = 'round';
@@ -188,6 +189,27 @@
     const stripes = () => { if (!o.stripes) return; const at = GLOBAL_Y[part] ?? 0; c.fillStyle = o.stripes; for (let k = Math.floor((at - y) / 11) - 1; k * 11 < at + y + 11; k++) c.fillRect(-w * 2, k * 11 - at, w * 4, 5.5); };
     const ribs = (y0, y1, colour, ink) => { band(colour, y0, y1); c.strokeStyle = ink; c.lineWidth = .35; c.globalAlpha = .6; c.beginPath(); for (let rx = -x * 1.3; rx < x * 1.3; rx += 1.6) { c.moveTo(rx, y0 + .6); c.lineTo(rx, y1 - .6); } c.stroke(); c.globalAlpha = 1; };
     const over = () => { c.globalCompositeOperation = 'source-over'; }, atop = () => { c.globalCompositeOperation = 'source-atop'; };
+    // ATS armour: one sealed suit, so it is painted instead of any cloth - dark under-layer everywhere, a plate over it shaped to the part, and a closed helmet with a visor slit.
+    if (o.suit) { const s = o.suit, plate = (y0 = -h, y1 = h) => band(s.plate, y0, y1), ridge = (list, a = .8) => seam(list, s.plate.line, .6, a), lip = (y0, y1) => band(s.dark, y0, y1);
+      band(s.dark); plate(); line = s.plate.line;
+      switch (part) {
+        case 'head': c.fillStyle = s.visor; c.beginPath(); c.moveTo(x * .1, -y * .42); c.lineTo(x * 1.3, -y * .34); c.lineTo(x * 1.3, y * .18); c.lineTo(x * .16, y * .1); c.closePath(); c.fill();   // the visor, toward the face
+          ridge([[-x * .75, -y * .8, 0, -y * 1.06, x * .75, -y * .78], [-x * .85, y * .3, 0, y * .42, x * .8, y * .22]]); c.fillStyle = s.trim; c.fillRect(-x * .18, -y * .98, 1.7, y * .75); break;
+        case 'neck': lip(-y * .2, y); ridge([[-x * 1.2, -y * .1, 0, y * .05, x * 1.2, -y * .15]], .9); break;                                                                                     // gorget
+        case 'chest': ridge([[-x * .6, -y * .75, 0, -y * .55, x * .75, -y * .8], [x * .1, -y * .45, x * .45, 0, x * .2, y * .9], [-x * .55, -y * .3, -x * .8, y * .1, -x * .5, y * .9]]);
+          c.fillStyle = s.trim; c.globalAlpha = .5; c.fillRect(-x * .5, -y * .92, x * 1.2, 1.4); c.globalAlpha = 1; break;                                                                        // breastplate seams and a collar trim
+        case 'abdomen': for (const k of [-.5, 0, .5]) ridge([[-x * 1.2, y * k, 0, y * (k + .12), x * 1.2, y * k]], .7); break;                                                                    // segments
+        case 'pelvis': lip(-y, -y * .55); ridge([[-x * 1.2, -y * .5, 0, -y * .36, x * 1.2, -y * .5], [x * .1, -y * .3, x * .35, y * .3, x * .15, y]]); break;                                      // belt and faulds
+        case 'upper arm': plate(-h, y * .1); ridge([[-x * 1.2, -y * .55, 0, -y * .32, x * 1.2, -y * .6]], .9); lip(y * .55, h); break;                                                            // pauldron over the shoulder
+        case 'forearm': lip(-y, -y * .6); ridge([[x * .3, -y * .5, x * .6, 0, x * .3, y * .7]]); lip(y * .7, h); break;                                                                           // vambrace, cuff at the wrist
+        case 'hand': ridge([[-x, -y * .35, 0, -y * .2, x, -y * .4], [-x, y * .1, 0, y * .25, x, y * .05]], .9); break;                                                                            // gauntlet knuckles
+        case 'thigh': lip(-y, -y * .7); ridge([[x * .35, -y * .6, x * .55, 0, x * .3, y * .85]]); break;
+        case 'shin': c.fillStyle = s.plate.base; c.strokeStyle = s.plate.line; c.lineWidth = .6; c.beginPath(); c.ellipse(0, -y * .78, x * .95, y * .16, 0, 0, 7); c.fill(); c.stroke();            // knee cop
+          ridge([[x * .3, -y * .5, x * .45, 0, x * .25, y * .8]]); break;
+        case 'foot': lip(y - 2.8, h); ridge([[-x * .2, -y * .9, x * .5, -y * .3, x * 1.2, y * .1]], .9); break;                                                                                   // boot sole and toe cap
+      }
+      if (state.far) { atop(); c.fillStyle = 'rgba(14,10,8,.28)'; c.fillRect(-w * 2, -h * 2, w * 4, h * 4); }
+      over(); return line; }
     switch (part) {
       case 'chest': if (!o.top) break; band(o.top); stripes(); line = o.top.line; seam([[-x * .7, -y * .6, -x * .85, 0, -x * .6, y * .7], [x * .25, -y * .2, x * .6, y * .1, x * .95, -y * .05]], o.top.line, .5, .45);
         if (o.shirt) { c.fillStyle = o.shirt; c.beginPath(); c.moveTo(x * .2, -y); c.lineTo(x * .7, -y); c.lineTo(x * .98, -y * .3); c.lineTo(x * .62, -y * .1); c.closePath(); c.fill(); c.fillStyle = o.tie; c.beginPath(); c.moveTo(x * .62, -y * .95); c.lineTo(x * .82, -y * .8); c.lineTo(x * .86, -y * .2); c.lineTo(x * .7, -y * .12); c.closePath(); c.fill(); seam([[x * .2, -y, x * .35, -y * .5, x * .62, -y * .1], [x * .62, -y * .1, x * .8, y * .4, x * .78, y]], o.top.line, .7, .9); }
@@ -334,7 +356,7 @@
   }
 
   function paintPart(canvas, p, state) {
-    const w = p.w, h = p.h, part = p.part, slot = p.slot ?? 0, outfit = outfitOf(p); let clothLine = null; state.far = FAR.has(slot) && !!p.part; state.clothed = !!outfit; const size = { w: Math.ceil((w + PAD * 2) * SCALE), h: Math.ceil((h + PAD * 2) * SCALE) };
+    const w = p.w, h = p.h, part = p.part, slot = p.slot ?? 0, outfit = outfitOf(p); let clothLine = null; state.far = FAR.has(slot) && !!p.part; state.clothed = !!outfit; state.sealed = !!outfit?.suit; const size = { w: Math.ceil((w + PAD * 2) * SCALE), h: Math.ceil((h + PAD * 2) * SCALE) };
     canvas.width = size.w; canvas.height = size.h; const c = canvas.getContext('2d'); c.setTransform(SCALE, 0, 0, SCALE, size.w / 2, size.h / 2); c.lineJoin = 'round';
     const wounds = state.noGore ? [] : p.wounds || [], hp = p.hp ?? 100, broken = (p.bone ?? 100) <= 50 && slot >= 5 && !state.noGore;   // limbs only, like the engine's fractured()
     // Beyond its individual wounds, a part that is nearly destroyed loses skin, and then muscle, in seeded patches.
@@ -416,7 +438,7 @@
     draw(ctx, body, state) { const canvas = sprite(body, state); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); },
     // For previews (library card, spawn ghost): a pristine part from its dimensions alone.
     outfits: OUTFIT_IDS, kinds: KINDS, outfitOf,
-    cloth(outfit, kind) { const o = OUTFITS[outfit] || {}; return { ...o, main: kind === 'top' ? o.top : kind === 'pants' ? o.legs : kind === 'shoes' ? o.shoes : kind === 'gloves' ? o.gloves : kind === 'hat' ? (o.cap || o.helmet) : kind === 'vest' ? o.vest?.col : null }; },   // an outfit's colours and details, for drawing its garments as objects
+    cloth(outfit, kind) { const o = OUTFITS[outfit] || {}; return { ...o, main: kind === 'suit' ? o.suit?.plate : kind === 'top' ? o.top : kind === 'pants' ? o.legs : kind === 'shoes' ? o.shoes : kind === 'gloves' ? o.gloves : kind === 'hat' ? (o.cap || o.helmet) : kind === 'vest' ? o.vest?.col : null }; },   // an outfit's colours and details, for drawing its garments as objects
     preview(ctx, part, slot, w, h, outfit) { const canvas = sprite({ plugin: { part, slot, w, h, hp: 100, bone: 100, outfit } }, { pale: 0, char: 0, face: 'neutral', faceId: 1, gaze: 0, noGore: true, dead: false, time: 0 }); ctx.drawImage(canvas, -canvas.width / SCALE / 2, -canvas.height / SCALE / 2, canvas.width / SCALE, canvas.height / SCALE); }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
