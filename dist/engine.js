@@ -759,10 +759,10 @@
       if(immediate||body.isStatic||!held){Body.rotate(body,amount);Body.setAngularVelocity(body,0);if(held)this.dragAngle=body.angle;}
       else this.dragAngle=(this.dragAngle??body.angle)+amount;
     }
-    rope(a,b,pa,pb) {
+    rope(a,b,pa,pb,wire=false) { /* wire: the same tie, but current runs down it - see shock(), which follows wires however long they are */
       if(a===b&&a)return null;
-      const c=Constraint.create({bodyA:a||undefined,bodyB:b||undefined,pointA:a?Vector.sub(pa,a.position):{...pa},pointB:b?Vector.sub(pb,b.position):{...pb},stiffness:.8,damping:.06});
-      c.plugin={rope:true};Composite.add(this.world,c);return c;
+      const c=Constraint.create({bodyA:a||undefined,bodyB:b||undefined,pointA:a?Vector.sub(pa,a.position):{...pa},pointB:b?Vector.sub(pb,b.position):{...pb},stiffness:wire?.9:.8,damping:.06});
+      c.plugin={rope:true,wire:wire||undefined};Composite.add(this.world,c);return c;
     }
     unrope(c){if(!c?.plugin?.rope||!this.joints.includes(c))return false;Composite.remove(this.world,c);return true;}
     // Blood thrown by a blow. With a direction it is a cone: forward says how much of it carries on with the blow (negative = back-spatter toward the attacker,
@@ -1070,6 +1070,7 @@
       if(!body)return;{const point=at||body.position,life=held?.1:.24;this.traces.push({from:{...point},to:{...point},life,maxLife:life,electric:true,contact:true});this.burst(point.x,point.y,held?1:5,'#cfeeff',4);} /* where the current goes in: a flash, a star of short arcs, a few sparks that fall */const deadBefore=new Set(this.entities.filter(e=>e.alive===false)); /* only someone who was already dead can be brought back by this shock: the one that stops a heart does not also restart it */const touched=new Set(),queue=[body];
       const most=cap||(held?SHOCK_CHAIN_HELD:30),arc=held?.1:.3;while(queue.length&&touched.size<most){const b=queue.shift();if(touched.has(b))continue;touched.add(b);b.plugin.charge=1;const own=b.plugin.part?this.getEntity(b):null;if(own?.conduit)this.charge(own,dose*CONDUIT_GAIN/own.bodies.length*Math.pow(.95,touched.size-1),b);else this.damage(b,(b.plugin.material==='flesh'?24:5)*Math.min(1,dose)*Math.pow(.8,touched.size-1),b.position,'shock');if(!b.isStatic){const jolt=Math.min(1,dose)*(held?.35:1);Body.setVelocity(b,{x:b.velocity.x+rnd(-2,2)*jolt,y:b.velocity.y-2*jolt});} /* the jolt goes with the dose; a held shock is many small ones, and must not lift what it holds off the floor */
         for(const other of this.bodies)if(!touched.has(other)&&matOf(other.plugin).conductive>0&&Vector.magnitude(Vector.sub(other.position,b.position))<65){queue.push(other);const edge=(of,toward)=>({x:clamp(toward.x,of.bounds.min.x,of.bounds.max.x),y:clamp(toward.y,of.bounds.min.y,of.bounds.max.y)}),from=edge(b,other.position);this.traces.push({from,to:edge(other,from),life:arc,maxLife:arc,electric:true});} /* arcs jump surface to surface, not centre to centre */
+        for(const c of this.joints){if(!c.plugin.wire)continue;const other=c.bodyA===b?c.bodyB:c.bodyB===b?c.bodyA:null;if(!other||touched.has(other))continue;queue.push(other);c.plugin.liveAt=this.time;} /* down the wire, however far it runs */
       }this.onEffect('electric',.3);
       // What current does to a person depends on the state they are in, and on how much of it they have had.
       // Out cold: it brings them round - the stun goes, and pain that had put them under is cut through (it cannot wake someone who is out for want of blood, air or brain).

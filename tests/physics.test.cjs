@@ -1050,6 +1050,12 @@ test('the immortal is hurt like anyone - wounds, breaks, lost limbs, knocked out
   const ko=new Simulation().seed(3),k=ko.spawn('immortal',1000,555);advance(ko,30);k.blood=30;k.organs={brain:5,heart:100,lungs:100,gut:100};advance(ko,5);assert.equal(k.consciousness,'unconscious');advance(ko,60*60);assert.notEqual(k.consciousness,'unconscious','in time it comes round');
   const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(back.entities.find(x=>x.kind==='human').immortal,'saved');
 });
+test('Electrical wire: current runs the length of it, a rope carries none',()=>{
+  const s=new Simulation().seed(8);const bat=s.spawn('battery',500,600).bodies[0],far=s.spawn('human',1400,555),tied=s.spawn('human',1700,555);advance(s,60);[...far.bodies,...tied.bodies].forEach(b=>s.freeze(b));
+  const w=s.rope(bat,far.bodies[2],bat.position,far.bodies[2].position,true),r=s.rope(bat,tied.bodies[2],bat.position,tied.bodies[2].position);
+  assert.ok(w.plugin.wire&&!r.plugin.wire);const hp=e=>e.bodies.reduce((n,b)=>n+b.plugin.hp,0),before=[hp(far),hp(tied)];
+  s.activate(bat);advance(s,150);assert.ok(hp(far)<before[0],'down the wire, 900 px away');assert.equal(hp(tied),before[1],'the rope carries nothing');assert.ok(w.plugin.liveAt!==undefined,'and the wire shows it is live');
+});
 test('Generator: a hundred batteries - it kills a bare ragdoll at once and leaves a scattered skeleton, and only feeds Storm',()=>{
   const s=new Simulation().seed(7);const g=s.spawn('generator',900,600).bodies[0],e=s.spawn('human',940,555);advance(s,60);e.bodies.forEach(b=>s.freeze(b)); /* held where the current reaches him: a corpse that sprawls out of range stops cooking, which is the point */
   assert.equal(s.activate(g),'Generator on');advance(s,12);assert.ok(!e.alive,`dead within a fifth of a second: ${e.causeOfDeath}`);
