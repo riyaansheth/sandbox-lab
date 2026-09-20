@@ -1057,6 +1057,19 @@ test('ATS armour: one suit covers every part, and nothing short of a .50 gets th
   for(const part of [arm,leg]){const l=fire(a.s,'rifle',part.position.y,part.position.x-260);assert.ok(l.some(h=>h.armour&&h.stopped),`and stops one at the ${part.plugin.part}, which a vest never covered`);}
   assert.ok(a.e.bodies.every(b=>!b.plugin.wounds?.some(w=>w.type==='bullet')),'nothing went in');
   const fifty=armoured('ats'),l50=fire(fifty.s,'sniper',fifty.e.bodies[3].position.y);assert.ok(l50.some(h=>h.armour&&h.through),'a .50 goes through');
+  const ats=armoured('ats'),vest=armoured('platecarrier');ats.e.pain=0;vest.e.pain=0;
+  for(let i=0;i<3;i++){fire(ats.s,'gun',ats.e.bodies[3].position.y);fire(vest.s,'gun',vest.e.bodies[3].position.y);}
+  assert.ok(ats.e.pain<10&&ats.e.pain<vest.e.pain/3,`three rounds barely tell through the plate: ${ats.e.pain.toFixed(1)} against a carrier's ${vest.e.pain.toFixed(1)}`);
+  for(let i=0;i<40;i++)fire(ats.s,'gun',ats.e.bodies[3].position.y);assert.ok(ats.e.pain>30,`a long burst does: ${ats.e.pain.toFixed(0)}`);
+  const near=armoured('ats'),far=armoured('ats'),bareBlast=armoured('platecarrier');const chest=e=>e.bodies[2];
+  near.s.explode(chest(near.e).position.x+2,chest(near.e).position.y,175,1);far.s.explode(chest(far.e).position.x+40,chest(far.e).position.y,175,1);bareBlast.s.explode(chest(bareBlast.e).position.x+40,chest(bareBlast.e).position.y,175,1);
+  assert.ok(chest(near.e).plugin.hp<40,`a charge against the plate still wrecks him: ${chest(near.e).plugin.hp.toFixed(0)} hp`);
+  assert.ok(chest(far.e).plugin.hp>chest(bareBlast.e).plugin.hp+20,`a step away the suit takes it: ${chest(far.e).plugin.hp.toFixed(0)} against ${chest(bareBlast.e).plugin.hp.toFixed(0)}`);
+  const zapped=armoured('ats'),bareZap=armoured('platecarrier');zapped.s.shock(zapped.e.bodies[2],1);bareZap.s.shock(bareZap.e.bodies[2],1);
+  assert.ok(zapped.e.shockDose<bareZap.e.shockDose&&zapped.e.bodies[2].plugin.hp>bareZap.e.bodies[2].plugin.hp,`and it takes some of a shock: dose ${zapped.e.shockDose.toFixed(2)} against ${bareZap.e.shockDose.toFixed(2)}`);
+  const mend=armoured('ats'),slow=armoured('platecarrier');for(const k of [mend,slow]){k.s.configure({slowHealing:true});k.e.bodies[6].plugin.hp=40;k.e.blood=70;advance(k.s,60*20);}
+  assert.ok(mend.e.bodies[6].plugin.hp>slow.e.bodies[6].plugin.hp+8&&mend.e.blood>slow.e.blood,`and it mends him faster: ${mend.e.bodies[6].plugin.hp.toFixed(0)} hp against ${slow.e.bodies[6].plugin.hp.toFixed(0)}`);
+  const rings=[];ats.s.onEffect=(kind)=>rings.push(kind);fire(ats.s,'gun',ats.e.bodies[3].position.y);assert.ok(rings.includes('metal'),`and every round rings off the steel: ${rings.join(',')}`);
 });
 test('Electrical wire: current runs the length of it, a rope carries none',()=>{
   const s=new Simulation().seed(8);const bat=s.spawn('battery',500,600).bodies[0],far=s.spawn('human',1400,555),tied=s.spawn('human',1700,555);advance(s,60);[...far.bodies,...tied.bodies].forEach(b=>s.freeze(b));
