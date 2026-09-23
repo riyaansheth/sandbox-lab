@@ -1050,6 +1050,19 @@ test('the immortal is hurt like anyone - wounds, breaks, lost limbs, knocked out
   const ko=new Simulation().seed(3),k=ko.spawn('immortal',1000,555);advance(ko,30);k.blood=30;k.organs={brain:5,heart:100,lungs:100,gut:100};advance(ko,5);assert.equal(k.consciousness,'unconscious');advance(ko,60*60);assert.notEqual(k.consciousness,'unconscious','in time it comes round');
   const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));assert.ok(back.entities.find(x=>x.kind==='human').immortal,'saved');
 });
+test('one leg: he stays up and hops, he does not stand there like a post',()=>{
+  const s=new Simulation().seed(3);const e=s.spawn('human',900,555);advance(s,120);
+  s.sever(e.joints.find(c=>c.bodyB.plugin.slot===14));advance(s,30);
+  const him=()=>s.entities.find(x=>x.bodies.some(b=>b.plugin.slot===2)),chest=()=>him().bodies.find(b=>b.plugin.slot===2);
+  const x0=chest().position.x,y0=chest().position.y;let hops=0,last=9,lift=0,up=0;
+  for(let i=0;i<600;i++){s.step();const en=him();if(en.hopT<last)hops++;last=en.hopT;lift=Math.max(lift,y0-chest().position.y);if(s.balancing(en))up++;}
+  assert.ok(up>550,`he keeps his feet: ${up} of 600 frames`);
+  assert.ok(hops>8&&hops<25,`and hops for it: ${hops} hops in ten seconds`);
+  assert.ok(lift>4,`clear of the floor each time: ${lift.toFixed(1)} px`);
+  assert.ok(Math.abs(chest().position.x-x0)>60,`and it takes him somewhere: ${(chest().position.x-x0).toFixed(0)} px`);
+  const two=new Simulation().seed(3),w=two.spawn('human',900,555);advance(two,120);const wx=w.bodies[2].position.x;advance(two,600);
+  assert.ok((w.hopT??9)>1&&Math.abs(w.bodies[2].position.x-wx)<40,'a man with both legs just stands there');
+});
 test('ATS armour: one suit covers every part, and nothing short of a .50 gets through it',()=>{
   const a=armoured('ats');assert.ok(a.e.bodies.every(b=>b.plugin.armour?.suit),'every part of him is plated');
   for(const gun of ['gun','rifle','lmg']){const l=fire(a.s,gun,a.e.bodies[3].position.y);assert.ok(l.some(h=>h.armour&&h.stopped),`the suit stops a ${gun}`);}

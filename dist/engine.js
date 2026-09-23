@@ -161,6 +161,7 @@
   const BREAK_BEND=.8,BREAK_TIME=.1; // radians past its limit, and seconds held there, at which a joint breaks
   // Balance and landing. STEP_*: how far ahead of its feet (px, with velocity looked ahead) the chest may get before a recovery step, and the pause between steps.
   // LAND_*: a fall speed (px/frame) that counts as a full-depth landing, and how long the legs take to straighten again. STRUGGLE_*: tone and kick rate of a body held off the ground.
+  const HOP_TRIGGER=4,HOP_EVERY=.7,HOP_UP=2.6,HOP_PUSH=1.1,HOP_AIR=.34; // a body with one leg cannot step: it hops, about twice a second, on the lean that would have made it step
   const STEP_TRIGGER=15,STEP_LOOKAHEAD=10,STEP_COOL=.22,STEP_REACH=9,STEP_LIFT=.16,FOOT_AHEAD=0,LAND_FULL=13,LAND_RECOVER=.55,STRUGGLE_TONE=.5,STRUGGLE_RATE=6.5;
   const SKIN_REGROW=300; // seconds for a body burnt to the bone to be whole again
   const CHAR_RATE=.08; // per second of burning: skin is gone by about .5, muscle by .9, bare bone at 1
@@ -527,6 +528,8 @@
       const bodyAt=slot=>e.bodies.find(b=>b.plugin.slot===slot),hurt=(from,to)=>{let worst=1;for(let sl=from;sl<=to;sl++){const b=bodyAt(sl);if(b)worst=Math.min(worst,b.plugin.hp/b.plugin.maxHp);}return worst;};
       for(const [sh,side] of [[5,-1],[8,1]])if(hurt(sh,sh+2)*100<GUARD_HP&&rung!=='crawl'&&rung!=='drag'){A[sh]=-.3*k;A[sh+1]=-1.5;P[sh]=P[sh+1]=2.5;}
       if(e.spareLeg&&!down){A[e.spareLeg]+=-.4;A[e.spareLeg+1]+=1.1;P[e.spareLeg]=P[e.spareLeg+1]=1.6;}
+      if(e.hopT<HOP_AIR&&!down){const k=1-e.hopT/HOP_AIR,leg=e.bodies.find(b=>b.plugin.part==='foot'&&this.bears(b))?.plugin.slot-2; /* the knee comes up under it, the arms go out for balance */
+        if(leg>=0){A[leg]+=-.5*k;A[leg+1]+=1.3*k;P[leg]=P[leg+1]=1.4;}for(const arm of [5,8]){A[arm]+=-.55*k;P[arm]=Math.max(P[arm],2);}}
       // Clutching: the nearest hand that still works goes to the wound that hurts most and stays there; both hands for the head and trunk. Not while the arms are needed to crawl or to break a fall.
       if(e.pain>CLUTCH_PAIN&&e.hurtScore>0&&rung!=='crawl'&&rung!=='drag'&&!(e.bracing>0)){const part=bodyAt(e.hurtSlot);if(part){const local=Vector.rotate({x:e.hurtX,y:e.hurtY},part.angle),tx=part.position.x+local.x,ty=part.position.y+local.y,both=e.hurtSlot<=4;let done=0;
         const arms=[[5,-1],[8,1]].map(([sh,side])=>{const upper=bodyAt(sh),fore=bodyAt(sh+1);if(!upper||!fore||this.fractured(upper)||this.fractured(fore)||(e.hurtSlot>=sh&&e.hurtSlot<=sh+2)||upper.plugin.hp<=0)return null;const sx=upper.position.x+Math.sin(upper.angle)*upper.plugin.h/2,sy=upper.position.y-Math.cos(upper.angle)*upper.plugin.h/2;return {sh,side,sx,sy,far:Math.hypot(tx-sx,ty-sy)};}).filter(Boolean).sort((a,b)=>a.far-b.far);
@@ -593,7 +596,15 @@
       else{uprightness=0;liftScale=0;}
       const down=rung==='stand'&&(Math.abs(tilt)>.6||!support.length);
       // Catching its balance: when the chest gets ahead of the feet (or is about to), it steps that way rather than tipping over like a plank.
-      e.stepCool=Math.max(0,(e.stepCool||0)-seconds);if(rung==='stand'&&!down&&support.length&&!(e.stagN>0)&&!e.stepCool&&!grabbed&&!e.rise){let fx=0;for(const f of support)fx+=this.bearing(f)/support.length;
+      // One leg left, whole or spared: it cannot put a foot out to catch itself, so it hops - a push off the floor toward the lean, and a moment in the air with the knee drawn up.
+      const oneLeg=rung==='stand'&&(e.bodies.filter(b=>b.plugin.part==='foot'&&this.bears(b)).length===1||(!!e.spareLeg&&support.length===1)); /* one leg, or one leg it is willing to stand on */
+      e.hopT=(e.hopT??9)+seconds;e.hopCool=Math.max(0,(e.hopCool||0)-seconds);
+      if(oneLeg&&!down&&support.length&&!(e.stagN>0)&&!e.hopCool&&!grabbed&&!e.rise&&this.touching.has(support[0])){
+        const lean=chest.position.x-this.bearing(support[0])+chest.velocity.x*STEP_LOOKAHEAD;
+        {const dir=Math.abs(lean)>HOP_TRIGGER?Math.sign(lean):0,pelvis=e.bodies.find(b=>b.plugin.slot===4); /* it hops where it leans, and in place when it leans nowhere: standing still on one leg is not standing still */
+          for(const b of e.bodies)if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+dir*HOP_PUSH*(b===chest||b===pelvis?1:.7),y:b.velocity.y-HOP_UP*(b.plugin.slot>=11?.75:1)}); /* the whole body leaves the floor, the leg trailing a little */
+          e.hopCool=HOP_EVERY;e.hopT=0;e.restTime=0;}}
+      e.stepCool=Math.max(0,(e.stepCool||0)-seconds);if(rung==='stand'&&!oneLeg&&!down&&support.length&&!(e.stagN>0)&&!e.stepCool&&!grabbed&&!e.rise){let fx=0;for(const f of support)fx+=this.bearing(f)/support.length;
         const ahead=chest.position.x-fx+chest.velocity.x*STEP_LOOKAHEAD;if(Math.abs(ahead)>STEP_TRIGGER){e.stagN=Math.abs(ahead)>STEP_TRIGGER*2.2?2:1;e.stagDir=Math.sign(ahead);e.stagT=0;e.stagLeg=(e.stagLeg^1)||0;e.stagPush=Math.min(STAGGER_MAX,Math.abs(ahead)*.7);}}
       // Getting up is staged: gather the limbs, push up on the arms, get the knees under, and only then stand. Pain and blood loss slow every stage.
       // If it is still down a while after the last stage, the attempt has failed: it sags, rests, and tries again.
