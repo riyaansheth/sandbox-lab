@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-icon">⊞</span><div>Sandbox<span class="brand-light"> Lab</span><small>Physics, without rules.</small></div></div>
-    <div class="workspace-label"><span class="live-dot"></span> Test chamber <span class="label-divider">/</span> <span id="scene-name">The workshop</span></div>
+    <div class="workspace-label"><span class="live-dot"></span> Test chamber <span class="label-divider">/</span> <span id="scene-name">Empty chamber</span></div>
     <div class="top-actions"><button id="save-btn" title="Save scene on this device">Save scene</button><button id="load-btn">Load scene</button><button id="settings-btn" title="Gravity, fragility, weather, controls feel and more">⚙ Settings</button><button id="help-btn" class="square" title="Controls and help" aria-label="Controls and help">?</button></div>
   </header>
   <main class="app">
@@ -23,7 +23,7 @@
       <div class="library-footer"><span class="version-dot"></span> Local sandbox <span>v1.0</span></div>
     </aside>
     <section class="workspace" aria-label="Physics sandbox">
-      <div class="scene-bar"><div class="scene-select"><span>▧</span><select id="scene-select" aria-label="Choose a scene"><option value="workshop">The workshop</option><option value="tower">Demolition tower</option><option value="swing">Pendulum experiment</option><option value="empty">Empty chamber</option></select></div><div class="scene-actions"><button id="clear-fire-btn" title="Put out every fire and cool everything down">♨ <span>Clear fire</span></button><button id="clear-dead-btn" title="Remove dead ragdolls, remains, debris and stains">☠ <span>Clear dead</span></button><button id="clear-objects-btn" title="Remove every object; ragdolls stay">▣ <span>Clear objects</span></button><button id="reset-btn" title="Reset this scene">↻ <span>Reset</span></button><button id="clear-btn" title="Remove everything">⌫ <span>Clear</span></button></div></div>
+      <div class="scene-bar"><div class="scene-select"><span>▧</span><select id="scene-select" aria-label="Choose a scene"><option value="empty" selected>Empty chamber</option><option value="workshop">The workshop</option><option value="tower">Demolition tower</option><option value="swing">Pendulum experiment</option></select></div><div class="scene-actions"><button id="clear-fire-btn" title="Put out every fire and cool everything down">♨ <span>Clear fire</span></button><button id="clear-dead-btn" title="Remove dead ragdolls, remains, debris and stains">☠ <span>Clear dead</span></button><button id="clear-objects-btn" title="Remove every object; ragdolls stay">▣ <span>Clear objects</span></button><button id="reset-btn" title="Reset this scene">↻ <span>Reset</span></button><button id="clear-btn" title="Remove everything">⌫ <span>Clear</span></button></div></div>
       <div id="stage" class="stage">
         <canvas id="world" aria-label="Interactive physics chamber. Select an object and press Q or E to spawn it, or drag an existing object." tabindex="0"></canvas>
         <div class="chamber-label"><span class="corner-mark"></span><span>Chamber 01<small>Experimental physics environment</small></span></div>

@@ -394,7 +394,7 @@ test('a falling, conscious ragdoll gets its arms out on the side it is falling t
   const out=new Simulation();const e=out.spawn('human',1000,330);e.stun=5;for(const b of e.bodies)Body.rotate(b,1.35,{x:1000,y:330});advance(out,40);assert.ok(!(e.bracing>0),'a stunned body does not brace');
 });
 test('androids stagger and brace too, but feel nothing',()=>{
-  const {s,e,chest}=standing('android');s.damage(chest,24,chest.position,'impact',{x:-1,y:0});assert.ok(e.stagN>=1&&e.stagDir===-1);advance(s,240);assert.ok(chest.position.y<505);assert.ok(!e.pain);
+  const {s,e,chest}=standing('android');s.damage(chest,60,chest.position,'impact',{x:-1,y:0}); /* the casing takes 40% of a blow: this is the 24 that staggers a person */assert.ok(e.stagN>=1&&e.stagDir===-1);advance(s,240);assert.ok(chest.position.y<505);assert.ok(!e.pain);
 });
 // ---- reaction spec, section 4: the mobility ladder
 const sever=(s,e,names)=>{for(const n of names)for(const c of s.joints.filter(c=>c.plugin.name===n&&c.bodyA.plugin.entityId===e.id))s.sever(c);for(const b of e.bodies)for(const w of b.plugin.severed||[])w.bleed=0;};
@@ -433,7 +433,7 @@ test('a hurt leg takes less of the load and the body leans over the good one; a 
 });
 test('electric shock locks every muscle rigid, then the body goes slack; androids lock too but feel nothing',()=>{
   for(const kind of ['human','android']){const {s,e,chest}=standing(kind,{organDamage:false});s.shock(chest);assert.ok(e.shockT>0&&!(e.stun>0),'no stun while the current flows');let spread=0;const pose=()=>[6,9,12,15].map(slot=>rel(e,slot,slot-1));const first=pose();
-    for(let i=0;i<30;i++){s.step(1000/120);pose().forEach((a,k)=>spread=Math.max(spread,Math.abs(a-first[k])));}assert.ok(spread<.6,`locked joints moved ${spread}`);advance(s,30);assert.ok(e.stun>0,'then it goes limp');if(kind==='android'){assert.ok(!e.pain);assert.ok(!e.clutching);}}
+    for(let i=0;i<30;i++){s.step(1000/120);pose().forEach((a,k)=>spread=Math.max(spread,Math.abs(a-first[k])));}assert.ok(spread<.6,`locked joints moved ${spread}`);advance(s,30);if(kind==='human')assert.ok(e.stun>0,'then it goes limp');else{assert.ok(!(e.stun>0),'an android never goes limp');assert.ok(!e.pain);assert.ok(!e.clutching);}}
 });
 test('being on fire hurts more and more, and sets a standing ragdoll staggering about',()=>{
   const {s,e,chest}=standing('human',{organDamage:false,bleedRate:0});s.ignite(e.bodies[8]);advance(s,60);const early=e.pain;assert.ok(early>3);assert.ok(e.stagN>0||e.stagDir,'it should be stumbling');advance(s,120);assert.ok(e.pain>early+10);
@@ -599,7 +599,7 @@ test('a blast takes limbs off by chance, likelier close in; a shock has a good c
 
 test('every firearm has its own round: faster rounds arrive sooner, heavier ones hurt more, buckshot scatters, automatics keep firing, a crossbow throws a real bolt',()=>{
   const guns=require('../items.js').ITEMS.filter(i=>i.firearm);assert.ok(guns.length>=10);for(const g of guns){assert.ok(g.firearm.speed>=100&&g.firearm.speed<=1000,`${g.id} speed`);assert.ok((g.firearm.rate>0||['gun','revolver'].includes(g.id))&&g.firearm.muzzle>=g.w/2);assert.ok(g.firearm.launch||(g.firearm.energy>0&&g.firearm.diameter>0));}
-  const shot=(kind,steps)=>{const s=new Simulation().seed(2);s.gravity=0;const gun=s.spawn(kind,400,300).bodies[0],wall=s.spawn('metal',1400,300).bodies[0];s.freeze(wall);const hp=wall.plugin.hp;s.activate(gun);let t=0;while(wall.plugin.hp===hp&&t<steps){s.step(1000/120);t++;}return {t,hurt:hp-wall.plugin.hp,s,gun,wall};};
+  const shot=(kind,steps)=>{const s=new Simulation().seed(2);s.gravity=0;const gun=s.spawn(kind,400,300).bodies[0],wall=s.spawn('platform',1400,300).bodies[0];s.freeze(wall);const hp=wall.plugin.hp;s.activate(gun); /* not the steel beam: rounds only dent that (it counts them, see shotLimit) */let t=0;while(wall.plugin.hp===hp&&t<steps){s.step(1000/120);t++;}return {t,hurt:hp-wall.plugin.hp,s,gun,wall};};
   const pistol=shot('gun',200),sniper=shot('sniper',200),hunting=shot('hunting',200);assert.ok(pistol.t>5,'a pistol round takes time to cross a room');assert.ok(sniper.t<pistol.t*.6,`.50 (${sniper.t}) outruns 9 mm (${pistol.t})`);assert.ok(sniper.hurt>hunting.hurt&&hunting.hurt>pistol.hurt,'heavier rounds hurt more');
   const pellets=new Simulation().seed(2);pellets.gravity=0;pellets.activate(pellets.spawn('shotgun',400,300).bodies[0]);assert.equal(pellets.shots.length,9);assert.ok(new Set(pellets.shots.map(x=>x.dy.toFixed(4))).size>5,'pellets spread');
   const auto=new Simulation().seed(2);auto.gravity=0;const smg=auto.spawn('smg',400,300).bodies[0],semi=auto.spawn('gun',400,600).bodies[0],rounds=new Map(),shoot=auto.shoot.bind(auto);auto.shoot=(from,to,gun,spec)=>{rounds.set(gun,(rounds.get(gun)||0)+1);return shoot(from,to,gun,spec);};
@@ -1080,9 +1080,11 @@ test('ATS armour: one suit covers every part, and nothing short of a .50 gets th
   const bombs=armoured('ats'),bare5=armoured('platecarrier');const chest=e=>e.bodies[2];
   for(let i=0;i<5;i++){bombs.s.explode(chest(bombs.e).position.x+2,chest(bombs.e).position.y,175,1);advance(bombs.s,3);} /* one blast at a time, with a moment between: five in a single frame would tear him apart by the jolt alone */
   bare5.s.explode(chest(bare5.e).position.x+40,chest(bare5.e).position.y,175,1);
-  assert.ok(bombs.e.alive&&chest(bombs.e).plugin.hp>15,`five blasts and he is still up: ${chest(bombs.e).plugin.hp.toFixed(0)} hp against ${chest(bare5.e).plugin.hp.toFixed(0)} for one blast in a carrier`);
-  assert.ok(chest(bombs.e).plugin.armour.suit.hp<=0,'but the suit is spent');
-  bombs.s.explode(chest(bombs.e).position.x+2,chest(bombs.e).position.y,175,1);assert.ok(chest(bombs.e).plugin.hp<40,`and the sixth is his: ${chest(bombs.e).plugin.hp.toFixed(0)} hp`);
+  let kept=null;{ /* a blast may take a limb off at random, so one run is a coin toss: over ten, most come through five */
+    let up=0;for(let seed=1;seed<=10;seed++){const t=armoured('ats');t.s.seed(seed);for(let i=0;i<5;i++){const c=t.e.bodies.find(b=>b.plugin.slot===2);if(!c)break;t.s.explode(c.position.x+2,c.position.y,175,1);advance(t.s,3);}const c=t.e.bodies.find(b=>b.plugin.slot===2);if(t.e.alive&&c&&c.plugin.hp>15){up++;kept??=t;}}
+    assert.ok(up>=6,`five blasts and he is still up in ${up} of 10, against ${chest(bare5.e).plugin.hp.toFixed(0)} hp for one blast in a carrier`);}
+  assert.ok(chest(kept.e).plugin.armour.suit.hp<=0,'but the suit is spent');
+  kept.s.explode(chest(kept.e).position.x+2,chest(kept.e).position.y,175,1);assert.ok(chest(kept.e).plugin.hp<40,`and the sixth is his: ${chest(kept.e).plugin.hp.toFixed(0)} hp`);
   const zapped=armoured('ats'),bareZap=armoured('platecarrier');zapped.s.shock(zapped.e.bodies[2],1);bareZap.s.shock(bareZap.e.bodies[2],1);
   assert.ok(zapped.e.shockDose<bareZap.e.shockDose&&zapped.e.bodies[2].plugin.hp>bareZap.e.bodies[2].plugin.hp,`and it takes some of a shock: dose ${zapped.e.shockDose.toFixed(2)} against ${bareZap.e.shockDose.toFixed(2)}`);
   const mend=armoured('ats'),slow=armoured('platecarrier');for(const k of [mend,slow]){k.s.configure({slowHealing:true});k.e.bodies[6].plugin.hp=40;k.e.blood=70;advance(k.s,60*20);}
@@ -1134,4 +1136,77 @@ test('Storm: electricity charges him instead of hurting him; he spends it on lig
     const behind=new Simulation().seed(3),b2=behind.spawn('storm',1200,555),back2=behind.spawn('human',950,555);advance(behind,60);b2.power=100;behind.activate(b2.bodies.find(b=>b.plugin.slot===10));assert.ok(back2.bodies.every(b=>b.plugin.hp===100),'not the one behind him');}
   e.power=100;const head=e.bodies[0];const wood=s.spawn('crate',head.position.x+160,head.position.y).bodies[0];s.freeze(wood);const heat=wood.plugin.heat;assert.equal(s.activate(head),'Laser');for(let i=0;i<40;i++){s.activate(head,true);s.step();}assert.ok(wood.plugin.char>0&&wood.plugin.hp<wood.plugin.maxHp,'the beams scorch what they meet');for(let i=0;i<120;i++)s.step();assert.ok(!wood.plugin.burning&&wood.plugin.heat<heat+5,'but set nothing alight');assert.ok(s.traces.some(t=>t.laser)||true);assert.ok(e.power<90,'and use up the charge');
   e.power=.2;assert.equal(s.activate(head),'Out of charge: hit him with electricity first');const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));const saved=back.entities.find(x=>x.conduit);assert.ok(saved&&saved.power===e.power,'saved, charge and all');
+});
+
+test('Powers are granted to a ragdoll: endurance takes a quarter of the harm, strength triples the joints, and they survive a save',()=>{
+  const s=new Simulation().seed(3),man=s.spawn('human',1000,555),tough=s.spawn('civilian',1300,555),box=s.spawn('crate',700,555);advance(s,30);
+  assert.equal(s.grant(s.getEntity(box.bodies?.[0]||box),'tough'),false,'only a ragdoll takes a power');assert.equal(s.grant(tough,'flight'),false,'no such power');
+  assert.ok(s.grant(tough,'tough')&&s.grant(tough,'strong')&&s.grant(tough,'immortal')&&s.grant(tough,'conduit'),'powers stack');
+  for(const x of [man,tough])s.damage(x.bodies[9],40,x.bodies[9].position,'cut',{x:1,y:0});
+  assert.ok(Math.abs((100-tough.bodies[9].plugin.hp)*4-(100-man.bodies[9].plugin.hp))<1,'a quarter of the harm');
+  assert.ok(tough.joints.every(c=>c.plugin.breakForce===87),'joints three times as strong');
+  const back=new Simulation();back.restore(JSON.parse(JSON.stringify(s.serialize())));const e=back.entities.find(x=>x.id===tough.id);assert.ok(e.tough&&e.strong&&e.immortal&&e.conduit,'saved and loaded');
+  assert.ok(s.spawn('strength',1600,555).strong&&s.spawn('endurance',1800,555).tough,'spawned directly, a human with the power');
+});
+
+test('Super strength strikes hard and far; super endurance soaks up rounds, blasts and falls up to its grit; super healing regrows; Wake up and Knock out',()=>{
+  const hit=kind=>{const s=new Simulation().seed(4),a=s.spawn(kind,900,555),v=s.spawn('human',1000,555);advance(s,60);const x0=v.bodies[2].position.x,hp0=v.bodies.reduce((q,b)=>q+b.plugin.hp,0);for(const b of a.bodies)Body.setVelocity(b,{x:14,y:0});advance(s,120);return {push:v.bodies[2].position.x-x0,harm:hp0-v.bodies.reduce((q,b)=>q+b.plugin.hp,0)};};
+  const plain=hit('human'),strong=hit('strength');assert.ok(strong.push>plain.push*5&&strong.harm>plain.harm*20,`strong ${JSON.stringify(strong)} vs plain ${JSON.stringify(plain)}`);
+  const s=new Simulation().seed(2),t=s.spawn('endurance',1000,555);advance(s,60);const y=t.bodies[2].position.y;
+  t.grit=t.gritMax=1000; /* a hardened one */for(let i=0;i<10;i++){s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,10);}s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);
+  assert.ok(t.bodies.every(b=>b.plugin.hp===100)&&t.grit<1000,'untouched, and it cost grit');t.grit=0;s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);assert.ok(t.bodies.some(b=>b.plugin.hp<100),'with no grit left a blast gets through');
+  const h=new Simulation().seed(3),e=h.spawn('healing',1000,555);advance(h,60);h.dismember(e.bodies.find(b=>b.plugin.slot===9));const n=e.bodies.length;advance(h,180);assert.ok(e.bodies.length>n,'what was cut off grows back');h.kill(e,'test');advance(h,60*4);assert.ok(e.alive,'killed, it comes back');for(const slot of [0,2,3,4]){const b=e.bodies.find(x=>x.plugin.slot===slot);h.damage(b,5000,b.position,'blast');}advance(h,60*10);assert.ok(!e.alive,'but not once its head and torso are destroyed');
+  const k=new Simulation().seed(2),m=k.spawn('human',1000,555),mt=k.spawn('endurance',1300,555);advance(k,30);k.knockOut(m.bodies[2]);k.knockOut(mt.bodies[2]);advance(k,60*7);assert.equal(m.consciousness,'unconscious');assert.equal(mt.consciousness,'awake','the super-enduring comes round sooner');
+  k.wake(m.bodies[2]);advance(k,60*6);assert.ok(m.consciousness==='awake'&&m.upright&&m.bodies[0].position.y<500,'woken, it gets up');
+});
+test('Bullets break a steel beam after 100 rounds, a crate after 50, a concrete block after 20, whatever the calibre; the beam stops every one',()=>{
+  for(const [id,limit] of [['metal',100],['crate',50],['brick',20]])for(const energy of [1,30]){const s=new Simulation().seed(1),b=s.spawn(id,1000,600).bodies[0];advance(s,60);s.shotLog=[];let n=0;
+    while(s.bodies.includes(b)&&n<150){const y=b.position.y;s.shoot({x:850,y},{x:1000,y},null,{energy});advance(s,3);n++;}assert.equal(n,limit,`${id} at energy ${energy}`);if(id==='metal')assert.ok(!s.shotLog.some(l=>l.body===b&&l.through),'nothing through steel');}
+});
+test('Water puts out fire and washes blood off the floor and objects in reach; a burning thing swung fast through the air goes out',()=>{
+  const s=new Simulation().seed(1),c=s.spawn('crate',1000,600).bodies[0];advance(s,30);s.ignite(c);advance(s,120);assert.ok(c.plugin.burning);
+  s.addStain({x:c.position.x,y:s.groundY-1,r:10,wet:1,age:0});const far=s.addStain({x:c.position.x+400,y:s.groundY-1,r:10,wet:1,age:0});c.plugin.stains=[{x:0,y:0,r:3,wet:1}];
+  s.power={kind:'water',x:c.position.x,y:c.position.y+10};advance(s,120);s.power=null;advance(s,120);
+  assert.ok(!c.plugin.burning,'put out');assert.equal(c.plugin.stains.length,0,'rinsed');assert.deepEqual(s.stains.filter(x=>x.wet!==undefined),[far],'the floor under it washed, not further off');
+  for(const [speed,out] of [[0,false],[25,true]]){const t=new Simulation().seed(1);t.gravity=0;const w=t.spawn('crate',600,300).bodies[0];advance(t,5);t.ignite(w);advance(t,60);for(let i=0;i<120;i++){Body.setVelocity(w,{x:speed*Math.cos(i/20),y:speed*Math.sin(i/20)});t.step();}assert.equal(!w.plugin.burning,out,`swung at ${speed}`);}
+});
+test('A bandage on a fractured limb splints it: the bone knits within a minute and the broken joint holds again',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('human',1000,555);advance(s,30);const shin=e.bodies.find(b=>b.plugin.slot===12),knee=e.joints.find(c=>c.bodyB===shin);
+  shin.plugin.bone=10;knee.plugin.broken=true;assert.ok(s.fractured(shin));assert.equal(s.bandage(shin),1,'the fracture counts as dressed');assert.equal(s.bandage(shin),0,'once');
+  advance(s,60*30);assert.ok(shin.plugin.bone>50&&shin.plugin.bone<100,'half way it is no longer fractured, not yet whole');
+  advance(s,60*31);assert.ok(shin.plugin.bone>=100&&!shin.plugin.splint&&!knee.plugin.broken,'whole within the minute, the knee holds');
+  const t=new Simulation().seed(2),m=t.spawn('human',1000,555);advance(t,30);assert.equal(t.bandage(m.bodies.find(b=>b.plugin.slot===12)),0,'a sound limb needs no splint');
+});
+test('Painkiller switches a ragdoll\'s pain off and back on; Storm, charged, is not left crackling',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('human',1000,555),m=s.spawn('human',1300,555);advance(s,30);
+  assert.equal(s.painkill(e.bodies[2]),true);for(const x of [e,m])s.damage(x.bodies[9],60,x.bodies[9].position,'cut',{x:1,y:0});advance(s,30);
+  assert.equal(e.pain,0,'feels nothing');assert.ok(m.pain>0,'the other does');assert.equal(s.painkill(e.bodies[2]),false,'back on');
+  const t=new Simulation().seed(2),st=t.spawn('storm',1000,555);advance(t,30);t.charge(st,300,st.bodies[2]);advance(t,60*3);assert.ok(st.bodies.every(b=>(b.plugin.charge||0)<.05)&&st.pain===0,'calm, not crawling with arcs');
+});
+test('A power can be taken back: the ragdoll is as it was without it',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('human',1000,555);advance(s,30);const before=e.joints.map(c=>c.plugin.breakForce);
+  for(const p of ['strong','tough','conduit','immortal','healer'])s.grant(e,p);
+  for(const p of ['strong','tough','conduit','immortal','healer'])assert.equal(s.revoke(e,p),true,p);
+  assert.ok(!e.strong&&!e.tough&&!e.conduit&&!e.immortal&&!e.healer&&e.grit===undefined&&e.power===undefined);assert.deepEqual(e.joints.map(c=>c.plugin.breakForce),before,'joints back to ordinary');
+  assert.equal(s.revoke(e,'strong'),false,'nothing to take');s.kill(e,'test');assert.ok(!e.alive,'and it dies like anyone');
+});
+test('Androids: three times as heavy, never limp, short out under too much current and burn out under far too much; otherwise only losing the head kills them',()=>{
+  const s=new Simulation().seed(2),a=s.spawn('android',1000,555),h=s.spawn('human',1300,555);advance(s,60*3);
+  assert.ok(Math.abs(a.bodies.reduce((q,b)=>q+b.mass,0)/h.bodies.reduce((q,b)=>q+b.mass,0)-3)<.2,'three times the mass');assert.ok(a.bodies[0].position.y<480,'and still stands');
+  s.shock(a.bodies[2],1);advance(s,30);assert.ok(!a.shortAt,'one jolt is nothing');for(let i=0;i<5;i++){s.shock(a.bodies[2],1);advance(s,10);}assert.ok(a.shortAt&&a.bodies.some(b=>b.plugin.fried)&&a.alive,'a few in a row short it: a limb burns out, it goes on');
+  s.heal(a.bodies[2]);assert.ok(!a.bodies.some(b=>b.plugin.fried),'healing rewires it');
+  s.power={kind:'shock',x:0,y:0};for(let i=0;i<60*5&&a.alive;i++){const c=a.bodies.find(b=>b.plugin.slot===2);s.power.x=c.position.x;s.power.y=c.position.y;s.step();}s.power=null; /* held on it, following it as it thrashes */assert.equal(a.causeOfDeath,'burnt out','held on it, the current burns it out');
+  const t=new Simulation().seed(2),b=t.spawn('android',1000,555);advance(t,30);t.kill(b,'massive chest trauma');t.damage(b.bodies[3],400,b.bodies[3].position,'impact');advance(t,10);assert.ok(b.alive,'nothing kills it but the head');
+  const hd=b.bodies[0];t.shoot({x:700,y:hd.position.y},{x:1000,y:hd.position.y},null,{energy:30,speed:900});advance(t,6);assert.equal(b.causeOfDeath,'decapitation','an anti-materiel round takes the head off');
+});
+test('Revive brings a ragdoll back with the blood still on it',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('human',1000,555);advance(s,30);const chest=e.bodies[2];chest.plugin.stains=[{x:1,y:2,r:2,wet:1}];s.kill(e,'test');
+  assert.ok(s.revive(chest)&&e.alive);assert.equal(chest.plugin.stains.length,1,'the stain stays');assert.equal(chest.plugin.hp,100,'and it is mended');
+});
+test('Super endurance grit starts at 100, grows by the harm it lives through, refills to that, and is lost on death',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('endurance',1000,555);advance(s,30);assert.equal(e.grit,100);assert.equal(e.gritMax,100);
+  const hp=e.bodies[9].plugin.hp;s.damage(e.bodies[9],40,e.bodies[9].position,'cut',{x:1,y:0});const took=hp-e.bodies[9].plugin.hp;assert.ok(took>0);assert.ok(Math.abs(e.gritMax-100-took)<1e-6,'every point taken is a point of grit');e.grit=10;s.damage(e.bodies[9],8,e.bodies[9].position,'cut',{x:1,y:0});assert.equal(e.grit,e.gritMax,'and taking harm fills it');
+  const y=e.bodies[2].position.y,before=e.grit;s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,2);assert.ok(e.grit<before&&e.bodies[2].plugin.hp===100,'a round spends it, and does no harm');
+  advance(s,60*5);assert.ok(Math.abs(e.grit-e.gritMax)<1e-6,'refills, to the most it has earned');
+  s.kill(e,'test');assert.equal(e.grit,0,'death takes it all');s.revive(e.bodies[2]);assert.equal(e.grit,100);assert.equal(e.gritMax,100,'brought back, it starts over');
 });

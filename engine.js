@@ -173,7 +173,7 @@
   const TOPPLE_TIME=.9,TOPPLE_PUSH=.0012;
   const CRUSH_PULL=90,CRUSH_HOLD=.35,CRUSH_RATE=60,CRUSH_MORE=1.2; // px the cursor must push past the surface (scaled by joint strength) - most of a metre, never by accident; seconds it must be held; damage per second at that push, and more per px beyond it
   // Powers: fire, cold, shock and heal exist in the world at the cursor while the button is held (see powers()). Radii are px at Power radius 1x; rates are per second at the centre, before the material's share.
-  const POWER_R={fire:40,cold:40,heal:40,shock:120},POWER_SCAN=1/30,FIRE_RATE=860,COLD_RATE=170,/* flesh is frozen solid after about a second: long enough to watch it stiffen */COLD_FLOOR=-80,COLD_QUENCH=1500,FROZEN=-30,FROZEN_BLOW=22,COLD_KO=2.5,POWER_MARKS=36,FROST_LIFE=10;
+  const POWER_R={fire:40,cold:40,heal:40,shock:120,water:50},WATER_QUENCH=2500,WATER_WASH=6,WATER_DROPS=130,PUDDLE_LIFE=14,PUDDLE_MAX=34,SOAK_TIME=8,FAN_SPEED=12,FAN_COOL=60,POWER_SCAN=1/30,FIRE_RATE=860,COLD_RATE=170,/* flesh is frozen solid after about a second: long enough to watch it stiffen */COLD_FLOOR=-80,COLD_QUENCH=1500,FROZEN=-30,FROZEN_BLOW=22,COLD_KO=2.5,POWER_MARKS=36,FROST_LIFE=10;
   const BLAST_HUG=4,BLAST_HUG_K=1.5,BLAST_STRIP=4.5,BATTERY_EVERY=1.2,GEN_EVERY=.18,GEN_DOSE=100,GEN_CHAR=.26,GEN_BURN=55,GEN_CHAIN=140; // a generator is a hundred batteries: it fires six times a second, and what it catches is bone in a second
  // seconds between a battery's discharges: a short burst, then quiet. (The shock power is the continuous one.)
   const SHOCK_CHAIN_HELD=12,SHOCK_TICK=.08,SHOCK_DOSE=.44,SHOCK_ARCS=3,HEAL_HP=35,HEAL_WOUND=7,HEAL_BLOOD=14,HEAL_PAIN=45,HEAL_ORGAN=18,HEAL_TEMP=260; // a held shock is one tick every 80 ms at the dose that matches the old one-a-click rate; heal: hp and bone per second, px of wound closed per second, and the body's blood, pain and organs
@@ -186,10 +186,10 @@
   const LIMB_CHAIN={'upper arm':1,forearm:1,hand:1,thigh:1,shin:1,foot:1},TOURNIQUET_NUMB=20,TOURNIQUET_DEAD=120,STITCH_REACH=10,STITCH_EASE=10; // the parts a tourniquet can go on; seconds for what is below it to go numb, and to die; how near the wound a lodged round must be to come out with it; the pain a stitch takes away
   // Feedback. Bullet holes kept per object and in all; the life, number and sizes of ejected casings; the seconds a destroyed heart still beats on; rigor mortis over RIGOR_TIME seconds after death.
   const PUMP_DELAY=.35,HOLES_PER_BODY=8,HOLE_MAX=160,CASING_MAX=30,CASING_LIFE=9,CASING={pistol:[4,1.8,'#c9a24a'],rifle:[6.5,1.8,'#c9a24a'],shell:[7,3.4,'#b8342c']},HEART_LAST=[3,5],RIGOR_TIME=60,RIGOR_STIFF=.9;
-  const CHARGE_MAX=1000,IMMORTAL_FLOOR=30,IMMORTAL_REGEN=1.5,STORM_SAVE=10; // the immortal never has less blood than this, and gets blood and organs back at this much a second
+  const SPLINT_TIME=60,SHORT_AT=4,SHORT_GAP=1.2,SHORT_TIME=2.5,BURNOUT_AT=11,ANDROID_HARM=.4,ANDROID_RUIN=15,STRONG_MUSCLE=2,STRONG_JOINT=3,STRONG_HIT=40,STRONG_SHOVE=1.4,STRONG_SHOVE_MAX=30,STRIKERS=new Set([6,7,9,10,12,13,15,16]),TOUGH_HARM=.25,HEAL_RATE=18,HEAL_REGROW=1.5,GRIT_BASE=100,GRIT_REGEN=40,GRIT_ROUND=25,TOUGH_STUN=.3,TOUGH_WAKE=4,KO_TIME=20,WAKE_TIME=30,CHARGE_MAX=1000,IMMORTAL_FLOOR=30,IMMORTAL_REGEN=1.5,STORM_SAVE=10; // the immortal never has less blood than this, and gets blood and organs back at this much a second
   const CONDUIT_GAIN=40,CONDUIT_BOLT=60,SURGE_AT=25,ZAP_COST=8,ZAP_EVERY=.12,ZAP_REACH=520,ZAP_DOSE=1.8,ZAP_BURN=30,ZAP_KICK=7,LASER_COST=.5,LASER_REACH=1400,LASER_BURN=2.2,LASER_CHAR=.6,MELT_NEAR=7,MELT_SKIN=12,MELT_MUSCLE=30,MELT_BONE=50,MELT_THROUGH=90,CONDUIT_HEAL=.05; // Storm: charge from one ordinary shock and from a bolt; a jump that makes him surge; what a throw of lightning costs and does; what a moment of the eye beams costs and does
   const HOLD_LEVER=16,REPIERCE_WAIT=.5;
-  const BANDAGE_HOLDS=30,BLAST_SEVER=.8,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
+  const BANDAGE_HOLDS=30,BLAST_SEVER=.8,BLAST_THROW=24,SUIT_THROW=.3,SHOCK_REVIVE=.6,HEART_RESTART=.9,SHOCK_SAFE=3,SHOCK_ARREST=.3,SHOCK_FADE=5,LIGHTNING_DOSE=3,WAKE_PAIN=60; // a blow this hard tears a dressing off; chance a blast at its very centre takes a given limb off; chance a shock restarts a dead human, and one whose heart is what failed; shocks taken in quick succession that are safe, the chance per shock beyond that of cardiac arrest, seconds for one shock's worth to fade, what a lightning strike counts as, and the pain a shock cuts through to wake someone
   // Blood loss. Only the head, the neck and the upper torso are fatal spots: a wound anywhere else closes once it has cost its share (on the 0-100 scale; death is below 25), so one bullet there - entry, exit and a nicked gut together - can never kill. Several can.
   // How deep a blow of each kind goes for its force: 0 marks nothing open (a bruise, a burn), 1 the skin only, 2 through the skin to muscle, 3 through the muscle to bone.
   const WOUND_DEPTH={impact:a=>a>45?2:0,cut:a=>a<12?1:a<30?2:3,stab:a=>a<6?1:a<22?2:3,bullet:a=>a<14?1:a<30?2:3,exit:a=>a<10?2:3,blast:a=>a<20?1:a<55?2:3,burn:()=>0,shock:()=>0},BRUISE_RISE=6,SHOCK_MARK=10; // current only marks the parts it goes through hard
@@ -252,13 +252,13 @@
       if(this.bodies.length>=this.settings.maxObjects)return null;
       if(kind==='human'||kind==='android')return this.ragdoll(kind,x,y,flip);
       const d=defs[kind];if(!d)return null;
-      if(d.ragdoll){const e=this.ragdoll(d.ragdoll,x,y,flip);if(e){for(const b of e.bodies)b.plugin.wear=Items.dress(d.outfit,b.plugin.part);if(d.immortal)e.immortal=true;if(d.conduit){e.conduit=true;e.power=0;}}return e;} /* a dressed human is a human: only the paint differs, so nothing in the simulation can tell them apart */
+      if(d.ragdoll){const e=this.ragdoll(d.ragdoll,x,y,flip);if(e){for(const b of e.bodies)b.plugin.wear=Items.dress(d.outfit,b.plugin.part);if(d.power)this.grant(e,d.power);}return e;} /* a dressed human is a human: only the paint differs, so nothing in the simulation can tell them apart */
       const opts={density:d.density??d.mat.density,friction:d.mat.friction,frictionStatic:.9,restitution:d.restitution??d.mat.restitution,frictionAir:.006*this.settings.airDrag,isStatic:!!d.static,label:kind};
       const b=d.r?Bodies.circle(x,y,d.r,opts):Bodies.rectangle(x,y,d.w,d.h,{...opts,chamfer:{radius:d.sharp?1:3}});
       this.meta(b,kind,flip?{flip:true}:{});return this.entity(kind,[b]);
     }
     makePart(kind,slot,x,y,angle,group,flip) {
-      const robot=kind==='android',[name,,,w,h]=ANATOMY[slot],density=(robot?.0036:.0018)*(name==='head'?1.15:name==='chest'?1.3:1);
+      const robot=kind==='android',[name,,,w,h]=ANATOMY[slot],density=(robot?.0054:.0018)*(name==='head'?1.15:name==='chest'?1.3:1);
       const b=Bodies.rectangle(x,y,w,h,{collisionFilter:{group},density,friction:.8,frictionStatic:1,restitution:0,frictionAir:.015*this.settings.airDrag,chamfer:{radius:Math.min(w/2-1,name==='head'?8:4)}});
       this.meta(b,kind,{part:name,slot,w,h,r:0,material:robot?'metal':'flesh',hp:robot?230:100,maxHp:robot?230:100,wounds:[],severed:[],bleed:0,bone:100,...(flip?{flip:true}:{})});
       if(name==='neck')Body.setInertia(b,b.inertia*NECK_INERTIA); /* as a bare 11 x 14 box the neck has a twenty-seventh of the head's inertia: pinned between the head and the chest it is whipped right round by any sideways tug. It is given the inertia of the column of muscle it stands for */
@@ -290,7 +290,7 @@
       // The piece's own joints (and anything pinned or held in it) carry anchors in world orientation; Matter only turns those on its next solve, and until then they would wrench the piece about. Turn them now.
       for(const c of this.joints){if(c.bodyA&&piece.has(c.bodyA)){Vector.rotate(c.pointA,turn,c.pointA);c.angleA=c.bodyA.angle;}if(c.bodyB&&piece.has(c.bodyB)){Vector.rotate(c.pointB,turn,c.pointB);c.angleB=c.bodyB.angle;}}
       const to=anchor(stump),move=Vector.sub(to,anchor(limb));for(const x of piece){Body.translate(x,move);Body.setVelocity(x,stump.velocity);Body.setAngularVelocity(x,0);}
-      const joint=this.makeJoint(owner.kind,flip,a,b,t);if(a.plugin.kind==='android'||b.plugin.kind==='android')joint.plugin.breakForce=45;Composite.add(this.world,joint);links.push(joint);
+      const joint=this.makeJoint(owner.kind,flip,a,b,t);if(owner.strong)joint.plugin.breakForce*=STRONG_JOINT;if(a.plugin.kind==='android'||b.plugin.kind==='android')joint.plugin.breakForce=45;Composite.add(this.world,joint);links.push(joint);
       for(const x of [a,b]){x.plugin.severed=[];this.bleedOf(x.plugin);}
       for(const x of piece){const old=this.getEntity(x);if(old&&old!==owner){old.bodies=old.bodies.filter(o=>o!==x);old.joints=old.joints.filter(c=>c.bodyA!==x&&c.bodyB!==x);}if(!owner.bodies.includes(x))owner.bodies.push(x);
         x.plugin.entityId=owner.id;x.collisionFilter.group=stump.collisionFilter.group;if(flip)x.plugin.flip=true;else delete x.plugin.flip;main.add(x);}
@@ -351,7 +351,7 @@
       if(this.regrowing.some(job=>whole.has(job.root)))return missing;
       // The clicked body keeps the identity only if it still has its chest; a regrowing stray limb becomes a new person, and what is left behind is remains.
       const remains=e.bodies.filter(b=>!whole.has(b)),keeps=[...whole].some(b=>b.plugin.slot===2),owner=keeps?e:{id:this.nextId++,kind:e.kind,bodies:[],joints:[],upright:true,blood:100,alive:true};
-      if(!keeps){this.entities.push(owner);e.bodies=remains;e.joints=e.joints.filter(c=>remains.includes(c.bodyA));e.alive=false;e.upright=false;}
+      if(!keeps){for(const k of ['immortal','conduit','strong','tough','healer','power','grit','gritMax'])if(e[k]!==undefined){owner[k]=e[k];delete e[k];} /* powers go with the person, not the remains */this.entities.push(owner);e.bodies=remains;e.joints=e.joints.filter(c=>remains.includes(c.bodyA));e.alive=false;e.upright=false;}
       else if(remains.length){const left={id:this.nextId++,kind:e.kind,bodies:remains,joints:e.joints.filter(c=>remains.includes(c.bodyA)),upright:false,blood:0,alive:false};this.entities.push(left);for(const b of remains)b.plugin.entityId=left.id;}
       owner.bodies=[...whole].sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints=links.filter(c=>whole.has(c.bodyA));for(const b of owner.bodies)b.plugin.entityId=owner.id;
       this.entities=this.entities.filter(x=>x.bodies.length);for(const b of whole){b.plugin.severed=[];this.bleedOf(b.plugin);}
@@ -365,7 +365,7 @@
         const need=have===pa?pb:pa,flip=!!stump.plugin.flip,offset=Vector.rotate({x:(ANATOMY[need][1]-ANATOMY[have][1])*(flip?-1:1),y:ANATOMY[need][2]-ANATOMY[have][2]},stump.angle);
         const part=this.makePart(owner.kind,need,stump.position.x+offset.x,stump.position.y+offset.y,stump.angle,stump.collisionFilter.group,flip);Body.setVelocity(part,stump.velocity);
         part.plugin.grow=0;part.plugin.growFrom={...(need===pb?t[3]:t[2])};part.plugin.entityId=owner.id;slots.set(need,part);
-        const joint=this.makeJoint(owner.kind,flip,slots.get(pa),slots.get(pb),t);Composite.add(this.world,[part,joint]);
+        const joint=this.makeJoint(owner.kind,flip,slots.get(pa),slots.get(pb),t);if(owner.strong)joint.plugin.breakForce*=STRONG_JOINT;Composite.add(this.world,[part,joint]);
         owner.bodies.push(part);owner.bodies.sort((a,b)=>a.plugin.slot-b.plugin.slot);owner.joints.push(joint);owner.restTime=0;owner.effort=Math.min(owner.effort??1,.4);
         const at=Vector.add(stump.position,Vector.rotate(need===pb?t[2]:t[3],stump.angle));this.burst(at.x,at.y,14,'#9fe0c0',3.5);this.burst(part.position.x,part.position.y,8,owner.kind==='human'?'#c9545a':'#9fd8e8',2.5);
         this.flashes.push({x:part.position.x,y:part.position.y,radius:34,life:.4,maxLife:.4,grow:true});this.onEffect('grow',.25+.5*(1-whole.size/ANATOMY.length));return true;}
@@ -395,12 +395,12 @@
     }
     // Enough is put back to live on: blood, air, a working heart and brain, clotted wounds. Nothing is mended.
     partialRevive(body) {
-      const e=this.getEntity(body);if(!e||e.blood===undefined)return false;delete e.heartStops;e.alive=true;e.upright=true;e.paralysed=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=1.5;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;e.pin=null;e.shockT=0;e.twitchAt=[];
+      const e=this.getEntity(body);if(!e||e.blood===undefined)return false;if(e.tough){e.grit=GRIT_BASE;e.gritMax=GRIT_BASE;} /* back, the grit starts over */delete e.heartStops;e.alive=true;e.upright=true;e.paralysed=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=1.5;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;e.pin=null;e.shockT=0;e.twitchAt=[];
       e.blood=Math.max(e.blood,65);e.oxygen=100;e.pain=Math.min(e.pain||0,45);if(e.organs){e.organs.heart=Math.max(e.organs.heart,60);e.organs.brain=Math.max(e.organs.brain,75);e.organs.lungs=Math.max(e.organs.lungs,65);}
       for(const b of e.bodies){const p=b.plugin;p.burning=false;p.internal=0;for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=(w.bleed||0)*.2;this.bleedOf(p);if(p.part==='head'||p.part==='chest')p.hp=Math.max(p.hp,40);}
       this.burst(body.position.x,body.position.y,12,'#9fcbb1',2);return true;
     }
-    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;delete e.heartStops;this.heal(body);e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
+    revive(body){const e=this.getEntity(body);if(!e||e.blood===undefined)return false;if(e.tough&&!e.alive){e.grit=GRIT_BASE;e.gritMax=GRIT_BASE;}delete e.heartStops;const stains=e.bodies.map(b=>b.plugin.stains);this.heal(body);e.bodies.forEach((b,i)=>{if(stains[i])b.plugin.stains=stains[i];}); /* back on its feet, but the blood stays on it */e.alive=true;e.upright=true;e.paralysed=false;for(const c of e.joints)c.plugin.broken=false;delete e.causeOfDeath;e.consciousness='awake';e.stun=0;e.stunNext=0;e.stunIn=0;e.stagN=0;e.flinch=0;e.effort=0;e.restTime=0;return true;}
     // After death a nerve may still fire once or twice: a limb jerks at one joint, equal and opposite on its two parts, and that is the end of it. Then the body is left to come to rest.
     twitch(e,seconds) {
       e.deadFor+=seconds;if(e.deadFor<e.twitchAt[0])return;e.twitchAt.shift();if(e.twitchAt[0]>TWITCH_WINDOW)e.twitchAt.length=0;
@@ -422,11 +422,13 @@
         e.burningParts=burning;e.breath=((e.breath||0)+seconds*(12+e.pain*.28+(e.rise||e.stagN>0?8:0))/60)%1;
         // The heart races with pain and with the first of the blood loss, then fails as the blood runs out. pulse is 0..1, the beat that arterial wounds spurt on.
         e.heartRate=clamp(70+(e.pain||0)*.7+Math.min(45,(100-e.blood)*1.1)-Math.max(0,50-e.blood)*2.6,20,190);e.beat=((e.beat||0)+seconds*e.heartRate/60)%1;e.pulse=Math.max(0,Math.sin(e.beat*Math.PI*2));
+        if(e.painless)e.pain=0; /* the Painkiller tool: it feels nothing, so pain neither slows it, shakes it nor knocks it out */
         const brain=organs?organs.brain:100;
         if(e.immortal||(e.conduit&&e.power>0)){e.blood=Math.min(100,Math.max(e.blood,IMMORTAL_FLOOR)+seconds*IMMORTAL_REGEN);e.oxygen=Math.min(100,(e.oxygen??100)+seconds*20);if(e.organs)for(const k in e.organs)e.organs[k]=Math.min(100,e.organs[k]+seconds*IMMORTAL_REGEN);delete e.heartStops;} /* it cannot die, so it cannot stay down for ever either: blood, air and organs come back, slowly. The wounds stay */
+        if(e.healer)this.superHeal(e,seconds);
         if(e.heartStops!==undefined&&this.time>=e.heartStops){this.kill(e,'heart destroyed');return;}
         if(e.blood<25)this.kill(e,e.bleedingInside?'internal bleeding':'blood loss');else if(e.oxygen<=0)this.kill(e,'suffocation');
-        else e.consciousness=(e.blood<40||e.oxygen<30||brain<35||e.pain>=97||e.frozenT>COLD_KO)&&!e.conduit?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70||e.conduit&&(e.blood<40||e.oxygen<30||brain<35||e.pain>=97)?'dazed':'awake'; /* Storm never faints, charged or empty: at worst he is dazed */
+        else e.consciousness=this.time<(e.koUntil??0)?'unconscious':this.time<(e.wakeUntil??0)?'awake':(e.tough?e.blood<30||e.oxygen<20||brain<20:e.blood<40||e.oxygen<30||brain<35||e.pain>=97||e.frozenT>COLD_KO)&&!e.conduit?'unconscious':e.blood<55||e.oxygen<55||brain<70||e.pain>70||e.conduit&&(e.blood<40||e.oxygen<30||brain<35||e.pain>=97)?'dazed':'awake'; /* Storm never faints, charged or empty: at worst he is dazed */
         if(!e.alive)return;
       }else e.consciousness='awake';
       // Brain damage setting: the worse the head, the more often it blacks out.
@@ -446,7 +448,7 @@
     chestOf(e){return e.bodies.find(b=>b.plugin.slot===2);}
     // A part's muscles work as well as the part does: nothing through a fracture, less as it is destroyed.
     chill(b){const h=b.plugin.heat;return h<0?Math.min(1,h/FROZEN):0;} /* 0 at freezing, 1 frozen solid */
-    strengthOf(b){const p=b.plugin;return this.fractured(b)||p.necrotic?0:clamp((p.hp??100)/50,.2,1)*(1-.85*this.chill(b))*(1-(p.numb||0));} /* cold muscle is weak muscle, a numb one weaker, a dead one nothing */
+    strengthOf(b){const p=b.plugin;return this.fractured(b)||p.necrotic||p.fried?0:clamp((p.hp??100)/50,.2,1)*(1-.85*this.chill(b))*(1-(p.numb||0));} /* cold muscle is weak muscle, a numb one weaker, a dead one nothing */
     // What a blow does to a living body before anything else: a flinch always, a stagger if it was standing, and only then, for the big ones, the knockdown.
     react(e,body,amount,direction,stun) {
       const slot=body.plugin.slot??2,dir=direction&&Math.abs(direction.x)>1e-6?Math.sign(direction.x):(e.bodies[2]&&body.position.x>e.bodies[2].position.x?-1:1);
@@ -505,7 +507,7 @@
       e.lockPose=null;
       if(human&&set.breathing){const b=Math.sin(e.breath*Math.PI*2),weak=e.blood<45,depth=(.035+pain*.05)*(weak?.45:1)*(weak?1+.5*Math.sin(this.time*5.3):1);A[5]+=b*depth;A[8]-=b*depth;A[3]+=b*depth*.35;A[1]-=b*depth*.3;} // shoulders rise and fall, the spine with them
       if(!human){ // androids feel nothing, but damaged actuators glitch: jerky, more so the worse off it is
-        let hp=0;for(const b of e.bodies)hp+=b.plugin.hp/b.plugin.maxHp;hp/=e.bodies.length||1;if(hp<.6){const g=(.6-hp)*1.2*k;for(let i=5;i<17;i++)A[i]+=(Math.floor(this.time*9+i*3.7)%5-2)*.06*g*((i*7+Math.floor(this.time*9))%3);if(random()<seconds*g*4){const b=e.bodies[(random()*e.bodies.length)|0];this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}}return;}
+        let hp=0;for(const b of e.bodies)hp+=b.plugin.hp/b.plugin.maxHp;hp/=e.bodies.length||1;if(hp<.6||e.shortT>0){const g=Math.max(hp<.6?(.6-hp)*1.2*k:0,e.shortT>0?1.6*k:0); /* shorted, it spasms whatever shape it is in */for(let i=5;i<17;i++)A[i]+=(Math.floor(this.time*9+i*3.7)%5-2)*.06*g*((i*7+Math.floor(this.time*9))%3);if(random()<seconds*g*4){const b=e.bodies[(random()*e.bodies.length)|0];this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}}return;}
       if(set.awareness){const head=e.bodies.find(b=>b.plugin.slot===0);e.awareT=(e.awareT||0)+seconds;if(head&&e.awareT>=AWARE_EVERY){e.awareT=0;this.aware(e,chest,head,this.bodiesNow);}
         if(head&&e.lookX!=null){const d=Math.sign(e.lookX-head.position.x);e.gaze=d;A[0]+=d*.11*k*flip;A[1]+=d*.04*k*flip;}else e.gaze=0;                       // head and eyes to the threat
         if(e.heatDir){A[3]+=-e.heatDir*.2*flip;for(const [sh,side] of [[5,-1],[8,1]])if(side===-e.heatDir||true){A[sh]+=-e.heatDir*.55*flip;P[sh]=2.5;}e.leanAway=e.heatDir*14;}else e.leanAway=0; // shrink from heat: torso and arms bend away, and the balance point shifts
@@ -619,7 +621,7 @@
       const aiming=this.aimSet;aiming.clear();if(rung==='stand'&&!down)for(const hand of e.bodies){if(hand.plugin.part!=='hand')continue;const item=this.held(hand);if(!item||!defs[item.plugin.kind]?.firearm)continue;for(const b of e.bodies)if(b.plugin.slot>=hand.plugin.slot-2&&b.plugin.slot<=hand.plugin.slot)aiming.add(b);
         if(free(item))item.torque+=(clamp(wrap(-item.angle),-.6,.6)*AIM_STRENGTH*1.5-item.angularVelocity*.004)*item.inertia*e.effort;}
       // Which pose, and how strong the body is as a whole. Pain, blood loss and a dazed head all take strength away; so does being off the ground.
-      const vigour=e.effort*tone*(human?clamp((e.blood-20)/45,.4,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.85:1):1);
+      const vigour=(e.strong?STRONG_MUSCLE:1)*e.effort*tone*(human?clamp((e.blood-20)/45,.4,1)*(1-Math.min(.5,(e.pain||0)/200))*(e.consciousness==='dazed'?.85:1):1);
       const crawlDir=this.pose(e,base,aiming,chest,down,seconds,rung);
       if(e.idle&&(rung==='crawl'||rung==='drag'))return; // nothing to flee and nowhere to go: it lies there with every muscle off, so it can come to rest and sleep like any other body on the floor
       // Joints: a PD muscle across each one, pulling the two parts toward the pose's relative angle. Equal and opposite, so muscles alone can never turn or move the body as a whole.
@@ -709,22 +711,24 @@
       const w=this.power,R=this.powerRadius(w.kind),near=this.powerNear,ks=this.powerK,sparks=this.settings.particles==='Off'?0:this.settings.particles==='Low'?.5:1;
       if(this.time-this.powerAt>=POWER_SCAN-1e-6||this.powerFor!==w){ /* four substeps are a thirtieth of a second, give or take a rounding error */this.powerAt=this.time;this.powerFor=w;near.length=0;ks.length=0;w.px??=w.x;w.py??=w.y;const sx=w.x-w.px,sy=w.y-w.py,len2=sx*sx+sy*sy;
         for(const b of bodies){let t=len2?((b.position.x-w.px)*sx+(b.position.y-w.py)*sy)/len2:0;t=t<0?0:t>1?1:t;const qx=w.px+sx*t,qy=w.py+sy*t,q=b.bounds,dx=Math.max(q.min.x-qx,0,qx-q.max.x),dy=Math.max(q.min.y-qy,0,qy-q.max.y),d=Math.hypot(dx,dy);if(d<R){near.push(b);ks.push(1-d/R);}}
-        w.px=w.x;w.py=w.y;if(w.kind==='fire'||w.kind==='cold')this.powerMark(w,R);}
+        w.px=w.x;w.py=w.y;if(w.kind==='fire'||w.kind==='cold')this.powerMark(w,R);if(w.kind==='water')this.powerWash(w,R);}
       if(w.kind==='shock'){w.tick=(w.tick||0)+seconds;if(w.tick>=SHOCK_TICK){w.tick=0;this.powerShock(w,R);}return;}
       const set=this.settings,rain=set.rain?.45:1;this.powerStamp++;
       for(let i=0;i<near.length;i++){const b=near[i],p=b.plugin,k=ks[i],mat=matOf(p);
         if(w.kind==='fire'){p.heat=Math.min(700,p.heat+FIRE_RATE*k*mat.thermal*rain*seconds);if(p.part&&p.material==='flesh'&&p.heat>45)p.char=Math.max(p.char||0,Math.min(.1,(p.char||0)+k*seconds*.25));} /* a pass singes; holding it takes the body past burnAt and the ordinary rule lights it */
+        else if(w.kind==='water'){if(p.heat>set.ambient)p.heat=Math.max(set.ambient,p.heat-WATER_QUENCH*k*seconds);if(p.burning&&p.heat<150){p.burning=false;delete p.fuse;this.onEffect('sizzle',.3);}if(p.stains?.length&&random()<WATER_WASH*k*seconds)p.stains.shift();} /* it cools what is hot, puts out what burns, and rinses the blood off, a stain at a time */
         else if(w.kind==='cold'){p.heat=Math.max(COLD_FLOOR,p.heat-COLD_RATE*k*mat.thermal*seconds);if(p.burning){p.heat-=COLD_QUENCH*k*seconds;if(p.heat<150){p.burning=false;delete p.fuse;}}}
         else this.powerHeal(b,p,k,seconds);}
       // what the power throws off: sparks and smoke, mist and ice, rising plus signs
       if(sparks){if(w.kind==='fire'){if(random()<seconds*16*sparks)this.emit(w.x+rnd(-8,8),w.y+rnd(-6,6),rnd(-1,1),rnd(-3,-1.2),rnd(.4,1),1,'#ffcf7a',rnd(.8,1.8),'ember');if(random()<seconds*6*sparks)this.emit(w.x+rnd(-6,6),w.y-rnd(18,34),rnd(-.3,.3),rnd(-1.4,-.7),rnd(1,1.8),1.8,'#1c1d1f',rnd(5,9),'smoke');}
+        else if(w.kind==='water'){for(let n=Math.floor(WATER_DROPS*sparks*seconds+random());n>0;n--){const a=rnd(-.28,.28)*(random()<.2?2:1),v=rnd(4.5,7.5);this.emit(w.x+rnd(-3,3),w.y+rnd(-2,2),Math.sin(a)*v+(w.x-(w.lx??w.x))*.3,Math.cos(a)*v,3,3,'',rnd(1.1,2),'water');}w.lx=w.x;if(random()<seconds*6*sparks)this.emit(w.x+rnd(-R,R)*.4,w.y+rnd(0,R)*.5,rnd(-.3,.3),rnd(.1,.4),rnd(.8,1.4),1.4,'#cfe9ff',rnd(5,9),'mist');} /* a shower from the cursor, spreading as it falls, carried a little by the sweep */
         else if(w.kind==='cold'){if(random()<seconds*22*sparks)this.emit(w.x+rnd(-R,R)*.5,w.y+rnd(-R,R)*.3,rnd(-.4,.4),rnd(.2,.9),rnd(.8,1.6),1.6,'#cfe9ff',rnd(6,12),'mist');if(random()<seconds*12*sparks)this.emit(w.x+rnd(-R,R)*.5,w.y+rnd(-R,R)*.4,rnd(-.5,.5),rnd(.3,1.2),rnd(.6,1.3),1.3,'#eaf6ff',rnd(1,2.2),'ice');}
         else if(random()<seconds*12*sparks)this.emit(w.x+rnd(-R,R)*.6,w.y+rnd(-R,R)*.4,rnd(-.2,.2),rnd(-1.1,-.5),rnd(.7,1.3),1.3,'#8ff0a8',rnd(2.2,3.6),'plus');}
     }
     // Heal, per second, on one body in the field: tissue and bone come back, the oldest wound closes (it shrinks until it is gone), bleeding stops, bruises and burns fade, fire goes out and the temperature comes back to the room's.
     // The ragdoll it belongs to - if it is alive - gets its blood, oxygen, organs and ease from pain back, once per step however many of its parts are in the field. It never revives, regrows, reattaches or mends a broken joint.
     powerHeal(b,p,k,seconds) {
-      const amb=this.settings.ambient;if(p.necrotic)return; /* a limb a tourniquet killed is past healing */p.hp=Math.min(p.maxHp,p.hp+HEAL_HP*k*seconds);p.burning=false;delete p.fuse;p.heat+=clamp(amb-p.heat,-HEAL_TEMP*k*seconds,HEAL_TEMP*k*seconds);if(p.char>0&&!p.debris)p.char=Math.max(0,p.char-.5*k*seconds);
+      const amb=this.settings.ambient;if(p.necrotic)return; /* a limb a tourniquet killed is past healing */delete p.fried; /* rewired */p.hp=Math.min(p.maxHp,p.hp+HEAL_HP*k*seconds);p.burning=false;delete p.fuse;p.heat+=clamp(amb-p.heat,-HEAL_TEMP*k*seconds,HEAL_TEMP*k*seconds);if(p.char>0&&!p.debris)p.char=Math.max(0,p.char-.5*k*seconds);
       if(!p.part)return;p.bone=Math.min(100,(p.bone??100)+HEAL_HP*k*seconds);if(p.bone>50)delete p.brokeAt;if(p.bruise>0)p.bruise=Math.max(0,p.bruise-.6*k*seconds);if(p.internal>0)p.internal=Math.max(0,p.internal-1.5*k*seconds);if(p.leak>0)p.leak=Math.max(0,p.leak-k*seconds);
       let open=false;if(p.wounds)for(let i=0;i<p.wounds.length;i++){const wd=p.wounds[i];if(wd.bleed>0){wd.bleed=0;open=true;}}if(p.severed)for(let i=0;i<p.severed.length;i++)if(p.severed[i].bleed>0){p.severed[i].bleed=0;open=true;}if(open||p.bleed>0)this.bleedOf(p);
       if(p.wounds&&p.wounds.length){const wd=p.wounds[0];wd.radius-=HEAL_WOUND*k*seconds;wd.run=0;if(wd.depth>1&&wd.radius<2.6)wd.depth=1;if(wd.radius<1.2)p.wounds.shift();} /* oldest first, one at a time */
@@ -740,6 +744,14 @@
         if(best<0)break;pick[slot]=best;w.n++;}
       for(let j=0;j<w.n;j++){const b=near[pick[j]],q=b.bounds,hit=w.hits[j];hit.x=clamp(w.x,q.min.x,q.max.x);hit.y=clamp(w.y,q.min.y,q.max.y);this.shock(b,SHOCK_DOSE*(.35+.65*ks[pick[j]])/w.n,hit,true);} /* the current is shared between the arcs */
     }
+    // A drop of water landing: a few droplets thrown back up, and on the floor a puddle that spreads as more lands and dries in PUDDLE_LIFE s, washing away the blood it spreads over.
+    splash(x,y,vx,floor){if(this.settings.particles!=='Off')for(let k=0,n=random()<.5?1:2;k<n;k++)this.emit(x,y-1,vx*.2+rnd(-1.2,1.2),-rnd(.8,2.2),rnd(.2,.4),.4,'',rnd(.6,1.1),'splash');
+      if(!floor)return;if(this.settings.decals){let pd=null;for(const st of this.stains)if(st.puddle&&Math.abs(st.x-x)<st.r+14){pd=st;break;}if(pd){pd.r=Math.min(PUDDLE_MAX,Math.max(pd.r,Math.abs(x-pd.x)+3),Math.sqrt(pd.r*pd.r+3));pd.x+=(x-pd.x)*.03;pd.age=Math.min(pd.age,1);}else this.addStain({x,y,r:7,puddle:true,age:0});}
+      const reach=10;this.stains=this.stains.filter(st=>{if(st.wet===undefined||st.wall)return true;const sx=st.smear?clamp(x,Math.min(st.from,st.to),Math.max(st.from,st.to)):st.x;return Math.abs(sx-x)>reach+st.r*.5;});}
+    // A drop of water on a body: it is wet for SOAK_TIME s (drawn glossy), a fire on it is quenched, and now and then a stain is rinsed off.
+    soak(b){const p=b.plugin;p.soakedAt=this.time;if(p.heat>this.settings.ambient)p.heat=Math.max(this.settings.ambient,p.heat-60);if(p.burning&&p.heat<150){p.burning=false;delete p.fuse;this.onEffect('sizzle',.2);}if(p.stains?.length&&random()<.08)p.stains.shift();}
+    // Water washes the blood and oil off the floor and the walls where it reaches (not scorches or bullet holes), and puts out any flames in the air there.
+    powerWash(w,R){this.stains=this.stains.filter(st=>{if(st.wet===undefined)return true;const x=st.smear?clamp(w.x,Math.min(st.from,st.to),Math.max(st.from,st.to)):st.x;return Math.hypot(x-w.x,st.y-w.y)>R+st.r;});for(const q of this.particles)if((q.type==='ember'||q.type==='fire')&&Math.hypot(q.x-w.x,q.y-w.y)<R)q.life=0;}
     // Where a fire or a cold field reaches the floor or a wall it leaves its mark: a scorch that darkens and widens the longer the fire stays, a patch of frost that fades when the cold has gone. Marks near each other are one mark; their number is capped.
     powerMark(w,R) {
       if(!this.settings.decals)return;const fire=w.kind==='fire',floor=w.y+R>this.groundY&&w.y<this.groundY+R,wall=w.x-R<0?1:w.x+R>this.width?this.width-1:0;if(!floor&&!wall)return;
@@ -814,11 +826,13 @@
     // direction (optional, world space) is where the blow was travelling; cuts and sprays follow it.
     damage(body,amount,point=body?.position,type='impact',direction=null) {
       if(!body||body.plugin.boundary||!Number.isFinite(amount)||amount<=0)return;
-      const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
+      const p=body.plugin,set=this.settings,gone=p.hp<=0,profile=PROFILES[type]||PROFILES.impact;if(p.part)amount*=(this.getEntity(body)?.tough?TOUGH_HARM:1)*(p.kind==='android'&&type!=='shock'?ANDROID_HARM:1)*set.fragility*(p.material==='flesh'&&p.heat<0?1+Math.min(2,-p.heat/50):1); // frozen flesh is brittle
       // A bullet wounds. It never takes a limb off, and it only destroys the part it hits when the muzzle is pressed against it (a contact shot, within CONTACT_SHOT px).
       const gunshot=type==='bullet'||type==='exit',spared=!!p.part&&(this.falling||gunshot&&!this.contactShot); /* a round never takes a part to nothing by its damage alone: whether it destroys or severs a part is decided by the energy it spends there (see ruin()); a fall never does */
-      p.hp=spared?Math.max(Math.min(p.hp,this.falling?FALL_FLOOR:BULLET_FLOOR),p.hp-amount):Math.max(0,p.hp-amount);
-      const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts:0;if(e)e.restTime=0;
+      const hpWas=p.hp;
+      p.hp=spared?Math.max(Math.min(p.hp,this.falling?FALL_FLOOR:BULLET_FLOOR),p.hp-amount):gunshot&&defs[p.kind]?.shotLimit?Math.max(Math.min(p.hp,p.maxHp-1),p.hp-amount):Math.max(0,p.hp-amount); /* what counts rounds (shotHit) takes a dent from them and no more: only the count breaks it */
+      if(p.part&&hpWas>p.hp){const en=this.getEntity(body);if(en?.tough&&en.alive){const g=hpWas-p.hp;en.gritMax=(en.gritMax??GRIT_BASE)+g;en.grit=en.gritMax;}} /* super endurance: what it lives through hardens it - every point of harm taken adds a point to the most grit it can hold, and fills it to that. Dying takes it all (kill()) */
+      const e=this.getEntity(body),hurts=(STUN_PART[p.part]??1)*profile.stun,stun=e&&amount>KNOCKDOWN&&set.stunScale>0&&hurts?clamp(amount/20,.6,5)*set.stunScale*hurts*(e.tough?TOUGH_STUN:1):0;if(e)e.restTime=0;
       if(e&&e.alive&&p.part)this.react(e,body,amount,direction,stun);else if(e&&stun)e.stun=Math.max(e.stun||0,stun);
       if(e){e.hitTime=this.time;e.hitHard=amount;}
       if(e&&e.kind==='human'&&e.alive){const hurt=amount*profile.pain*(PAIN_PART[p.part]??1)*set.painSensitivity;e.pain=Math.min(100,(e.pain||0)+hurt);
@@ -878,7 +892,7 @@
     // Thirty times a second: blood dries, old stains fade out, and the count is capped.
     stainsTick(dt,bodies) {
       const stains=this.stains,life=this.settings.stainLifetime;let keep=0;
-      for(let i=0;i<stains.length;i++){const st=stains[i];if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);st.age=(st.age||0)+dt;if(st.frost?st.age<FROST_LIFE:(!life||st.age<life))stains[keep++]=st;}stains.length=keep;
+      for(let i=0;i<stains.length;i++){const st=stains[i];if(st.wet>0)st.wet=Math.max(0,st.wet-dt/DRY_TIME);st.age=(st.age||0)+dt;if(st.puddle?st.age<PUDDLE_LIFE:st.frost?st.age<FROST_LIFE:(!life||st.age<life))stains[keep++]=st;}stains.length=keep;
       // A pool that has spread over smaller floor stains swallows them.
       for(let i=0;i<stains.length;i++){const big=stains[i];if(big.r<10||big.wall||big.scorch||big.frost||big.smear||big.gone)continue;for(let j=0;j<stains.length;j++){const st=stains[j];if(j===i||st.gone||st.wall||st.scorch||st.frost||st.smear||st.r>=big.r||!!st.oil!==!!big.oil||Math.abs(st.x-big.x)>big.r-st.r*.5)continue;st.gone=true;big.wet=Math.max(big.wet,st.wet);}}
       keep=0;for(let i=0;i<stains.length;i++)if(!stains[i].gone)stains[keep++]=stains[i];stains.length=keep;
@@ -896,7 +910,29 @@
       old.hits=(old.hits||1)+1;old.bleed=Math.min(4,(old.bleed||0)+w.bleed*.7);old.wet=w.t;old.artery=old.artery||w.artery;if(w.type==='impact')old.t=Math.min(old.t,w.t-BRUISE_RISE);return old; /* a fresh blow on a bruise does not send it back to invisible */
     }
     bleedOf(p){let sum=0;for(const w of p.wounds||[])sum+=w.bleed||0;for(const w of p.severed||[])sum+=w.bleed||0;return p.bleed=Math.min(7,sum);}
-    kill(e,cause){if(!e.alive||e.immortal)return; /* the immortal takes the harm and not the death */if(e.conduit&&e.power>0){e.power=Math.max(0,e.power-STORM_SAVE);return;} /* nor does Storm while charged: each death he cheats costs him charge */e.diedAt=this.time;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
+    // A power, granted to a human ragdoll (see Items: Powers). Returns whether it took.
+    grant(e,power){if(!e||e.kind!=='human'||!['immortal','conduit','strong','tough','healer'].includes(power))return false;e[power]=true;if(power==='conduit')e.power??=0;if(power==='tough'){e.grit??=GRIT_BASE;e.gritMax??=GRIT_BASE;}if(power==='strong')for(const c of e.joints)if(c.plugin.joint)c.plugin.breakForce=29*STRONG_JOINT;return true;}
+    // Wake: up at once, whatever put it down, and kept up for WAKE_TIME by the jolt (unless knocked out again). Knock out: out cold for KO_TIME, under a third of it for the super-enduring.
+    // Takes a power back: the ragdoll is as it was without it. Returns whether it had it.
+    revoke(e,power){if(!e?.[power])return false;delete e[power];if(power==='conduit'){delete e.power;e.laserAt=-9;}if(power==='tough'){delete e.grit;delete e.gritMax;}if(power==='strong')for(const c of e.joints)if(c.plugin.joint)c.plugin.breakForce/=STRONG_JOINT;return true;}
+    // Too much current in an android: a short circuit. One or two limbs burn out (fried: no strength until healed), sparks and smoke pour out of them, and for SHORT_TIME s everything else spasms.
+    shortCircuit(e){e.shortAt=this.time;e.shortT=SHORT_TIME;e.volts=Math.max(e.volts||0,SHORT_AT)*.7;const limbs=e.bodies.filter(b=>b.plugin.slot>=5&&!b.plugin.fried);
+      for(let n=Math.min(limbs.length,random()<.5?1:2);n>0;n--){const b=limbs.splice((random()*limbs.length)|0,1)[0],p=b.plugin;p.fried=true;p.hp=Math.max(1,p.hp-30);p.char=Math.max(p.char||0,.35);this.burst(b.position.x,b.position.y,14,'#ffe7a0',7);this.burst(b.position.x,b.position.y,5,'#2a2c2e',2,'smoke');}
+      const c=this.chestOf(e);if(c){this.flashes.push({x:c.position.x,y:c.position.y,radius:70,life:.35,maxLife:.35,surge:true});this.burst(c.position.x,c.position.y,20,'#cfeeff',8);}for(const b of e.bodies)if(!b.isStatic)Body.setVelocity(b,{x:b.velocity.x+rnd(-4,4),y:b.velocity.y-rnd(1,4)});this.onEffect('electric',1);this.onEffect('sizzle',.6);}
+    // Painkiller: switches a human's pain off, or back on. Returns the new state, or null for something that feels no pain.
+    painkill(body){const e=this.getEntity(body);if(!e||e.kind!=='human')return null;e.painless=!e.painless;if(e.painless){e.pain=0;e.tremor=null;}return e.painless;}
+    wake(body){const e=this.getEntity(body);if(!e||!e.alive||e.kind!=='human')return false;e.stun=0;e.stunNext=0;e.stunIn=0;e.koUntil=0;e.wakeUntil=this.time+WAKE_TIME;e.pain=Math.min(e.pain||0,WAKE_PAIN);e.consciousness='awake';if(!e.paralysed)e.upright=true;e.effort=0;e.stagN=0;e.flinch=0;e.pin=null;e.restTime=0;return true;} /* and it gets up, as from a partial revive */
+    knockOut(body){const e=this.getEntity(body);if(!e||!e.alive||e.kind!=='human')return false;const t=KO_TIME*(e.tough?TOUGH_STUN:1);e.koUntil=this.time+t;e.wakeUntil=0;e.stun=Math.max(e.stun||0,t);e.consciousness='unconscious';e.restTime=0;return true;}
+    // Super endurance: bullets, blasts and falls are soaked up by a pool of grit and do nothing while it lasts. The pool starts at GRIT_BASE and grows by every point of harm the body takes and lives through (see damage()); it refills to that at GRIT_REGEN a second; death empties it, and anyone brought back starts again from GRIT_BASE. True if this one was soaked up; a blow bigger than what is left drains it and gets through.
+    endure(e,cost){if(!e?.tough||!(cost>0))return false;e.grit??=GRIT_BASE;if(e.grit>=cost){e.grit-=cost;return true;}e.grit=0;return false;}
+    // Super healing, every step, alive or dead: blood, air, organs, flesh and bone come back at HEAL_RATE a second, wounds close one after another and stop bleeding, fractures knit, and what was cut off starts growing back every HEAL_REGROW s.
+    superHeal(e,seconds){const core=[2,3,4,0].map(slot=>e.bodies.find(b=>b.plugin.slot===slot&&b.plugin.hp>0)).find(Boolean);if(!core&&!e.alive)return; /* head, chest, abdomen and pelvis all destroyed: nothing left to heal from */const k=seconds*HEAL_RATE;e.blood=Math.min(100,e.blood+k*.5);e.oxygen=Math.min(100,(e.oxygen??100)+k);e.pain=Math.max(0,(e.pain||0)-k*.5);if(e.organs)for(const o in e.organs)e.organs[o]=Math.min(100,e.organs[o]+k*.5);delete e.heartStops;
+      for(const b of e.bodies){const p=b.plugin;if(p.grow!==undefined)continue;p.hp=Math.min(p.maxHp,p.hp+k);p.bone=Math.min(100,(p.bone??100)+k);if(p.bone>FRACTURE)delete p.brokeAt;p.char=Math.max(0,(p.char||0)-seconds*.1);p.bruise=Math.max(0,(p.bruise||0)-seconds*.3);p.internal=Math.max(0,(p.internal||0)-seconds);
+        for(const w of p.wounds||[])w.bleed=Math.max(0,(w.bleed||0)-seconds);for(const w of p.severed||[])w.bleed=Math.max(0,(w.bleed||0)-seconds);if(p.wounds?.length&&random()<seconds*2)p.wounds.shift();if(p.lodged?.length&&random()<seconds*.5)p.lodged.shift();this.bleedOf(p);} /* the body pushes the rounds back out */
+      for(const c of e.joints)if(c.plugin.broken&&(c.bodyA.plugin.bone??100)>80&&(c.bodyB.plugin.bone??100)>80)c.plugin.broken=false;
+      if(this.time-(e.regrewAt??-9)>HEAL_REGROW){e.regrewAt=this.time;if(core)this.regenerate(core);} /* from the chest if it has one, else what is left of the trunk, else the head: with none of them it is gone for good */
+      if(!e.alive&&!this.regrowing.some(job=>e.bodies.includes(job.root))){const head=e.bodies.find(b=>b.plugin.slot===0),chest=e.bodies.find(b=>b.plugin.slot===2);if(head&&chest&&head.plugin.hp>=50&&chest.plugin.hp>=50&&e.blood>=60)this.partialRevive(chest);}} /* dead, it mends first and then comes back, once it has a head and a chest again */
+    kill(e,cause){if(!e.alive||e.immortal)return;if(e.kind==='android'){const head=e.bodies.find(b=>b.plugin.slot===0);if(head&&head.plugin.hp>0&&!['decapitation','head destroyed','burnt out'].includes(cause))return;} /* an android goes on through anything but the loss of its head, or burning out */ /* the immortal takes the harm and not the death */if(e.conduit&&e.power>0){e.power=Math.max(0,e.power-STORM_SAVE);return;} /* nor does Storm while charged: each death he cheats costs him charge */if(e.tough){e.grit=0;e.gritMax=GRIT_BASE;}e.diedAt=this.time;e.heartRate=0;e.pulse=0;e.alive=false;e.upright=false;e.causeOfDeath=cause;e.consciousness='dead';e.restTime=0;e.deadFor=0;{const chest=e.bodies.find(b=>b.plugin.slot===2);if(chest&&!chest.isStatic){const way=random()<.5?-1:1;Body.setAngularVelocity(chest,chest.angularVelocity+way*rnd(.015,.04));Body.setVelocity(chest,{x:chest.velocity.x+way*rnd(.3,.9),y:chest.velocity.y});}} // a body going limp never goes straight down: it buckles to one side
       e.twitchAt=e.kind==='human'&&!/destroyed/.test(cause)?[rnd(.4,1.4),random()<.6?rnd(1.8,TWITCH_WINDOW):99]:[];}
     // Where on the part the blow landed decides whether it found an organ. Blunt force only reaches the brain (concussion).
     organHit(e,body,lx,ly,amount,type) {
@@ -927,6 +963,8 @@
       this.gibs(x,y,flesh?'flesh':p.material,body.velocity,1);
       this.onEffect('break',.4);
     }
+    // An object with a shotLimit (Items) is broken by that many rounds, whatever they are, instead of by their damage. Rounds still dent it (damage), but only the count breaks it: see damage().
+    shotHit(body,shot){const p=body.plugin,limit=defs[p.kind]?.shotLimit;if(!limit||(shot.counted??=new Set()).has(body))return false;shot.counted.add(body); /* a round that comes back off a wall is still one round */p.shots=(p.shots||0)+1;if(p.shots>=limit&&!p.breaking){p.breaking=true;this.damageQueue.push(()=>this.shatter(body));}return true;}
     shatter(body) {
       if(!this.bodies.includes(body))return;
       const p=body.plugin,{x,y}=body.position,vel={...body.velocity};this.removeBody(body);
@@ -939,9 +977,12 @@
     explode(x,y,radius=175,power=1) {
       power*=this.settings.explosionPower;
       this.flashes.push({x,y,radius,life:.6,maxLife:.6});this.burst(x,y,70,'#eabb69',13*power);this.burst(x,y,30,'#cd7050',9*power,'smoke');
+      const thrown=new Set();for(const e of this.entities){if(!e.bodies.some(b=>b.plugin.part))continue;let near=null,d=Infinity;for(const b of e.bodies){const q=Math.hypot(b.position.x-x,b.position.y-y);if(q<d){d=q;near=b;}}if(d>radius)continue;const f=1-d/radius,c=this.chestOf(e)||near,dx=c.position.x-x,dy=c.position.y-y,l=Math.hypot(dx,dy)||1,suit=c.plugin.armour?.suit,v=f*BLAST_THROW*power*(suit&&suit.hp>0?SUIT_THROW:1);thrown.add(e.id); /* a full suit of plate is heavy: shoved, not thrown */e.restTime=0;
+        for(const b of e.bodies)if(!b.isStatic){const add=Math.max(0,v-(b.velocity.x*dx+b.velocity.y*dy)/l);Body.setVelocity(b,{x:b.velocity.x+dx/l*add,y:b.velocity.y+dy/l*add-6*f*power});}} /* a person in range is thrown as one body, away from the blast, by how close the nearest part of them was - not each part on its own. Brought up to the blast's speed, not added to it: blasts one after another do not stack into a cannon */
+      const endured=new Set();for(const e of this.entities){if(!e.tough)continue;let worst=0;for(const b of e.bodies){const d=Math.hypot(b.position.x-x,b.position.y-y);if(d<radius)worst=Math.max(worst,(1-d/radius)**2*170*power);}if(this.endure(e,worst))endured.add(e.id);} /* super endurance takes the whole blast once, not part by part: it is thrown, not hurt */
       for(const b of this.bodies){const dx=b.position.x-x,dy=b.position.y-y,d=Math.hypot(dx,dy);if(d>radius)continue;const f=1-d/radius;
-        if(!b.isStatic){Body.setVelocity(b,{x:b.velocity.x+(dx/(d||1))*f*20*power,y:b.velocity.y+(dy/(d||1))*f*20*power-3*f});Body.setAngularVelocity(b,rnd(-.2,.2)*f);}
-        const cover=b.plugin.armour?.suit,plate=cover&&cover.hp>0?ARMOURS[cover.id]:null,shield=plate?.blast?plate.blast*(d>BLAST_HUG?1:BLAST_HUG_K):1; /* the suit eats a blast, and is eaten by it: about five strip it, and the next one is his */
+        if(!b.isStatic&&!thrown.has(b.plugin.entityId)){Body.setVelocity(b,{x:b.velocity.x+(dx/(d||1))*f*20*power,y:b.velocity.y+(dy/(d||1))*f*20*power-3*f});Body.setAngularVelocity(b,rnd(-.2,.2)*f);}
+        if(endured.has(b.plugin.entityId))continue;const cover=b.plugin.armour?.suit,plate=cover&&cover.hp>0?ARMOURS[cover.id]:null,shield=plate?.blast?plate.blast*(d>BLAST_HUG?1:BLAST_HUG_K):1; /* the suit eats a blast, and is eaten by it: about five strip it, and the next one is his */
         if(shield<1)cover.hp=Math.max(0,cover.hp-f*f*(plate.durability/BLAST_STRIP));
         this.damage(b,f*f*170*power*shield,b.position,'blast',{x:dx,y:dy});b.plugin.heat+=f*180*(shield<1?.5:1);
         if(b.plugin.part&&b.plugin.slot!==2&&random()<f*f*BLAST_SEVER*power*shield/this.settings.jointStrength)this.dismember(b); /* a blast may take a limb off, likelier the closer it is, never for certain */
@@ -983,7 +1024,7 @@
         let rate=flesh?FLESH_E*(1+FLESH_FAST*shot.E)*(shot.tumbling?TUMBLE_RATE:1):RESIST_K*matOf(p).absorb**4;const exitAt=at(far>near?far:near+chord/SHOT_REACH);
         // A hard surface - metal, stone, the floor and the walls - turns a round that meets it at a glancing angle, or that has too little left to go in: it bounces off with most of its energy (less, the more squarely it hit), a spark and a whine.
         if(hard){const cosI=Math.abs(dx*h.nx+dy*h.ny),glancing=cosI<RICO_GLANCE,need=p.boundary?Infinity:chord*rate;
-          if(shot.bounces<RICO_MAX&&(glancing||need>=shot.E)){shot.bounces++;shot.E*=glancing?RICO_KEEP:RICO_KEEP*(1-cosI*.65);if(!p.boundary)this.damage(body,shot.E*bd*.05,stop,'bullet',direction);
+          if(shot.bounces<RICO_MAX&&(glancing||need>=shot.E&&!defs[p.kind]?.stopsRounds)){ /* square on, a steel beam takes the round instead of throwing it back */shot.bounces++;shot.E*=glancing?RICO_KEEP:RICO_KEEP*(1-cosI*.65);if(!p.boundary){this.shotHit(body,shot);this.damage(body,shot.E*bd*.05,stop,'bullet',direction);}
             const r=2*(dx*h.nx+dy*h.ny);shot.dx=dx-r*h.nx;shot.dy=dy-r*h.ny;turn(rnd(-RICO_JITTER,RICO_JITTER),near*SHOT_REACH);stop={x:stop.x+h.nx*.6,y:stop.y+h.ny*.6};shot.ignore=null;shot.done=new Set([body]); /* bounced: it can hit anything now, the one who fired it too */
             this.hole(body,stop,false);this.burst(stop.x,stop.y,6,'#ffe7a0',4);this.onEffect('ricochet',.5);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,ricochet:true});break;}
           if(p.boundary){this.hole(body,stop,false);spent=true;shot.E=0;break;}}
@@ -995,6 +1036,7 @@
         const e=this.getEntity(body),human=flesh&&e&&e.kind==='human',glancing=p.part==='head'&&Math.abs(dx*(body.position.y-fy)-dy*(body.position.x-fx))>GLANCE_B*Math.max(p.w,p.h)/2; /* the head is round: a line that passes it well off its centre meets it at a glance */
         // Armour. Whatever covers this part meets the round first: it stops up to its rating (less as it wears: in proportion to what is left of it), and loses durability by the energy it takes. A stopped round is still a blow -
         // a bruise, pain, perhaps a knockdown - but no wound and no blood. A round with more than the rating goes on, weaker by it. A helmet turns a glancing round up to its glance limit.
+        if(human&&e.tough&&e.grit>0){const cost=shot.E*GRIT_ROUND,had=e.grit;if(this.endure(e,cost)){if(!body.isStatic)Body.setVelocity(body,{x:body.velocity.x+dx*Math.min(4,shot.E),y:body.velocity.y+dy*Math.min(4,shot.E)});this.burst(stop.x,stop.y,5,'#ffe7a0',4);this.onEffect('impact',.3);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,endured:true});shot.spent+=shot.E;shot.E=0;spent=true;break;}shot.E*=1-had/cost;} /* super endurance: the round flattens on the skin while there is grit left; past it, the round gets through weaker by what was left */
         const cover=flesh&&p.part&&!this.contactShot?(p.armour?.suit||p.armour?.[ARMOUR_ON[p.part]]):null,armour=cover&&cover.hp>0?ARMOURS[cover.id]:null;
         if(armour){const held=armour.rating*cover.hp/armour.durability;
           if(armour.glance&&glancing&&shot.E<armour.glance){cover.hp=Math.max(0,cover.hp-shot.E*armour.wear*.5);this.blunt(body,shot.E*.3,stop,direction,e,armour);turn((random()<.5?-1:1)*rnd(.3,.6),near*SHOT_REACH);shot.E*=.6;if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,armour:true,glance:true});this.hitArmour(armour,stop,.5,cover.hp/armour.durability);break;}
@@ -1005,7 +1047,7 @@
           if(human&&e.alive){e.stun=Math.max(e.stun||0,CONCUSSION*this.settings.stunScale);if(this.settings.organDamage){e.organs??={brain:100,heart:100,lungs:100,gut:100};e.organs.brain=Math.max(1,e.organs.brain-8);}}
           turn((random()<.5?-1:1)*rnd(.25,.55),near*SHOT_REACH);if(this.shotLog)this.shotLog.push({body,E:shot.E+use,use,through:false,glance:true});break;}
         if(flesh&&chord<GRAZE_CHORD&&!this.contactShot){const use=Math.min(shot.E,chord*rate);shot.E-=use;shot.spent+=use;this.woundRadius=null;this.damage(body,use*bd,stop,'bullet',direction);turn((random()<.5?-1:1)*GRAZE_TURN,near*SHOT_REACH);break;} /* it clipped the edge: a furrow in the skin, and the round glances off on a new line */
-        const broken=flesh&&p.part?this.fractured(body):false,need=chord*rate+bone,use=Math.min(shot.E,need),through=shot.E>need;if(this.shotLog)this.shotLog.push({body,E:shot.E,use,through}); /* tests only: what the round had going in, and spent */shot.E-=use;shot.spent+=use;const left=shot.E;
+        const broken=flesh&&p.part?this.fractured(body):false,need=defs[p.kind]?.stopsRounds?Infinity:chord*rate+bone,use=Math.min(shot.E,need),through=shot.E>need; /* a steel beam stops every round */if(this.shotLog)this.shotLog.push({body,E:shot.E,use,through}); /* tests only: what the round had going in, and spent */shot.E-=use;shot.spent+=use;const left=shot.E;
         Body.applyForce(body,stop,Vector.mult(direction,.018*this.settings.bulletForce*shot.force*Math.min(3,use+left*.2)));
         const end=through?exitAt:{x:stop.x+dx*chord*(use/need||0),y:stop.y+dy*chord*(use/need||0)};
         if(flesh&&p.part&&human&&e.alive&&this.settings.organDamage&&ORGANS[p.part]){const la=a,lb=toLocal(end);for(const zone of ORGANS[p.part])if(crosses(la.x,la.y,lb.x,lb.y,zone.slice(1,5))){this.organ(e,body,zone[0],zone[5],use*bd);if(this.shotLog)this.shotLog.push({organ:zone[0]});}} /* every organ the wound channel crosses, not just the one at the entry - before the wound itself, which may kill */
@@ -1017,7 +1059,7 @@
             if(shot.ms>=CAVITY_MS){p.bruise=Math.min(1,(p.bruise||0)+use*CAVITY_BRUISE);if(human)p.internal=(p.internal||0)+use*CAVITY_BLEED;} /* a fast round's shock wave bruises and tears round its path without widening the hole: rifles, not pistols */
             if(human&&e.alive&&p.slot===0&&through&&use>=SKULL_KILL){this.spray(exitAt,direction,30,7,1);this.kill(e,'shot through the head');}
             if(!through&&!this.contactShot){const la=a;p.lodged??=[];if(p.lodged.length<LODGED_MAX)p.lodged.push({x:lb.x*p.w/2,y:lb.y*p.h/2,calibre:shot.diameter,ex:la.x*p.w/2,ey:la.y*p.h/2}); /* where it stopped, and the wound it went in by */}}} /* it stopped inside: the round stays there */
-        else{this.damage(body,use*bd,stop,'bullet',direction);this.hole(body,stop,false);if(through)this.hole(body,exitAt,true);if(matOf(p).absorb>=.9)this.onEffect('metal',.4);}
+        else{this.shotHit(body,shot);this.damage(body,use*bd,stop,'bullet',direction);if(p.part&&p.kind==='android'&&use+left>=ANDROID_RUIN&&!p.ruined){p.ruined=true;this.burst(stop.x,stop.y,18,'#ffe7a0',8);this.damageQueue.push(()=>this.dismember(body));} /* only an anti-materiel round spends enough in the casing to take a part off it - the head included */this.hole(body,stop,false);if(through)this.hole(body,exitAt,true);if(matOf(p).absorb>=.9)this.onEffect('metal',.4);}
         if(flesh&&p.part&&!this.contactShot)this.ruin(body,use,shot,stop,exitAt,direction,bone>0,through,left,broken);
         if(!through){spent=true;stop=end;break;}
         if(shot.ms>=CAVITY_MS)shot.tumbling=true; /* through something, a rifle round begins to tumble */
@@ -1093,6 +1135,7 @@
       // What current does to a person depends on the state they are in, and on how much of it they have had.
       // Out cold: it brings them round - the stun goes, and pain that had put them under is cut through (it cannot wake someone who is out for want of blood, air or brain).
       // Too much: every shock adds to a dose that fades over seconds; past SHOCK_SAFE each further shock may stop the heart. Dead: it may start it again - nearly always if the heart is what failed, less often otherwise. It mends nothing.
+      for(const e of new Set([...touched].map(b=>this.getEntity(b))))if(e?.kind==='android'&&e.alive){e.volts=(e.volts||0)+dose;if(e.volts>BURNOUT_AT){this.shortCircuit(e);this.kill(e,'burnt out');}else if(e.volts>SHORT_AT&&this.time-(e.shortAt??-9)>SHORT_GAP)this.shortCircuit(e);} /* an android takes current as load: too much, too fast, and it shorts; far too much and it burns out */
       for(const e of new Set([...touched].map(b=>this.getEntity(b)))){if(!e||e.kind!=='human'||e.conduit||!e.bodies.some(b=>b.plugin.slot===0)||!e.bodies.some(b=>b.plugin.slot===2))continue;
         if(e.alive&&!deadBefore.has(e)){e.shockDose=(e.shockDose||0)+dose*this.insulation(this.chestOf(e)||e.bodies[0]);e.stun=0;e.stunNext=0;e.stunIn=0;if(e.pain>WAKE_PAIN)e.pain=WAKE_PAIN;e.restTime=0;
           if(e.shockDose>SHOCK_SAFE&&random()<(e.shockDose-SHOCK_SAFE)*SHOCK_ARREST)this.kill(e,'cardiac arrest');continue;}
@@ -1121,8 +1164,9 @@
     // Stop bleeding: every wound, stump and internal bleed on the whole ragdoll closes. Nothing is mended: the wounds, the pain and the lost blood stay.
     stopBleeding(body){const e=this.getEntity(body),parts=e?e.bodies:body?[body]:[];let n=0;for(const b of parts){const p=b.plugin;if(p.material!=='flesh')continue;for(const w of [...(p.wounds||[]),...(p.severed||[])])if(w.bleed>0){w.bleed=0;w.fresh=0;n++;}if(p.internal>0){p.internal=0;n++;}this.bleedOf(p);}return n;}
     // Bandage: one part. Its open wounds and stumps are dressed - sealed, so a knock does not reopen them - and the dressing shows. A hard enough hit on the dressing tears it off (see damage).
-    bandage(body){const p=body?.plugin;if(!p||p.material!=='flesh'||!p.part)return 0;let n=0;for(const w of [...(p.wounds||[]),...(p.severed||[])]){if(w.sealed||w.type==='impact'||w.type==='burn')continue;w.sealed=true;w.bleed=0;w.fresh=0;n++;}this.bleedOf(p);return n;}
-    heal(body){const e=this.getEntity(body);if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b||b.plugin.necrotic)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;delete b.plugin.brokeAt;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
+    // A bandage on a fractured limb is a splint: the bone knits back to whole, evenly, within SPLINT_TIME s, and the joints broken with it hold again.
+    bandage(body){const p=body?.plugin;if(!p||p.material!=='flesh'||!p.part)return 0;let n=0;if(this.fractured(body)&&!p.splint){p.splint={rate:(100-(p.bone??100))/SPLINT_TIME};n++;}for(const w of [...(p.wounds||[]),...(p.severed||[])]){if(w.sealed||w.type==='impact'||w.type==='burn')continue;w.sealed=true;w.bleed=0;w.fresh=0;n++;}this.bleedOf(p);return n;}
+    heal(body){const e=this.getEntity(body);for(const b of e?e.bodies:[body])if(b)delete b.plugin.fried;if(e)e.volts=0;if(e&&e.blood!==undefined){e.blood=100;e.pain=0;e.oxygen=100;delete e.organs;e.hurtScore=0;e.clutching=0;e.shockT=0;e.tremor=null;}for(const b of e?e.bodies:[body]){if(!b||b.plugin.necrotic)continue;b.plugin.hp=b.plugin.maxHp;b.plugin.heat=this.settings.ambient;b.plugin.burning=false;b.plugin.char=0;b.plugin.charge=0;b.plugin.bleed=0;b.plugin.bone=100;delete b.plugin.brokeAt;b.plugin.wounds=[];b.plugin.internal=0;b.plugin.bruise=0;b.plugin.stains=[];b.plugin.leak=0;for(const w of b.plugin.severed||[])w.bleed=0;delete b.plugin.fuse;}this.burst(body.position.x,body.position.y,15,'#9fcbb1',2);}
     activate(body,held=false) {
       if(!body)return '';
       // Activating any part of a ragdoll works whatever it is holding: that hand first, then the near hand, then the far one.
@@ -1199,10 +1243,10 @@
     // What lands decides what breaks. The end of a limb (foot, shin, hand, forearm) takes the load along the bone and passes what it does not absorb up the chain toward the trunk: ankle, shin, knee, pelvis, spine.
     // The head takes it all, from a lower speed. The broad parts of the body spread it over their area. Parts that land after the first, in the same fall, land softer: the body is already stopping.
     // A conscious body that comes down on its feet, upright, rides the landing with its legs and takes well under two thirds. Falls break bones and knock out; they do not tear limbs off (the part is spared at FALL_FLOOR hp).
-    land(part,other,closing,point,toward,normal) {
-      const p=part.plugin,head=p.slot===0,endOn=FALL_AXIAL.has(p.part)&&!!normal&&Math.abs(normal.x*-Math.sin(part.angle)+normal.y*Math.cos(part.angle))>.7, /* a limb that comes down on its end, not along its side */safe=head?FALL_SAFE_HEAD:FALL_SAFE;if(closing<=safe)return;const e=this.getEntity(part),fixed=other.isStatic||!!other.plugin.boundary||(!other.plugin.part&&(other.vx0??0)**2+(other.vy0??0)**2<FALL_REST*FALL_REST&&other.mass>part.mass); /* a crate or a beam lying still is backed by whatever it rests on: landing on it is landing on the floor */
-      let amount=(closing*closing-safe*safe)*FALL_K*rnd(.75,1.25)*(endOn?FALL_AREA[p.part]:FALL_FLAT[p.part]??FALL_AREA[p.part]??1)*(fixed?this.settings.fallDamage:OBJECT_K*other.mass/(other.mass+part.mass+FALL_MASS)*(defs[other.plugin.kind]?.blunt||1));if(!(amount>.5))return;
-      if(e){if(!(this.time-(e.landT??-9)<LAND_WINDOW)){e.landT=this.time;e.landN=0;}amount/=1+(e.landN++);} /* what is struck first takes the brunt: the rest of the body meets something that is already slowing */
+    land(part,other,closing,point,toward,normal,scale=1) {
+      const p=part.plugin,head=p.slot===0,endOn=FALL_AXIAL.has(p.part)&&!!normal&&Math.abs(normal.x*-Math.sin(part.angle)+normal.y*Math.cos(part.angle))>.7, /* a limb that comes down on its end, not along its side */safe=(head?FALL_SAFE_HEAD:FALL_SAFE)/(scale>1?3:1);if(closing<=safe)return; /* a strong ragdoll's blow hurts from a third of the speed */const e=this.getEntity(part),fixed=other.isStatic||!!other.plugin.boundary||(!other.plugin.part&&(other.vx0??0)**2+(other.vy0??0)**2<FALL_REST*FALL_REST&&other.mass>part.mass); /* a crate or a beam lying still is backed by whatever it rests on: landing on it is landing on the floor */
+      let amount=(closing*closing-safe*safe)*FALL_K*rnd(.75,1.25)*(endOn?FALL_AREA[p.part]:FALL_FLAT[p.part]??FALL_AREA[p.part]??1)*(fixed?this.settings.fallDamage:OBJECT_K*other.mass/(other.mass+part.mass+FALL_MASS)*(defs[other.plugin.kind]?.blunt||1))*scale;if(!(amount>.5))return;
+      if(e){if(!(this.time-(e.landT??-9)<LAND_WINDOW)){e.landT=this.time;e.landN=0;}amount/=1+(e.landN++);if(this.endure(e,amount))return;} /* what is struck first takes the brunt: the rest of the body meets something that is already slowing */
       if(e&&fixed){
         const feet=p.slot===13||p.slot===16||p.slot===12||p.slot===15,chest=this.chestOf(e);if(feet&&chest&&this.active(e)&&Math.abs(wrap(chest.angle))<.6)amount*=LAND_ABSORB;
         if(e.alive&&!feet&&amount>6)e.stun=Math.max(e.stun||0,Math.min(6,amount/14)*this.settings.stunScale);} /* coming down on anything but your feet knocks the wind out of you */
@@ -1261,8 +1305,10 @@
       for(const [target,other,sign] of [[a,b,-1],[b,a,1]]){if(target.plugin.boundary)continue;const blade=this.cuts(other,'edge'),od=defs[other.plugin.kind],toward={x:sign*rvx,y:sign*rvy}; /* the way the other thing was coming at the target */
         if(target.plugin.material==='flesh'&&target.plugin.part&&!other.plugin.part&&!other.plugin.boundary&&this.settings.decals&&(target.plugin.bleed>.1&&closing>3||closing>11))this.stain(other,point,rnd(1.2,2.2)); /* what hits a bleeding body, or hits a body hard, comes away marked */
         if(blade){if(speed>7){this.damage(target,Math.min(od.sharp.power??60,(speed-7)*4.5),point,'cut',toward);if(od.sharp.hot)this.sear(target);}}
-        else if(target.plugin.part)this.land(target,other,closing,point,toward,n);
-        else if(closing>OBJECT_SAFE)this.damage(target,(closing-OBJECT_SAFE)*(matOf(target.plugin).brittle?3:1)*.75*(od?.blunt||1),point,'impact',toward);}
+        else{const hitter=other.plugin.part&&STRIKERS.has(other.plugin.slot)?this.getEntity(other):null,strike=hitter?.strong&&hitter.alive&&other.plugin.entityId!==target.plugin.entityId&&closing>3; /* a strong ragdoll's hands and feet hit like hammers and send what they hit flying */
+          const te=strike&&target.plugin.part?this.getEntity(target):null,shoved=te||target.plugin;if(strike&&!target.isStatic&&!(this.time-(shoved.shovedAt??-9)<.25)){shoved.shovedAt=this.time;const l=Math.hypot(toward.x,toward.y)||1,dv=Math.min(STRONG_SHOVE_MAX,closing*STRONG_SHOVE);for(const x of te?te.bodies:[target])if(!x.isStatic)Body.setVelocity(x,{x:x.velocity.x+toward.x/l*dv,y:x.velocity.y+toward.y/l*dv-dv*.25});}
+          if(target.plugin.part)this.land(target,other,closing,point,toward,n,strike?STRONG_HIT:1);
+          else if(closing>OBJECT_SAFE)this.damage(target,(closing-OBJECT_SAFE)*(matOf(target.plugin).brittle?3:1)*.75*(od?.blunt||1)*(strike?STRONG_HIT:1),point,'impact',toward);}}
       if(closing>3)this.onEffect(a.plugin.casing||b.plugin.casing?'clink':'impact',Math.min(.5,closing/30));
       if(a.plugin.burning&&!b.plugin.boundary)b.plugin.heat+=30;if(b.plugin.burning&&!a.plugin.boundary)a.plugin.heat+=30;
     }}
@@ -1272,9 +1318,9 @@
       const bodies=this.bodies;this.bodiesNow=bodies;if(this.pumps?.length)this.pumps=this.pumps.filter(q=>{if(this.time<q.at)return true;if(this.bodies.includes(q.gun))this.eject(q.gun,'shell');return false;});if(this.shots.length)this.shots=this.shots.filter(shot=>!this.fly(shot,shot.speed*seconds));if(random()<seconds*this.settings.lightning/100*.45)this.lightning(rnd(80,this.width-80));
       for(const e of this.entities){if(!['human','android'].includes(e.kind))continue;
         {const k=!e.alive&&this.settings.rigorMortis&&e.diedAt!==undefined?RIGOR_STIFF*clamp((this.time-e.diedAt)/RIGOR_TIME,0,1):0;if(k||e.bodies[0]?.plugin.rigor)for(const b of e.bodies)b.plugin.rigor=k;} /* the dead stiffen over a minute */
-        if(e.alive)this.vitals(e,seconds);else{if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*BLEED_DRAIN*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
-        if(e.conduit&&e.alive){const k=e.power>15?Math.min(.75,.15+e.power/100*.35):0;if(k)for(const b of e.bodies)b.plugin.charge=Math.max(b.plugin.charge||0,k);} /* charged, he crackles all over */
-        if(e.bodies.some(b=>b.plugin.tourniquet||b.plugin.tied))this.limbs(e);e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds);e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
+        if(e.alive)this.vitals(e,seconds);else{if(e.healer)this.superHeal(e,seconds);if(e.twitchAt?.length)this.twitch(e,seconds);if(e.blood>0){let open=0;for(const b of e.bodies)open+=b.plugin.bleed||0;e.blood=Math.max(0,e.blood-open*BLEED_DRAIN*seconds*this.settings.bleedRate);}} /* a corpse, or a loose limb, drains until it is empty; then nothing more comes out */
+        
+        if(e.bodies.some(b=>b.plugin.tourniquet||b.plugin.tied))this.limbs(e);e.shoutT=Math.max(0,(e.shoutT||0)-seconds);e.stun=Math.max(0,(e.stun||0)-seconds*(e.tough?TOUGH_WAKE:1));if(e.kind==='android'){e.stun=0;e.stunNext=0;e.stunIn=0;if(e.volts>0)e.volts=Math.max(0,e.volts-seconds/SHOCK_FADE);if(e.shortT>0)e.shortT-=seconds;} /* an android never blacks out or goes limp: it has no one inside to lose */if(e.tough&&e.alive)e.grit=Math.min(e.gritMax??=GRIT_BASE,(e.grit??GRIT_BASE)+seconds*GRIT_REGEN); /* the super-enduring shake off a knock four times as fast */e.surge=Math.max(0,(e.surge||0)-seconds);if(e.stunIn>0){e.stunIn-=seconds;if(e.stunIn<=0){e.stun=Math.max(e.stun,e.stunNext||0);e.stunNext=0;}}const locked=e.alive&&e.shockT>0&&this.settings.autoBalance; // current locks the muscles whether or not anyone is awake to use them
         if(!this.active(e)&&!locked){if(e.rung==='stand')this.buckle(e);e.effort=0;e.rung='limp';e.rise=null;continue;}if(locked)e.effort=1;
         e.effort=Math.min(e.consciousness==='dazed'?.85:1,(e.effort??1)+seconds/this.settings.getUpTime*(1-Math.min(.7,(e.pain||0)/140))); // strength returns gradually, slower in pain, and never fully while dazed
         {const next=this.capability(e);if(e.rung==='stand'&&(next==='crawl'||next==='drag'))e.toppleT=TOPPLE_TIME;this.balance(e,e.rung=next);}
@@ -1311,7 +1357,9 @@
         if(p.leak>.02){p.leak=Math.max(0,p.leak-seconds*.03);if(random()<p.leak*seconds*4)this.emit(b.position.x+rnd(-3,3),b.position.y+rnd(-3,3),b.velocity.x*.4+rnd(-.8,.8),b.velocity.y*.4+rnd(-.3,.8),3,3,OIL,rnd(1,2.4),'oil');if(random()<p.leak*seconds*1.5)this.burst(b.position.x,b.position.y,3,'#ffe7a0',4);}
         // Blood on a surface runs: while it is wet, a stain lets go of the odd drop.
         if(p.stains?.length&&random()<seconds*.5){const st=p.stains[(random()*p.stains.length)|0];if(st.wet>.45){const cos=Math.cos(b.angle),sin=Math.sin(b.angle);this.emit(b.position.x+st.x*cos-st.y*sin,b.position.y+st.x*sin+st.y*cos,b.velocity.x*.3,b.velocity.y*.3+.4,2.5,2.5,st.oil?OIL:BLOOD,rnd(.7,1.6),st.oil?'oil':'blood');}}
+        if(p.splint){p.bone=Math.min(100,(p.bone??100)+p.splint.rate*seconds);if(p.bone>FRACTURE)delete p.brokeAt;if(p.bone>=100){delete p.splint;for(const c of this.joints)if(c.plugin.broken&&(c.bodyA===b||c.bodyB===b)&&(c.bodyA.plugin.bone??100)>80&&(c.bodyB.plugin.bone??100)>80)c.plugin.broken=false;}} /* a splinted bone knitting */
         if(p.heat>matOf(p).burnAt)p.burning=true;
+        if(p.burning&&b.speed>FAN_SPEED&&!this.touching.has(b)){p.heat-=seconds*(b.speed-FAN_SPEED)*FAN_COOL;if(p.heat<150){p.burning=false;p.heat=Math.min(p.heat,120);delete p.fuse;}} /* swung or thrown fast through the air, the flames are blown out */
         if(p.burning){p.heat=Math.min(700,p.heat+seconds*35);p.hp=Math.max(0,p.hp-seconds*7);p.char=Math.min(1,(p.char||0)+seconds*CHAR_RATE);if(p.part&&p.char>=1){p.burning=false;p.heat=Math.min(p.heat,160);p.bleed=0;p.wounds=[];p.stains=[];const owner=this.getEntity(b);if(owner?.alive&&(p.slot===0||p.slot===2))this.kill(owner,'burned to death');} // burnt down to the bone: nothing left to burn, to bleed, or to live
           if(p.bleed){for(const w of [...(p.wounds||[]),...(p.severed||[])])w.bleed=Math.max(0,(w.bleed||0)-seconds*.5);}
           // Embers and smoke come off the top of the body, more of both the hotter it burns.
@@ -1374,7 +1422,10 @@
       // Particles move every substep, but what they land on is tested 30 times a second: bounds first, exact shape only on a hit.
       const land=(this.tick=(this.tick+1)%4)===0,decals=this.settings.decals,list=this.particles;let keep=0;
       for(let i=0;i<list.length;i++){const p=list[i];p.life-=seconds;p.x+=p.vx*seconds*60;p.y+=p.vy*seconds*60;const wet=p.type==='blood'||p.type==='oil';
-        if(wet||p.type==='spark')p.vy+=seconds*12;
+        if(wet||p.type==='spark'||p.type==='water'||p.type==='splash')p.vy+=seconds*12;
+        if(p.type==='water'&&p.life>0){if(p.y>=this.groundY){this.splash(p.x,this.groundY-1,p.vx,true);p.life=0;}else if(p.x<=2||p.x>=this.width-2){this.splash(p.x,p.y,-p.vx,false);p.life=0;}
+          else if(land)for(let j=0;j<bodies.length;j++){const b=bodies[j],q=b.bounds;if(p.x<q.min.x||p.x>q.max.x||p.y<q.min.y||p.y>q.max.y||!M.Vertices.contains(b.vertices,p))continue;this.soak(b);this.splash(p.x,p.y,p.vx,false);p.life=0;break;}}
+        else if(p.type==='splash'&&p.y>=this.groundY)p.life=0;
         else if(p.type==='mist'){p.vy+=seconds*.5;p.vx*=1-seconds*1.5;}else if(p.type==='ice'){p.vy+=seconds*5;}else if(p.type==='plus'){p.vy-=seconds*.4;p.vx*=1-seconds*2;}
         else if(p.type==='ember'){p.vx+=Math.sin(this.time*9+p.y*.05)*seconds*5;p.vy-=seconds*.6;}else if(p.type==='smoke'){p.vx+=seconds*.35;p.vy*=1-seconds*.5;}
         if(wet&&p.life>0){if(p.y>=this.groundY){if(decals)this.pool(p.x,rnd(2,5),p.type==='oil');p.life=0;}
@@ -1403,7 +1454,7 @@
     }
     serialize() {
       const bodies=this.bodies,index=new Map(bodies.map((b,i)=>[b,i]));
-      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,immortal:e.immortal||undefined,conduit:e.conduit||undefined,power:e.power,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,heartRate:e.heartRate,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,paralysed:e.paralysed,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
+      return {version:1,scene:this.scene,gravity:this.gravity,entities:this.entities.map(e=>({id:e.id,kind:e.kind,immortal:e.immortal||undefined,conduit:e.conduit||undefined,strong:e.strong||undefined,tough:e.tough||undefined,healer:e.healer||undefined,painless:e.painless||undefined,grit:e.grit,gritMax:e.gritMax,power:e.power,upright:e.upright,blood:e.blood,alive:e.alive,stun:e.stun,pain:e.pain,oxygen:e.oxygen,heartRate:e.heartRate,breath:e.breath,hurtSlot:e.hurtSlot,hurtX:e.hurtX,hurtY:e.hurtY,hurtScore:e.hurtScore,deadFor:e.deadFor,twitchAt:e.twitchAt&&[...e.twitchAt],organs:e.organs&&{...e.organs},consciousness:e.consciousness,causeOfDeath:e.causeOfDeath,paralysed:e.paralysed,poseNow:e.poseNow&&{angle:[...e.poseNow.angle],power:[...e.poseNow.power]}})),bodies:bodies.map(b=>({x:b.position.x,y:b.position.y,angle:b.angle,velocity:{...b.velocity},angularVelocity:b.angularVelocity,isStatic:b.isStatic,density:b._original?.density||b.density,friction:b.friction,restitution:b.restitution,group:b.collisionFilter.group,plugin:{...b.plugin}})),joints:this.joints.map(c=>({a:c.bodyA?index.get(c.bodyA):null,b:c.bodyB?index.get(c.bodyB):null,pointA:{...c.pointA},pointB:{...c.pointB},length:c.length,stiffness:c.stiffness,damping:c.damping,plugin:{...c.plugin}})),stains:this.stains.map(s=>({...s}))};
     }
     restore(data) {
       if(!data||data.version!==1||!Array.isArray(data.bodies)||!Array.isArray(data.joints)||!Array.isArray(data.entities)||data.bodies.length>600)throw new Error('Invalid scene file');
