@@ -1153,8 +1153,8 @@ test('Super strength strikes hard and far; super endurance soaks up rounds, blas
   const hit=kind=>{const s=new Simulation().seed(4),a=s.spawn(kind,900,555),v=s.spawn('human',1000,555);advance(s,60);const x0=v.bodies[2].position.x,hp0=v.bodies.reduce((q,b)=>q+b.plugin.hp,0);for(const b of a.bodies)Body.setVelocity(b,{x:14,y:0});advance(s,120);return {push:v.bodies[2].position.x-x0,harm:hp0-v.bodies.reduce((q,b)=>q+b.plugin.hp,0)};};
   const plain=hit('human'),strong=hit('strength');assert.ok(strong.push>plain.push*5&&strong.harm>plain.harm*20,`strong ${JSON.stringify(strong)} vs plain ${JSON.stringify(plain)}`);
   const s=new Simulation().seed(2),t=s.spawn('endurance',1000,555);advance(s,60);const y=t.bodies[2].position.y;
-  t.grit=t.gritMax=1000; /* a hardened one */for(let i=0;i<10;i++){s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,10);}s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);
-  assert.ok(t.bodies.every(b=>b.plugin.hp===100)&&t.grit<1000,'untouched, and it cost grit');t.grit=0;s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);assert.ok(t.bodies.some(b=>b.plugin.hp<100),'with no grit left a blast gets through');
+  t.grit=t.gritMax=1000; /* a hardened one */s.shotLog=[];for(let i=0;i<10;i++){s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,10);}s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);
+  assert.ok(t.bodies.every(b=>b.plugin.hp===100)&&s.shotLog.filter(l=>l.endured).length>=10,'untouched: every round flattened on its grit');t.grit=0;s.explode(t.bodies[2].position.x+40,y,175,1);advance(s,5);assert.ok(t.bodies.some(b=>b.plugin.hp<100),'with no grit left a blast gets through');
   const h=new Simulation().seed(3),e=h.spawn('healing',1000,555);advance(h,60);h.dismember(e.bodies.find(b=>b.plugin.slot===9));const n=e.bodies.length;advance(h,180);assert.ok(e.bodies.length>n,'what was cut off grows back');h.kill(e,'test');advance(h,60*4);assert.ok(e.alive,'killed, it comes back');for(const slot of [0,2,3,4]){const b=e.bodies.find(x=>x.plugin.slot===slot);h.damage(b,5000,b.position,'blast');}advance(h,60*10);assert.ok(!e.alive,'but not once its head and torso are destroyed');
   const k=new Simulation().seed(2),m=k.spawn('human',1000,555),mt=k.spawn('endurance',1300,555);advance(k,30);k.knockOut(m.bodies[2]);k.knockOut(mt.bodies[2]);advance(k,60*7);assert.equal(m.consciousness,'unconscious');assert.equal(mt.consciousness,'awake','the super-enduring comes round sooner');
   k.wake(m.bodies[2]);advance(k,60*6);assert.ok(m.consciousness==='awake'&&m.upright&&m.bodies[0].position.y<500,'woken, it gets up');
@@ -1206,7 +1206,8 @@ test('Revive brings a ragdoll back with the blood still on it',()=>{
 test('Super endurance grit starts at 100, grows by the harm it lives through, refills to that, and is lost on death',()=>{
   const s=new Simulation().seed(2),e=s.spawn('endurance',1000,555);advance(s,30);assert.equal(e.grit,100);assert.equal(e.gritMax,100);
   const hp=e.bodies[9].plugin.hp;s.damage(e.bodies[9],40,e.bodies[9].position,'cut',{x:1,y:0});const took=hp-e.bodies[9].plugin.hp;assert.ok(took>0);assert.ok(Math.abs(e.gritMax-100-took)<1e-6,'every point taken is a point of grit');e.grit=10;s.damage(e.bodies[9],8,e.bodies[9].position,'cut',{x:1,y:0});assert.equal(e.grit,e.gritMax,'and taking harm fills it');
-  const y=e.bodies[2].position.y,before=e.grit;s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,2);assert.ok(e.grit<before&&e.bodies[2].plugin.hp===100,'a round spends it, and does no harm');
-  advance(s,60*5);assert.ok(Math.abs(e.grit-e.gritMax)<1e-6,'refills, to the most it has earned');
-  s.kill(e,'test');assert.equal(e.grit,0,'death takes it all');s.revive(e.bodies[2]);assert.equal(e.grit,100);assert.equal(e.gritMax,100,'brought back, it starts over');
+  const y=e.bodies[2].position.y;s.shotLog=[];s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,2);assert.ok(s.shotLog.some(l=>l.endured)&&e.bodies[2].plugin.hp===100,'a round is soaked up, and does no harm');
+  assert.ok(Math.abs(e.grit-e.gritMax)<1e-6,'and grit is back to full at once');
+  const earned=e.gritMax;s.kill(e,'test');advance(s,10);assert.equal(e.grit,0,'death takes it all');s.revive(e.bodies[2]);assert.equal(e.gritMax,earned);assert.equal(e.grit,earned,'brought back, it has what it had earned');
+  s.kill(e,'test');s.partialRevive(e.bodies[2]);assert.equal(e.grit,earned,'partial revive too');
 });
