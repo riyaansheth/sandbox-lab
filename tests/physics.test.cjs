@@ -1208,6 +1208,11 @@ test('Super endurance grit starts at 100, grows by the harm it lives through, re
   const hp=e.bodies[9].plugin.hp;s.damage(e.bodies[9],40,e.bodies[9].position,'cut',{x:1,y:0});const took=hp-e.bodies[9].plugin.hp;assert.ok(took>0);assert.ok(Math.abs(e.gritMax-100-took)<1e-6,'every point taken is a point of grit');e.grit=10;s.damage(e.bodies[9],8,e.bodies[9].position,'cut',{x:1,y:0});assert.equal(e.grit,e.gritMax,'and taking harm fills it');
   const y=e.bodies[2].position.y;s.shotLog=[];s.shoot({x:900,y},{x:1100,y},null,{energy:1});advance(s,2);assert.ok(s.shotLog.some(l=>l.endured)&&e.bodies[2].plugin.hp===100,'a round is soaked up, and does no harm');
   assert.ok(e.grit<e.gritMax,'it spent grit');advance(s,60*20);assert.ok(Math.abs(e.grit-e.gritMax)<1e-6,'which comes back slowly, to the most it has earned');
-  const earned=e.gritMax;s.kill(e,'test');advance(s,10);assert.equal(e.grit,0,'death takes it all');s.revive(e.bodies[2]);assert.equal(e.gritMax,earned);assert.equal(e.grit,earned,'brought back, it has what it had earned');
-  s.kill(e,'test');s.partialRevive(e.bodies[2]);assert.equal(e.grit,earned,'partial revive too');
+  e.grit=0;s.kill(e,'test');advance(s,10);assert.ok(!e.alive);assert.equal(e.grit,0,'death takes it all');s.revive(e.bodies[2]);assert.equal(e.gritMax,100);assert.equal(e.grit,100,'brought back, it starts over at 100');
+  e.gritMax=500;e.grit=0;s.kill(e,'test');assert.ok(!e.alive);s.partialRevive(e.bodies[2]);assert.equal(e.grit,100,'partial revive too');
+});
+test('Super endurance cannot die while it has grit; each death shrugged off costs grit, and at 0 it can be killed',()=>{
+  const s=new Simulation().seed(2),e=s.spawn('endurance',1000,555);advance(s,30);e.grit=e.gritMax=120;
+  s.kill(e,'test');assert.ok(e.alive);assert.equal(e.grit,70);s.kill(e,'test');s.kill(e,'test');assert.ok(e.alive&&e.grit===0,'the last of it');s.kill(e,'test');assert.ok(!e.alive,'at 0, it dies');
+  const t=new Simulation().seed(2),b=t.spawn('endurance',1000,555);advance(t,30);b.blood=10;advance(t,120);assert.ok(!b.alive,'bleeding out drains the grit, then kills');
 });
