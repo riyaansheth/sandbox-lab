@@ -2,6 +2,11 @@
 import Cocoa
 import WebKit
 
+// Keys/gestures the page doesn't consume bubble up to the window, which would play the system alert sound.
+final class QuietWindow: NSWindow {
+  override func noResponder(for eventSelector: Selector) {}
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
   var window: NSWindow!
 
@@ -12,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let game = Bundle.main.resourceURL!.appendingPathComponent("game")
     web.loadFileURL(game.appendingPathComponent("index.html"), allowingReadAccessTo: game)
 
-    window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
+    window = QuietWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
                       styleMask: [.titled, .closable, .miniaturizable, .resizable],
                       backing: .buffered, defer: false)
     window.title = "Sandbox Lab"

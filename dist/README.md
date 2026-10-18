@@ -15,7 +15,7 @@ npm run dev
 
 ### Mac app
 
-`./mac/build.sh` builds `dist-mac/Sandbox Lab.app` (Apple Silicon + Intel, macOS 12+) and `dist-mac/Sandbox-Lab-mac.zip`. Needs only the Xcode Command Line Tools (`xcode-select --install`). The app isn't notarized, so the first time you open it go to System Settings → Privacy & Security → **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Sandbox Lab.app"`.
+`./mac/build.sh` builds `dist-mac/Sandbox Lab.app` (Apple Silicon + Intel, macOS 12+) and `dist-mac/Sandbox-Lab-mac.zip`. Needs only the Xcode Command Line Tools (`xcode-select --install`). The icon is `mac/AppIcon.icns`; after editing `logo.svg` or `mac/icon.svg`, regenerate it with `./mac/icon.sh` (needs Google Chrome). The app isn't notarized, so the first time you open it go to System Settings → Privacy & Security → **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Sandbox Lab.app"`.
 
 ## Features
 
