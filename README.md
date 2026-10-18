@@ -13,6 +13,10 @@ npm install
 npm run dev
 ```
 
+### Mac app
+
+`./mac/build.sh` builds `dist-mac/Sandbox Lab.app` (Apple Silicon + Intel, macOS 12+) and `dist-mac/Sandbox-Lab-mac.zip`. Needs only the Xcode Command Line Tools (`xcode-select --install`). The app isn't notarized, so the first time you open it go to System Settings → Privacy & Security → **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/Sandbox Lab.app"`.
+
 ## Features
 
 - 17-part human and android ragdolls built as a true side profile, like People Playground's: one torso seen edge-on, a short neck (the head sits down over the top half of it), both arms hanging from the one shoulder and both legs from the one hip, the far arm and leg drawn in shadow behind the trunk and the near ones in front, mirrored for a left-facing body. Things in the near hand draw in front, things in the far hand behind
