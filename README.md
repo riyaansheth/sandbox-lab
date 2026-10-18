@@ -160,4 +160,5 @@ This is an original browser sandbox, not a copy of People Playground's code or a
 - Gameplay reference: https://store.steampowered.com/app/1118200/PeoplePlayground/
 - Physics: Matter.js 0.20.0 (MIT), https://brm.io/matter-js/
 - Included Matter.js license: `vendor/MATTER-LICENSE.txt`
+- Gunshot recordings: The Free Firearm Sound Library (CC0), https://opengameart.org/content/the-free-firearm-sound-library
 - Original canvas artwork and interface, with Barlow fonts via Google Fonts.

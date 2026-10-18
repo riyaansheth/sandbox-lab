@@ -35,8 +35,11 @@
     {id:'delete',name:'Delete',symbol:'⌫',key:'0',title:'Clean up',desc:'Click an object to remove it and its connections.'}
   ];
   let width=0,height=0,dpr=1,toastTimer,lastShot=0,lastAction=0,lastTime=0,accumulator=0,frameCount=0,fpsTime=0,uiTime=0;
-  let audio=null,lastImpact=0;
-  function sound(type,volume=.2,kind){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
+  let audio=null,lastImpact=0,samples=null;
+  // Decodes the recorded gunshots once; each records where its sound starts so the encoder's lead-in silence is skipped.
+  function decodeSamples(){const out={};for(const [kind,b64] of Object.entries(window.GUN_SAMPLES||{})){const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+    audio.decodeAudioData(bytes.buffer).then(buffer=>{const d=buffer.getChannelData(0);let i=0;while(i<d.length&&Math.abs(d[i])<.02)i++;out[kind]={buffer,skip:Math.max(0,i/buffer.sampleRate-.003)};}).catch(()=>{});}return out;}
+  function sound(type,volume=.2,kind){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();samples??=decodeSamples();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
     if(type==='electric'){if(now-(lastHit.electric||0)<.07)return;lastHit.electric=now;}
     if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'||type==='ricochet'||type==='armour'||type==='metal'||type==='clink'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='shot'){gunshot(kind||'gun',now,level);return;}
@@ -83,6 +86,7 @@
     const noise=(at,length,type,f0,f1,q,peak)=>{const src=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();src.buffer=noiseBuffer;src.loop=true;f.type=type;f.Q.value=q;f.frequency.setValueAtTime(f0,at);f.frequency.exponentialRampToValueAtTime(f1,at+length);g.gain.setValueAtTime(Math.min(.8,peak*level),at);g.gain.exponentialRampToValueAtTime(.0008,at+length);src.connect(f);f.connect(g);g.connect(audio.destination);src.start(at,Math.random()*.9);src.stop(at+length+.02);};
     if(kind==='crossbow'){const o=audio.createOscillator(),g=audio.createGain();o.type='triangle';o.frequency.setValueAtTime(210,now);o.frequency.exponentialRampToValueAtTime(120,now+.25);g.gain.setValueAtTime(Math.min(.4,.25*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.3);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.32);noise(now,.08,'bandpass',2500,900,1.5,.25);return;} /* the string and the bolt leaving */
     const [crack,blast,thump,length,room,loud]=GUN_SOUND[kind]||GUN_SOUND.gun,l=loud*.55;
+    const sample=samples?.[kind];if(sample){const src=audio.createBufferSource(),g=audio.createGain();src.buffer=sample.buffer;src.playbackRate.value=.95+Math.random()*.1;g.gain.value=Math.min(1,.5*loud*level);src.connect(g);g.connect(audio.destination);src.start(now,sample.skip);return;} /* synth below until the recordings decode */
     noise(now,.025,'bandpass',crack,crack*.7,1.4,.7*l);noise(now,length,'lowpass',blast*2.4,blast*.35,.7,.9*l);
     {const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(thump*2.2,now);o.frequency.exponentialRampToValueAtTime(thump*.6,now+length*.8);g.gain.setValueAtTime(Math.min(.8,.8*l*level),now);g.gain.exponentialRampToValueAtTime(.001,now+length);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+length+.02);}
     noise(now+.01,room,'lowpass',900,160,.5,.18*l);noise(now+.11+room*.08,room*.6,'lowpass',700,150,.5,.08*l);}
