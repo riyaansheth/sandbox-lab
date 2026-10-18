@@ -41,7 +41,7 @@
     audio.decodeAudioData(bytes.buffer).then(buffer=>{const d=buffer.getChannelData(0);let i=0;while(i<d.length&&Math.abs(d[i])<.02)i++;out[kind]={buffer,skip:Math.max(0,i/buffer.sampleRate-.003)};}).catch(()=>{});}return out;}
   function sound(type,volume=.2,kind){const set=sim.settings;if(!set.sound||!set.volume)return;try{audio??=new (window.AudioContext||window.webkitAudioContext)();samples??=decodeSamples();if(audio.state==='suspended')audio.resume();const now=audio.currentTime,level=set.volume/60;if(type==='impact'&&now-lastImpact<.12)return;if(type==='impact')lastImpact=now;
     if(type==='electric'){if(now-(lastHit.electric||0)<.07)return;lastHit.electric=now;}
-    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'||type==='ricochet'||type==='armour'||type==='metal'||type==='clink'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
+    if(type==='thud'||type==='slice'||type==='wet'||type==='crack'||type==='sizzle'||type==='cloth'||type==='armour'||type==='metal'||type==='clink'){if(now-(lastHit[type]||0)<(type==='sizzle'?.35:.07))return;lastHit[type]=now;flesh(type,now,level*Math.min(1.4,volume));return;}
     if(type==='shot'){gunshot(kind||'gun',now,level);return;}
     if(type==='laser'){const o=audio.createOscillator(),g=audio.createGain(),f=audio.createBiquadFilter();o.type='sawtooth';o.frequency.setValueAtTime(900,now);o.frequency.exponentialRampToValueAtTime(420,now+.35);f.type='bandpass';f.frequency.value=1200;f.Q.value=3;g.gain.setValueAtTime(Math.min(.2,.1*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.4);o.connect(f);f.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.42);return;}
     if(type==='thunder'){thunder(now,level);return;}
@@ -64,7 +64,6 @@
     else if(type==='metal'){tone(now,.18,1900+Math.random()*600,1400,.25);burst(now,.04,'highpass',3000,2500,1,.3);} /* a round into steel: a ping */
     else if(type==='clink'){tone(now,.07,3800+Math.random()*1500,3000,.12);tone(now+.05,.05,4600,3600,.06);} /* a brass case bouncing */
     else if(type==='armour'){tone(now,.12,120,60,.45);burst(now,.05,'bandpass',1800,900,2,.35);} /* a round stopped by armour: a dull blow and a flat crack */
-    else if(type==='ricochet'){const o=audio.createOscillator(),g=audio.createGain(),f0=2400+Math.random()*900;o.type='sine';o.frequency.setValueAtTime(f0,now);o.frequency.exponentialRampToValueAtTime(f0*.35,now+.32);g.gain.setValueAtTime(Math.min(.3,.14*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.34);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.36);burst(now,.03,'bandpass',3000,2000,3,.3);} /* a spark and a falling whine */
     else if(type==='cloth'){burst(now,.16,'lowpass',1100,300,.5,.16);burst(now+.05,.12,'bandpass',1600,700,.7,.07);}} /* a soft rustle */
   // The sound of a held power: one loop per kind, faded in when the power appears and out when it goes. Each is a second or two of shaped noise (or, for heal, two soft tones) built once.
   // fire: a low roar with sharp random pops - crackle; cold: a thin band of wind that swells and sinks; shock: a harsh mains buzz; heal: a gentle hum.

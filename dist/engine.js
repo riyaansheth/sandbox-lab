@@ -1026,7 +1026,7 @@
         if(hard){const cosI=Math.abs(dx*h.nx+dy*h.ny),glancing=cosI<RICO_GLANCE,need=p.boundary?Infinity:chord*rate;
           if(shot.bounces<RICO_MAX&&(glancing||need>=shot.E&&!defs[p.kind]?.stopsRounds)){ /* square on, a steel beam takes the round instead of throwing it back */shot.bounces++;shot.E*=glancing?RICO_KEEP:RICO_KEEP*(1-cosI*.65);if(!p.boundary){this.shotHit(body,shot);this.damage(body,shot.E*bd*.05,stop,'bullet',direction);}
             const r=2*(dx*h.nx+dy*h.ny);shot.dx=dx-r*h.nx;shot.dy=dy-r*h.ny;turn(rnd(-RICO_JITTER,RICO_JITTER),near*SHOT_REACH);stop={x:stop.x+h.nx*.6,y:stop.y+h.ny*.6};shot.ignore=null;shot.done=new Set([body]); /* bounced: it can hit anything now, the one who fired it too */
-            this.hole(body,stop,false);this.burst(stop.x,stop.y,6,'#ffe7a0',4);this.onEffect('ricochet',.5);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,ricochet:true});break;}
+            this.hole(body,stop,false);this.burst(stop.x,stop.y,6,'#ffe7a0',4);if(this.shotLog)this.shotLog.push({body,E:shot.E,use:0,through:false,ricochet:true});break;}
           if(p.boundary){this.hole(body,stop,false);spent=true;shot.E=0;break;}}
         this.contactShot=shot.first===body&&gone<=CONTACT_SHOT;
         const toLocal=q=>{const l=Vector.rotate(Vector.sub(q,body.position),-body.angle);return {x:(p.flip?-l.x:l.x)/(p.w/2),y:l.y/(p.h/2)};};let a=null,b=null,bone=0,channel=false;
