@@ -35,7 +35,7 @@
     {id:'delete',name:'Delete',symbol:'⌫',key:'0',title:'Clean up',desc:'Click an object to remove it and its connections.'}
   ];
   let width=0,height=0,dpr=1,toastTimer,lastShot=0,lastAction=0,lastTime=0,accumulator=0,frameCount=0,fpsTime=0,uiTime=0;
-  let audio=null,lastImpact=0,samples=null;
+  let audio=null,lastImpact=0,samples=null,voices={};
   // Decodes the recorded gunshots once; each records where its sound starts so the encoder's lead-in silence is skipped.
   function decodeSamples(){const out={};for(const [kind,b64] of Object.entries(window.GUN_SAMPLES||{})){const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
     audio.decodeAudioData(bytes.buffer).then(buffer=>{const d=buffer.getChannelData(0);let i=0;while(i<d.length&&Math.abs(d[i])<.02)i++;out[kind]={buffer,skip:Math.max(0,i/buffer.sampleRate-.003)};}).catch(()=>{});}return out;}
@@ -86,7 +86,10 @@
     const noise=(at,length,type,f0,f1,q,peak)=>{const src=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();src.buffer=noiseBuffer;src.loop=true;f.type=type;f.Q.value=q;f.frequency.setValueAtTime(f0,at);f.frequency.exponentialRampToValueAtTime(f1,at+length);g.gain.setValueAtTime(Math.min(.8,peak*level),at);g.gain.exponentialRampToValueAtTime(.0008,at+length);src.connect(f);f.connect(g);g.connect(audio.destination);src.start(at,Math.random()*.9);src.stop(at+length+.02);};
     if(kind==='crossbow'){const o=audio.createOscillator(),g=audio.createGain();o.type='triangle';o.frequency.setValueAtTime(210,now);o.frequency.exponentialRampToValueAtTime(120,now+.25);g.gain.setValueAtTime(Math.min(.4,.25*level),now);g.gain.exponentialRampToValueAtTime(.001,now+.3);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+.32);noise(now,.08,'bandpass',2500,900,1.5,.25);return;} /* the string and the bolt leaving */
     const [crack,blast,thump,length,room,loud]=GUN_SOUND[kind]||GUN_SOUND.gun,l=loud*.55;
-    const sample=samples?.[kind];if(sample){const src=audio.createBufferSource(),g=audio.createGain();src.buffer=sample.buffer;src.playbackRate.value=.95+Math.random()*.1;g.gain.value=Math.min(1,.5*loud*level);src.connect(g);g.connect(audio.destination);src.start(now,sample.skip);return;} /* synth below until the recordings decode */
+    const sample=samples?.[kind];if(sample){const src=audio.createBufferSource(),g=audio.createGain(),peak=Math.min(1,.5*loud*level),slice=kind==='minigun';src.buffer=sample.buffer;src.playbackRate.value=.96+Math.random()*.08;
+      voices[kind]?.gain.setTargetAtTime(0,now,.04);voices[kind]=g; /* the next round chokes the last one's tail, so bursts stay clean and only the final shot rings out */
+      g.gain.setValueAtTime(slice?0:peak,now);if(slice){g.gain.linearRampToValueAtTime(peak,now+.005);g.gain.setTargetAtTime(0,now+.07,.01);}
+      src.connect(g);g.connect(audio.destination);src.start(now,slice?sample.skip+Math.random()*(sample.buffer.duration-.25):sample.skip,slice?.12:undefined);return;} /* synth below until the recordings decode */
     noise(now,.025,'bandpass',crack,crack*.7,1.4,.7*l);noise(now,length,'lowpass',blast*2.4,blast*.35,.7,.9*l);
     {const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(thump*2.2,now);o.frequency.exponentialRampToValueAtTime(thump*.6,now+length*.8);g.gain.setValueAtTime(Math.min(.8,.8*l*level),now);g.gain.exponentialRampToValueAtTime(.001,now+length);o.connect(g);g.connect(audio.destination);o.start(now);o.stop(now+length+.02);}
     noise(now+.01,room,'lowpass',900,160,.5,.18*l);noise(now+.11+room*.08,room*.6,'lowpass',700,150,.5,.08*l);}
