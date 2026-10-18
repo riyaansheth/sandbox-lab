@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#30373b"/><stop offset="1" stop-color="#181b1e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".55" r=".5">
+      <stop offset="0" stop-color="#e6bb6b" stop-opacity=".22"/><stop offset="1" stop-color="#e6bb6b" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="58" height="58" patternUnits="userSpaceOnUse" x="100" y="100">
+      <path d="M58 0H0v58" fill="none" stroke="#ffffff" stroke-opacity=".05" stroke-width="2"/>
+    </pattern>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <g clip-path="url(#sq)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#grid)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+    <path d="M100 800h824" stroke="#8cbaa6" stroke-opacity=".18" stroke-width="4"/>
+  </g>
+  <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#ffffff" stroke-opacity=".09" stroke-width="4"/>
+  <image href="../logo.svg" x="212" y="212" width="600" height="600"/>
+</svg>

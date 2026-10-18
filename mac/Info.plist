@@ -5,6 +5,7 @@
   <key>CFBundleName</key><string>Sandbox Lab</string>
   <key>CFBundleDisplayName</key><string>Sandbox Lab</string>
   <key>CFBundleIdentifier</key><string>com.riyaansheth.sandboxlab</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleExecutable</key><string>SandboxLab</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g fill="none" stroke="#8cbaa6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 22V6h16M78 6h16v16M94 78v16H78M22 94H6V78"/>
+  </g>
+  <g fill="none" stroke="#8cbaa6" stroke-width="3" stroke-linecap="round" opacity=".55">
+    <path d="M70 18q10 4 15 14M80 44q4 6 4 13"/>
+  </g>
+  <g transform="rotate(-62 50 54)" stroke="#e6bb6b" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="52" cy="24" r="8.5" fill="#e6bb6b" stroke="none"/>
+    <path d="M52 37v22" stroke-width="12"/>
+    <path d="M52 40l-15 3-4 13M52 40l13-7 2-13M52 59l-13 9-1 14M52 59l11 11 12-2" stroke-width="7.5"/>
+  </g>
+</svg>

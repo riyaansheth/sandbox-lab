@@ -7,6 +7,7 @@ APP="dist-mac/Sandbox Lab.app"
 rm -rf dist-mac && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -R dist "$APP/Contents/Resources/game"
 cp mac/Info.plist "$APP/Contents/"
+cp mac/AppIcon.icns "$APP/Contents/Resources/"
 for arch in arm64 x86_64; do
   swiftc -O -target $arch-apple-macos12 mac/main.swift -o dist-mac/sl-$arch
 done
