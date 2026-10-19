@@ -750,11 +750,11 @@ test('fall damage follows the agreed table: height, what lands first, and whethe
   const slide=standing();for(const b of slide.e.bodies)Body.setVelocity(b,{x:9,y:0});advance(slide.s,120);assert.equal(slide.e.bodies.reduce((n,b)=>n+b.plugin.maxHp-b.plugin.hp,0),0,'speed along the floor is not an impact');
 });
 
-test('the grab is a damped spring on the grabbed point: it follows without overshoot, hangs a little, and what is let go keeps exactly the velocity it had',()=>{
+test('the grab is a damped spring on the grabbed point: it keeps pace with the cursor, carries a little past where it stops, holds the weight at the cursor, and what is let go keeps exactly the velocity it had',()=>{
   for(const kind of ['ball','crate','brick']){const s=new Simulation().seed(2);const b=s.spawn(kind,1000,600).bodies[0];advance(s,90);let cur={...b.position};s.beginDrag(b,{...cur});assert.ok(!s.joints.includes(s.drag),'not a Matter constraint');
-    let over=0;for(let i=0;i<96;i++){if(i<24)cur={x:cur.x,y:cur.y-200/24};s.moveDrag(cur);s.step();if(i>=24)over=Math.max(over,cur.y-b.position.y);}assert.ok(over<2,`${kind} overshot by ${over.toFixed(1)} px`);
-    const sag=b.position.y-cur.y;assert.ok(sag>1&&sag<12,`${kind} hangs ${sag.toFixed(1)} px under the cursor, whatever it weighs`);assert.ok(Math.abs(b.velocity.y)<.3,'and is still');
-    for(let i=0;i<30;i++){cur={x:cur.x+15,y:cur.y};s.moveDrag(cur);s.step();}const had={...b.velocity};assert.ok(Math.abs(had.x*60-900)<90,`${kind} is moving with the cursor (${(had.x*60).toFixed(0)} px/s of 900)`);
+    let over=0;for(let i=0;i<96;i++){if(i<24)cur={x:cur.x,y:cur.y-200/24};s.moveDrag(cur);s.step();if(i>=24)over=Math.max(over,cur.y-b.position.y);}assert.ok(over>2&&over<25,`${kind} carries its momentum ${over.toFixed(1)} px past a cursor that stops at 500 px/s`);
+    const sag=b.position.y-cur.y;assert.ok(Math.abs(sag)<2,`${kind} is held ${sag.toFixed(1)} px off the cursor, whatever it weighs`);assert.ok(Math.abs(b.velocity.y)<.3,'and is still');
+    for(let i=0;i<30;i++){cur={x:cur.x+15,y:cur.y};s.moveDrag(cur);s.step();}const had={...b.velocity};assert.ok(Math.abs(cur.x-b.position.x)<15,`${kind} keeps up with the cursor instead of trailing it (${(cur.x-b.position.x).toFixed(1)} px)`);assert.ok(Math.abs(had.x*60-900)<90,`${kind} is moving with the cursor (${(had.x*60).toFixed(0)} px/s of 900)`);
     s.endDrag({x:99,y:-99});s.step();assert.ok(Math.abs(b.velocity.x-had.x)<.6,'letting go does not change its velocity, whatever the cursor was doing');assert.equal(s.drag,null);}
   const still=new Simulation().seed(2),c=still.spawn('crate',1000,600).bodies[0];advance(still,90);still.beginDrag(c,{...c.position});for(let i=0;i<60;i++){still.moveDrag({x:1000+i*15,y:400});still.step();}for(let i=0;i<40;i++){still.moveDrag({x:1900,y:400});still.step();}
   still.endDrag();still.step();assert.ok(Math.abs(c.velocity.x)<1,'stop the cursor before letting go and the thing just drops');

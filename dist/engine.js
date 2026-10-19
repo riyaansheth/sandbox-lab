@@ -135,8 +135,8 @@
   const GETUP_STAGES=[['gather',.35],['pushup',.5],['crouch',.45]],KNEEL_HEIGHT=96,CRAWL_PULL=.34,CRAWL_PRESS=.45,CRAWL_LIFT=.05,CRAWL_SPEED=.9,CRAWL_PERIOD=.9,FLEE_TIME=5; // get-up stages [pose, seconds]; crawl forces are fractions of body weight
   const CLUTCH_PAIN=14,GUARD_HP=75,SPARE_LEG_HP=40,SHOCK_LOCK=.6,SHOCK_LIMP=.8,ARM_UPPER=34,ARM_FORE=38; // pain at which a hand goes to the wound; part hp below which an arm is guarded / a leg is kept off the floor; shock timings; arm lengths for the reach
   const BRACED=.6; // px per step: faster than this downward and a part is not planted, it is falling
-  const THROW_MAX=38; // px per 1/60 s: nothing leaves the cursor faster than this
-  const GRAB_RATE=100,GRAB_DAMP=1,GRAB_GEAR=30,GRAB_STABLE=90,GRAB_ACCEL=14000,GRAB_FORCE=260000,GRAB_CALM=.06,GRAB_CALM_PART=.2,GRAB_INERTIA=25; // spring rate (rad/s) per unit of the Grab strength setting; damping ratio; most a part may haul, in its own masses; the stiffest a spring the step can carry (rad/s); limits on the pull, px/s2 per unit mass and outright; share of its spin a held thing loses each substep
+  const THROW_MAX=90; // px per 1/60 s: nothing leaves the cursor faster than this
+  const GRAB_RATE=100,GRAB_DAMP=1,GRAB_GEAR=30,GRAB_STABLE=90,GRAB_ACCEL=14000,GRAB_FORCE=260000,GRAB_FOLLOW=.035,GRAB_CALM=.06,GRAB_CALM_PART=.2,GRAB_INERTIA=25; // spring rate (rad/s) per unit of the Grab strength setting; damping ratio; most a part may haul, in its own masses; the stiffest a spring the step can carry (rad/s); limits on the pull, px/s2 per unit mass and outright; by when a cursor that sends no moves counts as stopped (s); share of its spin a held thing loses each substep
   const PIN_TEAR=14; // px a lodged blade's pins may stretch before it is torn out
   const LIMB_SPEED=110,LIMB_SPIN=.5; // px and radians per 1/60 s: faster than anything falls (a body's terminal velocity is 55 m/s, 100 px)
   const KNEEL_BLOOD=50,SLUMP_BLOOD=44,TWITCH_WINDOW=3.5; // blood levels at which a body can no longer stand, then no longer kneel; seconds after death in which a nerve may still fire
@@ -687,8 +687,8 @@
     beginDrag(body,point) {
       this.endDrag();if(!body)return;if(body.plugin.heldBy!==undefined)this.release(body); // grabbing a held thing takes it out of the hand
       // The grab is not a Matter constraint: a pin dragged about by the cursor either snaps the body to it or, softened, rings. It is the cursor pulling on the grabbed point with a damped spring (see grab()), the way
-      // People Playground does it: the thing lags a little, swings about the point it is held by, hangs under its own weight, and when it is let go it simply keeps the velocity it has. It has the shape of a constraint so that everything that measures the pull still can.
-      this.drag={pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),angleB:body.angle,plugin:{drag:true},load:0,loadAt:-9};
+      // People Playground does it: the thing keeps pace with the cursor, swings about the point it is held by, dangles what hangs from it, and when it is let go it simply keeps the velocity it has. It has the shape of a constraint so that everything that measures the pull still can.
+      this.drag={pointA:{...point},bodyB:body,pointB:Vector.sub(point,body.position),angleB:body.angle,plugin:{drag:true},load:0,loadAt:-9,px:point.x,py:point.y,pt:this.time,ux:0,uy:0};
       if(body.plugin.part&&!body.isStatic){this.drag.inertia=body.inertia;Body.setInertia(body,body.inertia*GRAB_INERTIA);} /* a hand or a foot with a whole body hanging from it is a very stiff pendulum on almost no inertia: held, it is given the steadiness of the grip that holds it, and gets its own back when let go */
     }
     moveDrag(point){if(this.drag)this.drag.pointA={...point};}
@@ -765,14 +765,15 @@
       if(this.drag&&this.dragAngle!=null&&!this.drag.bodyB.isStatic)Body.setAngularVelocity(this.drag.bodyB,0); /* turned to an angle with A / D, it leaves at that angle, without spin */
       if(this.drag?.inertia&&!this.drag.bodyB.isStatic)Body.setInertia(this.drag.bodyB,this.drag.inertia);this.drag=null;this.dragAngle=null;}
     // One substep of the cursor's pull. A spring-damper on the grabbed point, critically damped, sized to the mass it has to move: the body's own plus a share of whatever hangs off it (a ragdoll held by the hand),
-    // capped so that a light part hauling a heavy body does not turn into a spring too stiff for the step. Gravity is not cancelled - held things hang and dangle - and there is a limit to the force, so very heavy things trail.
+    // capped so that a light part hauling a heavy body does not turn into a spring too stiff for the step. The damping is on the speed relative to the cursor's, so nothing trails a moving cursor; the weight of the load is taken at the grabbed point, so what hangs from it still dangles; and there is a limit to the force.
     grab(seconds) {
       const d=this.drag,b=d.bodyB;if(!this.bodies.includes(b)){this.drag=null;this.dragAngle=null;return;}if(b.isStatic)return;
+      if(d.pointA.x!==d.px||d.pointA.y!==d.py){const t=Math.max(seconds,this.time-d.pt);d.ux=(d.pointA.x-d.px)/t;d.uy=(d.pointA.y-d.py)/t;d.px=d.pointA.x;d.py=d.pointA.y;d.pt=this.time;} /* the cursor's own velocity, from one pointer move to the next: they land every frame or so, not every substep */
       Vector.rotate(d.pointB,b.angle-d.angleB,d.pointB);d.angleB=b.angle; /* the grabbed point turns with the body */
       if(this.time-d.loadAt>.25){d.loadAt=this.time;d.load=0;for(const x of this.connected(b,this.joints.filter(c=>c.plugin.joint||c.plugin.hold||c.plugin.pierce)))if(!x.isStatic)d.load+=x.mass;}
       const rate=GRAB_RATE*this.settings.grabStrength,m=Math.min(d.load||b.mass,b.mass*Math.min(GRAB_GEAR,(GRAB_STABLE/rate)**2)),per=60,/* outside collision events Matter reports velocity per 1/60 s, whatever the substep */ax=b.position.x+d.pointB.x,ay=b.position.y+d.pointB.y,
-        vx=(b.velocity.x-b.angularVelocity*d.pointB.y)*per,vy=(b.velocity.y+b.angularVelocity*d.pointB.x)*per; /* the grabbed point's own velocity, px/s */
-      let fx=m*(rate*rate*(d.pointA.x-ax)-2*GRAB_DAMP*rate*vx),fy=m*(rate*rate*(d.pointA.y-ay)-2*GRAB_DAMP*rate*vy);const f=Math.hypot(fx,fy),most=Math.min(m*GRAB_ACCEL,GRAB_FORCE);if(f>most){fx*=most/f;fy*=most/f;}
+        fade=clamp((GRAB_FOLLOW-(this.time-d.pt))/(GRAB_FOLLOW-1/60),0,1),/* moves come about once a frame: a cursor that has sent none for longer than that is stopping */vx=(b.velocity.x-b.angularVelocity*d.pointB.y)*per-d.ux*fade,vy=(b.velocity.y+b.angularVelocity*d.pointB.x)*per-d.uy*fade; /* the grabbed point's velocity relative to the cursor's, px/s: damping that, not the absolute speed, is what lets it keep up instead of trailing */
+      let fx=m*(rate*rate*(d.pointA.x-ax)-2*GRAB_DAMP*rate*vx),fy=m*(rate*rate*(d.pointA.y-ay)-2*GRAB_DAMP*rate*vy)-(d.load||b.mass)*this.gravity*G_SCALE*1e6;/* the hand takes the weight of what hangs from it, so a carried body is held at the cursor instead of sagging below it */const f=Math.hypot(fx,fy),most=Math.min(m*GRAB_ACCEL,GRAB_FORCE);if(f>most){fx*=most/f;fy*=most/f;}
       Body.applyForce(b,{x:ax,y:ay},{x:fx*1e-6,y:fy*1e-6}); /* px/s2 to Matter's px/ms2 */
       if(this.dragAngle==null)Body.setAngularVelocity(b,b.angularVelocity*(1-(b.plugin.part?GRAB_CALM_PART:GRAB_CALM))); /* a hand steadies what it holds: it swings, it does not spin */
     }
